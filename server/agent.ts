@@ -10,6 +10,7 @@ import {
 } from "../shared/types.ts";
 import { loadLlmConfig, resolveApiKey } from "./config.ts";
 import { mcp } from "./mcp.ts";
+import { isGrammarError, relaxTools, sanitizeTools } from "./schema-compat.ts";
 import { saveSession } from "./store.ts";
 import {
   catalogPrompt,
@@ -96,6 +97,12 @@ function forApi(messages: StoredMessage[]): OpenAI.ChatCompletionMessageParam[] 
 /** Not every OpenAI-compatible server accepts `stream_options`; we find out once. */
 let usageSupported = true;
 
+/**
+ * llama.cpp-backed servers compile all tool schemas into one grammar and reject keywords
+ * their converter cannot express. Once we have seen that, drop them for the rest of the run.
+ */
+let strictSchemas = true;
+
 export interface RunOptions {
   session: Session;
   prompt: string;
@@ -145,10 +152,13 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   let lastRoundTrip = emptyUsage();
 
   for (let iteration = 0; iteration < config.maxToolIterations; iteration++) {
-    const tools = onDemand ? [loadToolsDefinition(), ...mcp.tools([...loaded])] : mcp.tools();
+    const declared = sanitizeTools(
+      onDemand ? [loadToolsDefinition(), ...mcp.tools([...loaded])] : mcp.tools(),
+    );
 
-    const open = (withUsage: boolean) =>
-      client.chat.completions.create(
+    const open = (withUsage: boolean, strict: boolean) => {
+      const tools = strict ? declared : relaxTools(declared);
+      return client.chat.completions.create(
         {
           model: chosenModel,
           max_tokens: config.maxTokens,
@@ -160,16 +170,22 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         },
         { signal },
       );
+    };
 
     let stream: Awaited<ReturnType<typeof open>>;
     try {
-      stream = await open(usageSupported);
+      stream = await open(usageSupported, strictSchemas);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      if (!usageSupported || !/stream_options/i.test(detail)) throw error;
-      console.warn("[agent] server rejected stream_options; token counts disabled");
-      usageSupported = false;
-      stream = await open(false);
+      if (usageSupported && /stream_options/i.test(detail)) {
+        console.warn("[agent] server rejected stream_options; token counts disabled");
+        usageSupported = false;
+        stream = await open(false, strictSchemas);
+      } else if (strictSchemas && isGrammarError(detail)) {
+        console.warn("[agent] server could not build a grammar; retrying without pattern/format");
+        strictSchemas = false;
+        stream = await open(usageSupported, false);
+      } else throw error;
     }
 
     iterations++;

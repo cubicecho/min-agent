@@ -112,6 +112,34 @@ name gets it loaded and executed anyway rather than an "unknown tool" error. And
 loads stays loaded for the rest of that session, stored as `loadedTools`, so a follow-up question
 about the same files does not pay the discovery step twice.
 
+### Schema compatibility
+
+llama.cpp-backed servers (llama-server, Lemonade, Ollama) compile every tool's parameter schema
+into a single GBNF grammar. One shape the converter dislikes fails the whole request, not just the
+one tool, and the error is unhelpful — `Unable to generate parser for this template`, or
+`Unrecognized schema: "object"`. MCP servers emit those shapes routinely, so `server/schema-compat.ts`
+normalises them before every request:
+
+| Shape | Rewritten to |
+| --- | --- |
+| `{"type": "object"}` with no properties | `properties: {}` added |
+| a bare `"object"` where a schema belongs | `{"type": "object", "properties": {}}` |
+| `type: ["string", "null"]` | `type: "string"`, `nullable: true` |
+| `type: ["string", "number"]` | `anyOf` of single-type schemas |
+| `anyOf: [X, {"type": "null"}]` | `X` with `nullable: true` |
+| `default` beside a `$ref` | `default` dropped |
+| `allOf` / `anyOf` / `enum` / `not` at the top level | dropped |
+
+If a request still comes back with a grammar failure, the run retries once with `pattern` and
+`format` stripped from every schema — the converter rejects escape classes like `\d` and most
+`format` values, and both only ever narrowed a string the tool re-validates anyway. The retry latches
+for the process, so it costs one failed request, not one per turn. Cloud providers accept everything
+here, so the fallback never fires against them.
+
+One error is deliberately *not* treated as a schema problem: Qwen templates raise
+`No user query found` when a transcript has no user turn, and some servers wrap it in the same
+"unable to generate parser" wording. Stripping keywords would not fix it, so it propagates.
+
 ## Turn statistics
 
 Every turn asks the server for `usage` (via `stream_options`) and times itself, so a finished
