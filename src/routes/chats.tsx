@@ -87,8 +87,8 @@ export function ChatsRoute() {
     },
   });
 
-  async function send() {
-    const prompt = draft.trim();
+  async function send(text?: string) {
+    const prompt = (text ?? draft).trim();
     if (!prompt || pending) return;
 
     let id = sessionId;
@@ -99,7 +99,8 @@ export function ChatsRoute() {
       navigate({ to: "/chats/$sessionId", params: { sessionId: id } });
     }
 
-    setDraft("");
+    // A chip sends its own text; anything half-typed in the box is left alone.
+    if (!text) setDraft("");
     setPending(prompt);
     setLive([]);
     setTurnStats(null);
@@ -175,6 +176,7 @@ export function ChatsRoute() {
                 messages={session.data?.messages ?? []}
                 live={live}
                 pricing={config.data?.pricing}
+                onFollowup={pending ? undefined : (text) => void send(text)}
               />
             ) : (
               <Empty />

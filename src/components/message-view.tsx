@@ -125,6 +125,29 @@ function Reasoning({ children, defaultOpen }: { children: string; defaultOpen?: 
 }
 
 /** The quiet footnote under a finished turn: throughput, latency, effort. */
+/**
+ * Suggested next questions, under the reply that prompted them.
+ *
+ * Only the last message gets them. Chips further up the transcript are answers to questions
+ * already moved past, and a column of them turns the chat into a menu.
+ */
+function Followups({ items, onPick }: { items: string[]; onPick: (text: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5 pt-0.5">
+      {items.map((item) => (
+        <button
+          key={item}
+          type="button"
+          onClick={() => onPick(item)}
+          className="rounded-full border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          {item}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Stats({ stats, pricing }: { stats: TurnStats; pricing?: LlmConfig["pricing"] }) {
   return (
     <p
@@ -141,10 +164,12 @@ export function MessageView({
   messages,
   live,
   pricing,
+  onFollowup,
 }: {
   messages: StoredMessage[];
   live: LivePart[];
   pricing?: LlmConfig["pricing"];
+  onFollowup?: (text: string) => void;
 }) {
   const results = new Map<string, { content: string; isError: boolean }>();
   for (const item of messages) {
@@ -191,6 +216,9 @@ export function MessageView({
               );
             })}
             {item.stats ? <Stats stats={item.stats} pricing={pricing} /> : null}
+            {item.followups?.length && onFollowup && index === messages.length - 1 ? (
+              <Followups items={item.followups} onPick={onFollowup} />
+            ) : null}
           </div>
         );
       })}

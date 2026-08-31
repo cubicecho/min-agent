@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clean, estimateTokens, parseJson } from "../server/side-tasks.ts";
+import { clean, estimateTokens, listLines, parseJson } from "../server/side-tasks.ts";
 
 describe("clean", () => {
   it("strips the decoration models put around a short answer", () => {
@@ -45,5 +45,25 @@ describe("estimateTokens", () => {
     expect(estimateTokens("")).toBe(0);
     expect(estimateTokens("abcd")).toBe(1);
     expect(estimateTokens("a".repeat(4000))).toBe(1000);
+  });
+});
+
+describe("listLines", () => {
+  it("strips the bullets and quotes a model decorates a list with", () => {
+    const text = `1. "How do I update statistics?"\n- What is selectivity?\n* Can I force an index scan?`;
+    expect(listLines(text, 3, 80)).toEqual([
+      "How do I update statistics?",
+      "What is selectivity?",
+      "Can I force an index scan?",
+    ]);
+  });
+
+  it("drops blank lines and anything too long to read at a glance", () => {
+    const text = `Short one\n\n${"x".repeat(90)}\nAlso short`;
+    expect(listLines(text, 5, 80)).toEqual(["Short one", "Also short"]);
+  });
+
+  it("keeps at most the requested number", () => {
+    expect(listLines("a\nb\nc\nd", 2, 80)).toEqual(["a", "b"]);
   });
 });

@@ -56,6 +56,12 @@ export const MODEL_TASKS = [
     hint: "Guesses which tools a request needs before the turn starts, so the chat model usually skips the load step. Only used with on-demand tool discovery.",
   },
   {
+    key: "followups",
+    label: "Follow-up suggestions",
+    empty: "off — no suggestions",
+    hint: "Proposes a few next questions under each reply in a chat, as chips you can click to send.",
+  },
+  {
     key: "runSummary",
     label: "Cron run summary",
     empty: "off — open the session to see what happened",
@@ -171,6 +177,8 @@ export type StoredMessage = OpenAI.ChatCompletionMessageParam & {
   reasoning_content?: string;
   /** Attached to the last assistant message of a turn. */
   stats?: TurnStats;
+  /** Questions worth asking next. Attached to the same message as `stats`. */
+  followups?: string[];
 };
 
 /** Sessions are stored on disk as one JSON file per session. */

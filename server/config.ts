@@ -40,11 +40,13 @@ toolDiscovery: ondemand
 # toolSelect — picks the tools a request needs before the turn starts, so on-demand
 #              loading costs no round trip. Only used when toolDiscovery is ondemand.
 # runSummary — condenses each cron run's answer to one line for the run history.
+# followups  — proposes the next few questions under a reply, as clickable chips.
 taskModels:
   title: ""
   compaction: ""
   toolSelect: ""
   runSummary: ""
+  followups: ""
 systemPrompt: |
   You are min-agent, a concise and careful assistant.
   You have access to tools from the user's connected MCP servers.

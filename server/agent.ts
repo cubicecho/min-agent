@@ -20,7 +20,7 @@ import {
 import { loadLlmConfig, resolveApiKey } from "./config.ts";
 import { type CatalogServer, mcp } from "./mcp.ts";
 import { isGrammarError, relaxTools, sanitizeTools } from "./schema-compat.ts";
-import { ask, clean, parseJson, tryAsk } from "./side-tasks.ts";
+import { ask, clean, listLines, parseJson, tryAsk } from "./side-tasks.ts";
 import { saveSession } from "./store.ts";
 import {
   carryOver,
@@ -186,6 +186,38 @@ async function preselect(
   const chosen = preselection(parseJson<unknown>(reply), catalog);
   if (chosen.length) console.log(`[agent] preselected: ${chosen.join(", ")}`);
   return chosen;
+}
+
+/** Cap on suggestions offered, and on the length of one before it stops reading as a chip. */
+const MAX_FOLLOWUPS = 3;
+const MAX_FOLLOWUP_CHARS = 80;
+
+/**
+ * Three questions worth asking next, from the exchange that just happened.
+ *
+ * These are cheap to ignore and occasionally save a round of typing, so the bar is that they be
+ * *specific*: "what does the 0.16 async rewrite change for existing code" earns its place,
+ * "tell me more" does not. Anything too long to read at a glance is dropped rather than
+ * truncated — a chip that has to be squinted at is worse than one fewer chip.
+ */
+async function suggestFollowups(
+  config: LlmConfig,
+  model: string,
+  prompt: string,
+  reply: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const text = await ask(
+    config,
+    model,
+    `Below is a question and the answer it got. Suggest at most ${MAX_FOLLOWUPS} questions the ` +
+      "person might sensibly ask next. Each must be specific to what was actually said and " +
+      'answerable from here — no generic invitations like "tell me more". Write them as the ' +
+      "person would type them, under a dozen words each, one per line, nothing else.",
+    `Question:\n${prompt.slice(0, 2000)}\n\nAnswer:\n${reply.slice(0, 6000)}`,
+    { maxTokens: 200, signal },
+  );
+  return listLines(text, MAX_FOLLOWUPS, MAX_FOLLOWUP_CHARS);
 }
 
 /** Some servers stream chain-of-thought on a side channel. */
@@ -460,6 +492,22 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       await titling;
       saveSession(session);
       emit({ type: "stats", stats });
+
+      // After the answer, not before: it is on screen and being read by the time this runs, so
+      // the second it costs is spent where nobody is waiting on it. The chips are read back off
+      // the stored message, so they survive a reload without a second delivery path. Cron runs
+      // skip it — there is nobody there to click.
+      const followupModel = session.source === "chat" ? modelForTask(config, "followups") : "";
+      const body = typeof assistant.content === "string" ? assistant.content : "";
+      if (followupModel && body) {
+        const followups = await tryAsk("followups", () =>
+          suggestFollowups(config, followupModel, prompt, body, signal),
+        );
+        if (followups?.length) {
+          assistant.followups = followups;
+          saveSession(session);
+        }
+      }
       return stats;
     }
 

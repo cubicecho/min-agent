@@ -88,6 +88,18 @@ export const clean = (line: string) =>
     .trim();
 
 /**
+ * A list-shaped reply, one item per line, cleaned of the bullets and quotes models decorate
+ * them with. Overlong items are dropped rather than truncated — a suggestion that has to be
+ * squinted at is worse than one fewer suggestion.
+ */
+export const listLines = (text: string, max: number, maxChars: number) =>
+  text
+    .split("\n")
+    .map(clean)
+    .filter((line) => line.length > 0 && line.length <= maxChars)
+    .slice(0, max);
+
+/**
  * Models are asked for JSON and often answer with prose around it, or a fenced block. Pull out
  * the first array or object rather than failing the task over a wrapper.
  */

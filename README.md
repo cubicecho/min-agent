@@ -181,6 +181,7 @@ with one select per task; leaving one unset keeps the cheap non-LLM behaviour.
 | Context compaction | The oldest messages fold into a running summary | A long session eventually overflows |
 | Tool preselection | A small model picks the turn's tools up front | The chat model loads its own, one round trip in |
 | Cron run summary | Each run's history entry says what it found | You open the session to find out |
+| Follow-up suggestions | Three clickable next questions under a reply | Nothing under the reply |
 
 Titling runs *alongside* the turn, not before it, so it never delays the first token — the
 truncated line goes up immediately and is replaced when the title lands. A failure is swallowed:
@@ -196,6 +197,26 @@ the unknown fields gets one retry without them, and min-agent stops sending them
 
 Adding a task is a line in `MODEL_TASKS` in `shared/types.ts` and a read of `modelForTask()`;
 `taskModels` is an open record, so no config migration is needed.
+
+### Follow-up suggestions
+
+Set a model for **Follow-up suggestions** and each reply in a chat gets up to three chips under
+it — questions worth asking next, clicking one sends it:
+
+    How do I update statistics if the planner chooses poorly?
+    What exactly is index selectivity and how is it calculated?
+    Can I force Postgres to use an index scan manually?
+
+The bar is that they be *specific*. A suggestion has to be answerable from where the conversation
+already is; "tell me more" is asked for explicitly and rejected. Anything longer than 80
+characters is dropped rather than truncated, on the grounds that a chip you have to squint at is
+worse than one fewer chip.
+
+They are generated after the reply has streamed, not before, so the second or so they cost is
+spent while the answer is being read — but it *is* a second, and the turn is not finished until
+they land. Only the newest message shows them: chips further up the transcript answer questions
+already moved past, and a column of them turns a chat into a menu. Cron sessions skip the task
+entirely, since nobody is there to click.
 
 ### Cron run summaries
 
