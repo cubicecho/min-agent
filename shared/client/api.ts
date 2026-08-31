@@ -19,20 +19,19 @@ import {
   type UpdateSettingInput,
 } from "../gql/graphql.ts";
 import { toStored } from "../messages.ts";
-import {
-  type Compaction,
-  type LlmConfig,
-  type LlmConfigView,
-  llmConfigSchema,
-  type McpServerConfig,
-  type McpServerState,
-  type ModelInfo,
-  type Session,
-  type SessionSummary,
-  type StreamEvent,
-  type TokenUsage,
-  type ToolCall,
-  type TurnStats,
+import type {
+  Compaction,
+  LlmConfig,
+  LlmConfigView,
+  McpServerConfig,
+  McpServerState,
+  ModelInfo,
+  Session,
+  SessionSummary,
+  StreamEvent,
+  TokenUsage,
+  ToolCall,
+  TurnStats,
 } from "../types.ts";
 import { createGqlClient } from "./gql.ts";
 
@@ -112,11 +111,20 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
 
   async function config(): Promise<LlmConfigView> {
     const { setting, hasApiKey } = await request(ConfigDocument);
-    // The row cannot be missing — `ensureSchema` writes it — but parsing rather than casting
-    // fills in a column added since this client was built, instead of handing the UI an
-    // `undefined` where it expects a number.
-    const { apiKey: _, ...rest } = llmConfigSchema.parse(setting ?? {});
-    return { ...rest, hasApiKey };
+    // The row cannot be missing — the migration seeds it — so say that rather than quietly
+    // handing the UI a settings object full of `undefined` on the day it is.
+    if (!setting) throw new Error("no settings row");
+
+    // Deliberately not re-validated. Every one of these columns is non-null in the schema and
+    // the query names them one at a time, so a field this client asks for either arrives
+    // typed or the whole request fails — there is no partial answer for a parse to repair.
+    // The two casts are the JSON scalars, which GraphQL cannot describe more precisely.
+    return {
+      ...setting,
+      taskModels: setting.taskModels as LlmConfig["taskModels"],
+      pricing: setting.pricing as LlmConfig["pricing"],
+      hasApiKey,
+    };
   }
 
   const api = {

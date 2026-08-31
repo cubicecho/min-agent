@@ -2,8 +2,8 @@ import "highlight.js/styles/github-dark.css";
 import { Check, Copy } from "lucide-react";
 import { memo, type ReactNode, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
+import { rehypeHighlight } from "./highlight.ts";
 
 /** Code fence with a copy button; `pre` is replaced wholesale so the button can sit on top. */
 function Pre({ children }: { children?: ReactNode }) {
