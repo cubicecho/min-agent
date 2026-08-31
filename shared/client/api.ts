@@ -111,7 +111,14 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
       const frames = buffer.split("\n\n");
       buffer = frames.pop() ?? "";
       for (const frame of frames) {
-        const data = frame.replace(/^data: /, "").trim();
+        // A frame carries any number of lines, and only the `data:` ones are ours — the
+        // server's keep-alives are comments, and feeding one to `JSON.parse` would end the
+        // turn on a colon.
+        const data = frame
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trim())
+          .join("");
         if (data) onEvent(JSON.parse(data) as StreamEvent);
       }
     }

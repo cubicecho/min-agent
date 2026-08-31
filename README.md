@@ -75,10 +75,17 @@ Created on first run, both git-ignored.
 ```
 config/llm.yaml     LLM connection + agent settings (Config view)
 config/mcp.yaml     MCP servers (MCP Servers view)
-data/sessions/*.json    one file per chat session
+data/sessions/*.json         one file per chat session
+data/sessions/*.meta.json    title, dates and token totals, for the session list
 ```
 
 Override the locations with `MIN_AGENT_CONFIG_DIR` / `MIN_AGENT_DATA_DIR`.
+
+The `.meta.json` beside each session is a cache, not a source: the sidebar is refetched after
+every turn, and reading it means listing sessions no longer parses every message of every
+conversation on disk to print a column of titles. Each one records the size and mtime of the
+transcript it describes, so a session file you edit by hand is noticed and its summary rebuilt on
+the next listing. Deleting the sidecars is safe — they come back.
 
 Editing the YAML by hand is supported and is often faster than the UI — the server re-reads on
 each request. Note that saving from the UI rewrites the file and drops your comments.
@@ -313,6 +320,24 @@ reject `stream_options` are detected once and the token-derived stats are quietl
 Cost is off by default, because a local model has none. Fill in **Config → Pricing** (dollars per
 million input and output tokens) and the header total grows a `· $0.04`, with a finer per-turn
 figure (`$0.0055`) in the footnote.
+
+### What a turn does not make you wait for
+
+Tool calls a model asks for together run together. They arrive in one round trip and do not
+depend on each other, so the round trip costs the slowest of them rather than the sum, and a
+result is shown the moment it lands. What is *stored* stays in call order, so the transcript
+still reads the way the model wrote it. Two identical calls in one turn share a single MCP round
+trip, and a call that failed is not remembered as an answer — a retry is a real retry.
+
+Follow-up chips are written after the answer by a second, smaller model. The turn now sends
+`done` as soon as the reply is complete and keeps the stream open only for the second the chips
+take, so the composer unlocks with the answer instead of a beat later. A stream that idles longer
+than 15 seconds — a slow tool, a model still thinking — sends a comment frame, which clients skip,
+so nothing between here and the browser mistakes a working turn for a dead connection.
+
+Stopping a turn keeps what it had already said. The assistant message used to be appended only
+once the stream ended, so pressing stop left the reply on screen and nothing in the transcript;
+the part that streamed is now saved before the abort is passed on.
 
 ## Android, Windows and web apps
 

@@ -207,4 +207,8 @@ export type StreamEvent =
   | { type: "title"; title: string }
   | { type: "stats"; stats: TurnStats }
   | { type: "done" }
+  // Follow-up chips are written after `done`, so a turn that produces them keeps the stream
+  // open a moment past the answer. A client that ignores this event still gets them on the
+  // next read of the session.
+  | { type: "followups"; items: string[] }
   | { type: "error"; message: string };

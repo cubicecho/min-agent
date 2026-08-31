@@ -345,8 +345,10 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   let iterations = 0;
   let lastRoundTrip = emptyUsage();
   // Identical call -> identical result. Replaying it from here ends the repeat loops a model
-  // falls into when a tool disappoints it, without spending another MCP round trip.
-  const answered = new Map<string, string>();
+  // falls into when a tool disappoints it, without spending another MCP round trip. What is
+  // stored is the in-flight promise rather than the settled string, so two identical calls
+  // arriving together in one round trip share a single MCP call instead of racing each other.
+  const answered = new Map<string, Promise<string>>();
 
   for (let iteration = 0; iteration < config.maxToolIterations; iteration++) {
     // With a preselection in hand the first step gets the shortlist and nothing else — no
@@ -404,36 +406,52 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     let reasoning = "";
     const calls = new Map<number, { id: string; name: string; args: string }>();
 
-    for await (const chunk of stream) {
-      if (chunk.usage) {
-        turnUsage.promptTokens += chunk.usage.prompt_tokens ?? 0;
-        turnUsage.completionTokens += chunk.usage.completion_tokens ?? 0;
-        turnUsage.totalTokens += chunk.usage.total_tokens ?? 0;
-      }
+    try {
+      for await (const chunk of stream) {
+        if (chunk.usage) {
+          turnUsage.promptTokens += chunk.usage.prompt_tokens ?? 0;
+          turnUsage.completionTokens += chunk.usage.completion_tokens ?? 0;
+          turnUsage.totalTokens += chunk.usage.total_tokens ?? 0;
+        }
 
-      const delta = chunk.choices[0]?.delta as Delta | undefined;
-      if (!delta) continue;
+        const delta = chunk.choices[0]?.delta as Delta | undefined;
+        if (!delta) continue;
 
-      const thought = delta.reasoning_content ?? delta.reasoning;
-      if (thought || delta.content) {
-        if (!firstTokenAt) firstTokenAt = Date.now();
-        lastTokenAt = Date.now();
+        const thought = delta.reasoning_content ?? delta.reasoning;
+        if (thought || delta.content) {
+          if (!firstTokenAt) firstTokenAt = Date.now();
+          lastTokenAt = Date.now();
+        }
+        if (thought) {
+          reasoning += thought;
+          emit({ type: "reasoning_delta", text: thought });
+        }
+        if (delta.content) {
+          text += delta.content;
+          emit({ type: "text_delta", text: delta.content });
+        }
+        for (const call of delta.tool_calls ?? []) {
+          const current = calls.get(call.index) ?? { id: "", name: "", args: "" };
+          if (call.id) current.id = call.id;
+          if (call.function?.name) current.name += call.function.name;
+          if (call.function?.arguments) current.args += call.function.arguments;
+          calls.set(call.index, current);
+        }
       }
-      if (thought) {
-        reasoning += thought;
-        emit({ type: "reasoning_delta", text: thought });
+    } catch (error) {
+      // Stopping a turn used to throw away everything it had already said: the assistant
+      // message is only appended once the stream ends, so an abort left the reply on screen
+      // and nothing in the transcript. Keep the part that streamed, then let the error
+      // through — the route stays quiet about a turn its reader ended.
+      if (signal?.aborted && (text || reasoning)) {
+        session.messages.push({
+          role: "assistant",
+          content: text || null,
+          ...(reasoning ? { reasoning_content: reasoning } : {}),
+        });
+        saveSession(session);
       }
-      if (delta.content) {
-        text += delta.content;
-        emit({ type: "text_delta", text: delta.content });
-      }
-      for (const call of delta.tool_calls ?? []) {
-        const current = calls.get(call.index) ?? { id: "", name: "", args: "" };
-        if (call.id) current.id = call.id;
-        if (call.function?.name) current.name += call.function.name;
-        if (call.function?.arguments) current.args += call.function.arguments;
-        calls.set(call.index, current);
-      }
+      throw error;
     }
 
     lastRoundTrip = {
@@ -492,10 +510,15 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       await titling;
       saveSession(session);
       emit({ type: "stats", stats });
+      // The turn is over at this point and the reader should not be held by what comes after
+      // it, so `done` — the composer's cue to unlock — goes out here rather than once the
+      // route returns. The stream stays open a moment longer only so late chips have a way
+      // home.
+      emit({ type: "done" });
 
       // After the answer, not before: it is on screen and being read by the time this runs, so
       // the second it costs is spent where nobody is waiting on it. The chips are read back off
-      // the stored message, so they survive a reload without a second delivery path.
+      // the stored message too, so they survive a reload without a second delivery path.
       const followupModel = modelForTask(config, "followups");
       const body = typeof assistant.content === "string" ? assistant.content : "";
       if (followupModel && body) {
@@ -505,45 +528,58 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         if (followups?.length) {
           assistant.followups = followups;
           saveSession(session);
+          emit({ type: "followups", items: followups });
         }
       }
       return stats;
     }
 
-    for (const call of roundTripCalls) {
-      emit({ type: "tool_use", id: call.id, name: call.name, input: call.args });
-      let content: string;
-      let isError = false;
-      try {
-        const args = parseArgs(call.args);
-        if (call.name === LOAD_TOOLS) {
-          const resolved = expandNames(requestedNames(args), catalog);
-          for (const name of resolved.matched) loaded.add(name);
-          content = loadResult(resolved, catalog);
-          isError = resolved.matched.length === 0;
-        } else {
-          // A model that skips `load_tools` and calls a catalogued tool straight from its
-          // name is right about what it wants; load it and run it rather than erroring.
-          if (onDemand && !loaded.has(call.name) && inCatalog(catalog, call.name))
-            loaded.add(call.name);
-          used.add(call.name);
-
-          const key = `${call.name}\u0000${call.args}`;
-          const previous = answered.get(key);
-          if (previous === undefined) {
-            content = await mcp.call(call.name, args);
-            answered.set(key, content);
+    // The model asked for these together and they do not depend on each other, so they run
+    // together: a round trip now costs the slowest call rather than the sum of all of them.
+    // Results are emitted the moment each lands, but appended to the transcript in call order,
+    // so what is stored still reads the way the model wrote it.
+    const outcomes = await Promise.all(
+      roundTripCalls.map(async (call) => {
+        emit({ type: "tool_use", id: call.id, name: call.name, input: call.args });
+        let content: string;
+        let isError = false;
+        try {
+          const args = parseArgs(call.args);
+          if (call.name === LOAD_TOOLS) {
+            const resolved = expandNames(requestedNames(args), catalog);
+            for (const name of resolved.matched) loaded.add(name);
+            content = loadResult(resolved, catalog);
+            isError = resolved.matched.length === 0;
           } else {
-            content = `${previous}\n\n(Identical call already made this turn; the result is unchanged. Use it rather than calling again.)`;
+            // A model that skips `load_tools` and calls a catalogued tool straight from its
+            // name is right about what it wants; load it and run it rather than erroring.
+            if (onDemand && !loaded.has(call.name) && inCatalog(catalog, call.name))
+              loaded.add(call.name);
+            used.add(call.name);
+
+            const key = `${call.name}\u0000${call.args}`;
+            const previous = answered.get(key);
+            if (previous === undefined) {
+              const inFlight = mcp.call(call.name, args);
+              answered.set(key, inFlight);
+              // A call that failed is not an answer. Forget it so a retry is a real retry.
+              inFlight.catch(() => answered.delete(key));
+              content = await inFlight;
+            } else {
+              content = `${await previous}\n\n(Identical call already made this turn; the result is unchanged. Use it rather than calling again.)`;
+            }
           }
+        } catch (error) {
+          content = error instanceof Error ? error.message : String(error);
+          isError = true;
         }
-      } catch (error) {
-        content = error instanceof Error ? error.message : String(error);
-        isError = true;
-      }
-      emit({ type: "tool_result", toolUseId: call.id, content, isError });
-      session.messages.push({ role: "tool", tool_call_id: call.id, content });
-    }
+        emit({ type: "tool_result", toolUseId: call.id, content, isError });
+        return { id: call.id, content };
+      }),
+    );
+
+    for (const { id, content } of outcomes)
+      session.messages.push({ role: "tool", tool_call_id: id, content });
     saveSession(session);
   }
 

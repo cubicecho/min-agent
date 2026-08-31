@@ -94,12 +94,18 @@ api.post("/sessions/:id/messages", async (req, res) => {
   });
 
   const send = (event: StreamEvent) => res.write(`data: ${JSON.stringify(event)}\n\n`);
+  // A quiet stretch — a long tool call, a model still thinking — is indistinguishable from a
+  // dead connection to anything sitting between here and the reader. A comment frame keeps it
+  // obviously alive; clients skip anything that is not a `data:` line.
+  const heartbeat = setInterval(() => res.write(": keep-alive\n\n"), 15_000);
   const controller = new AbortController();
   // Watch `res`, not `req`: since Node 16 an IncomingMessage emits "close" as soon as its body
   // has been read, which would abort the turn before the model ever replies.
   res.on("close", () => controller.abort());
 
   try {
+    // `done` is sent by the turn itself, as soon as the answer is complete — the stream can
+    // outlive it by the second follow-up chips take to write.
     await runTurn({
       session,
       prompt: body.data.prompt,
@@ -107,10 +113,10 @@ api.post("/sessions/:id/messages", async (req, res) => {
       onEvent: send,
       signal: controller.signal,
     });
-    send({ type: "done" });
   } catch (error) {
     if (!controller.signal.aborted) send({ type: "error", message: message(error) });
   } finally {
+    clearInterval(heartbeat);
     res.end();
   }
 });

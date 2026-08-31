@@ -71,6 +71,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const [startedAt, setStartedAt] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
+  const settled = useRef(false);
   const scroller = useRef<ScrollView>(null);
 
   const activeModel = model || session.data?.model || config.data?.model || "";
@@ -92,6 +93,25 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     scroller.current?.scrollToEnd({ animated: true });
   }, [session.data?.messages.length, live, pending]);
 
+  /**
+   * Puts the window back on the stored session and drops the optimistic bubbles — the refetch
+   * first, or the turn blinks out of the window for a frame while the stored session is on its
+   * way back.
+   *
+   * This runs on `done` rather than on the end of the stream: a turn that writes follow-up
+   * chips holds its stream open for the second they take, and the composer has no business
+   * waiting on that. Whichever arrives first settles the turn; the other is a no-op.
+   */
+  async function settle(id: string) {
+    if (settled.current) return;
+    settled.current = true;
+    await queryClient.invalidateQueries({ queryKey: ["session", id] });
+    await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    setPending(null);
+    setLive([]);
+    setTurnStats(null);
+  }
+
   async function send(text?: string) {
     const prompt = (text ?? draft).trim();
     if (!prompt || pending) return;
@@ -103,6 +123,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
       setCreated(id);
       await queryClient.invalidateQueries({ queryKey: ["sessions"] });
     }
+    // Narrowed once, for the callbacks below: `id` is a `let` and they outlive this line.
+    const turnId = id;
 
     // A chip sends its own text; anything half-typed in the box is left alone.
     if (!text) setDraft("");
@@ -111,11 +133,12 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     setTurnStats(null);
     setFailure(null);
     setStartedAt(Date.now());
+    settled.current = false;
     abort.current = new AbortController();
 
     try {
       await streamTurn({
-        sessionId: id,
+        sessionId: turnId,
         prompt,
         model: activeModel,
         signal: abort.current.signal,
@@ -123,20 +146,21 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
           setLive((parts) => applyEvent(parts, event));
           if (event.type === "stats") setTurnStats(event.stats);
           if (event.type === "error") setFailure(event.message);
+          if (event.type === "done") void settle(turnId);
+          // Chips are written to the session after the answer; read them back from there
+          // rather than growing a second path for the same data.
+          if (event.type === "followups")
+            void queryClient.invalidateQueries({ queryKey: ["session", turnId] });
         },
       });
     } catch (error) {
       if (!abort.current.signal.aborted) setFailure((error as Error).message);
     } finally {
       abort.current = null;
-      // Refetch *before* dropping the optimistic bubbles, or the turn blinks out of the
-      // window for a frame while the stored session is on its way back.
-      await queryClient.invalidateQueries({ queryKey: ["session", id] });
-      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      setPending(null);
-      setLive([]);
-      setTurnStats(null);
-      if (!sessionId) router.replace(`/chat/${id}`);
+      await settle(turnId);
+      // The address bar catches up once the stream is really over, not on `done`: moving the
+      // route mid-stream would remount this pane and drop what is still arriving on it.
+      if (!sessionId) router.replace(`/chat/${turnId}`);
     }
   }
 
