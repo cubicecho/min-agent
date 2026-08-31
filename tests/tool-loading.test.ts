@@ -8,6 +8,8 @@ import {
   loadResult,
   MAX_CARRIED,
   MAX_PER_LOAD,
+  preselectInput,
+  preselection,
   requestedNames,
 } from "../server/tool-loading.ts";
 
@@ -32,6 +34,16 @@ describe("catalogPrompt", () => {
 
   it("is empty when nothing is connected", () => {
     expect(catalogPrompt([])).toBe("");
+  });
+
+  it("marks loaded tools in place, without moving or dropping them", () => {
+    const prompt = catalogPrompt(catalog, new Set(["router__fs__read_file"]));
+    expect(prompt).toContain("router__fs__read_file (loaded)");
+    expect(prompt).toContain("router__fs__write_file\n");
+    expect(prompt).not.toContain("router__fs__write_file (loaded)");
+    const names = catalog[0].tools.map((tool) => tool.name);
+    const positions = names.map((name) => prompt.indexOf(name));
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
   });
 });
 
@@ -145,5 +157,48 @@ describe("inCatalog", () => {
   it("recognises a tool the model called without loading it", () => {
     expect(inCatalog(catalog, "router__web__search")).toBe(true);
     expect(inCatalog(catalog, "router__web__browse")).toBe(false);
+  });
+});
+
+describe("preselection", () => {
+  it("resolves names the way load_tools does, bare names included", () => {
+    expect(preselection(["router__fs__read_file", "search"], catalog)).toEqual([
+      "router__fs__read_file",
+      "router__web__search",
+    ]);
+  });
+
+  it("drops names that are not in the catalogue rather than failing", () => {
+    expect(preselection(["router__fs__read_file", "not_a_tool"], catalog)).toEqual([
+      "router__fs__read_file",
+    ]);
+  });
+
+  it("returns nothing for a non-array, so a malformed reply just means no preselection", () => {
+    expect(preselection(undefined, catalog)).toEqual([]);
+    expect(preselection({ names: ["router__fs__read_file"] }, catalog)).toEqual([]);
+    expect(preselection(["", 7, null], catalog)).toEqual([]);
+  });
+
+  it("caps a greedy selection at MAX_PER_LOAD", () => {
+    const many: CatalogServer[] = [
+      {
+        id: "big",
+        label: "Big",
+        tools: Array.from({ length: MAX_PER_LOAD + 5 }, (_, i) => ({
+          name: `big__tool_${i}`,
+          description: "",
+        })),
+      },
+    ];
+    const asked = many[0].tools.map((tool) => tool.name);
+    expect(preselection(asked, many)).toHaveLength(MAX_PER_LOAD);
+  });
+
+  it("shows the picker the names and the request, but not load_tools instructions", () => {
+    const input = preselectInput(catalog, "read my notes file");
+    expect(input).toContain("router__fs__read_file");
+    expect(input).toContain("read my notes file");
+    expect(input).not.toContain("load_tools");
   });
 });

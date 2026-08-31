@@ -50,6 +50,12 @@ export const MODEL_TASKS = [
     hint: "Summarises the oldest messages once a session fills 75% of the context window, so it can keep going.",
   },
   {
+    key: "toolSelect",
+    label: "Tool preselection",
+    empty: "off — the model loads its own tools",
+    hint: "Guesses which tools a request needs before the turn starts, so the chat model usually skips the load step. Only used with on-demand tool discovery.",
+  },
+  {
     key: "title",
     label: "Session title",
     empty: "off — use the first message",

@@ -179,6 +179,7 @@ with one select per task; leaving one unset keeps the cheap non-LLM behaviour.
 | --- | --- | --- |
 | Session title | A model names the chat from its opening message | The first line is truncated |
 | Context compaction | The oldest messages fold into a running summary | A long session eventually overflows |
+| Tool preselection | A small model picks the turn's tools up front | The chat model loads its own, one round trip in |
 
 Titling runs *alongside* the turn, not before it, so it never delays the first token — the
 truncated line goes up immediately and is replaced when the title lands. A failure is swallowed:
@@ -194,6 +195,36 @@ the unknown fields gets one retry without them, and min-agent stops sending them
 
 Adding a task is a line in `MODEL_TASKS` in `shared/types.ts` and a read of `modelForTask()`;
 `taskModels` is an open record, so no config migration is needed.
+
+### Tool preselection
+
+On-demand loading costs a round trip. The model reads the catalogue, calls `load_tools`, gets the
+schemas, and only on the step after can it do the work — every turn, before anything useful
+happens. Set a model for **Tool preselection** and a small one reads the same catalogue first,
+names the tools the request needs, and the turn opens with them already in hand.
+
+The part that took measuring is what happens to the catalogue. Telling the model in the system
+prompt that a tool is already loaded does not work — it calls `load_tools` anyway, because that
+is what every previous turn looked like. Three framings were tried against a 67-tool router:
+
+| Catalogue at step 0 | What the model did |
+| --- | --- |
+| Loaded tools marked `(loaded)` in the listing | Loaded the marked tool again |
+| Loaded tools hoisted into their own section | Ignored them, worked through the siblings |
+| Loaded tools dropped from the listing | Loaded repeatedly — the name appeared to vanish |
+| No catalogue, no `load_tools`, shortlist only | Called the tool |
+
+So preselection does not decorate the catalogue, it *replaces* it — for one step. When the picker
+returns names, step 0 gets those tools and nothing else: no catalogue, no `load_tools`, no menu to
+shop from. The saving is structural rather than persuasive; the model cannot spend a round trip on
+loading because loading is not on offer.
+
+Everything comes back on step 1, so nothing is lost if the pick was wrong — the model gets the
+full catalogue and loads what it actually wanted, which is exactly where it would have been
+without preselection. A picker that returns `[]` (no tools needed) leaves the normal path alone.
+
+Preselected tools are subject to the same `MAX_PER_LOAD` cap as a `load_tools` call, and like any
+loaded tool they only carry into the next turn if the model actually called one.
 
 ### Context compaction
 

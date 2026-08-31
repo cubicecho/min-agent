@@ -41,20 +41,38 @@ export function loadToolsDefinition(): OpenAI.ChatCompletionTool {
   };
 }
 
-/** The catalogue block appended to the system prompt. Names only — descriptions arrive on load. */
-export function catalogPrompt(catalog: CatalogServer[]): string {
+/** The catalogue as a plain grouped listing of names, loaded ones marked. */
+export function catalogList(catalog: CatalogServer[], loaded?: ReadonlySet<string>): string {
+  return catalog
+    .map((server) => {
+      const names = server.tools.map(
+        (tool) => `  ${tool.name}${loaded?.has(tool.name) ? " (loaded)" : ""}`,
+      );
+      return `${server.label}:\n${names.join("\n")}`;
+    })
+    .join("\n");
+}
+
+/**
+ * The catalogue block appended to the system prompt. Names only — descriptions arrive on load.
+ *
+ * Loaded tools stay in the list, marked. Removing them reads as the tool having vanished the
+ * moment it was loaded, and the model loads again to get it back; hoisting them into a separate
+ * "already loaded" section splits a server's tools apart, and the model picks a sibling from
+ * the longer list instead. Both were measured, and both were worse than leaving the listing
+ * alone.
+ */
+export function catalogPrompt(catalog: CatalogServer[], loaded?: ReadonlySet<string>): string {
   if (!catalog.length) return "";
-  const groups = catalog.map(
-    (server) => `${server.label}:\n${server.tools.map((tool) => `  ${tool.name}`).join("\n")}`,
-  );
   return [
     "# Tool catalogue",
     "",
     "These tools exist but are not loaded. Call `load_tools` with the names you need, then call",
-    "them on the step after. Names are descriptive; load a tool to see its parameters. Do not",
-    "load tools the task does not need, and do not mention this mechanism to the user.",
+    "them on the step after. Names are descriptive; load a tool to see its parameters. A name",
+    "marked `(loaded)` is already in your tool list — call it directly, do not load it again. Do",
+    "not load tools the task does not need, and do not mention this mechanism to the user.",
     "",
-    ...groups,
+    catalogList(catalog, loaded),
   ].join("\n");
 }
 
@@ -156,4 +174,32 @@ export function requestedNames(args: Record<string, unknown>): string[] {
   if (typeof value === "string") return [value];
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
   return [];
+}
+
+/**
+ * Tool preselection.
+ *
+ * On-demand loading otherwise costs a round trip every turn: the chat model reads the
+ * catalogue, calls `load_tools`, and only then can do the work. A small model reading the same
+ * catalogue usually names the right tools outright, so the chat model finds them already
+ * loaded and answers in one pass.
+ *
+ * A wrong guess is cheap — an unused definition is a few hundred tokens for a single turn, and
+ * only tools the model actually *calls* carry over — but a broad guess is not, so the same
+ * `MAX_PER_LOAD` cap applies here as to a `load_tools` call.
+ */
+export const PRESELECT_SYSTEM =
+  "You choose tools. Below is a catalogue of tool names, then a user's request. Reply with a " +
+  "JSON array of the names the request is likely to need — exact names from the catalogue, at " +
+  `most ${MAX_PER_LOAD}, and as few as could do the job. Reply with \`[]\` if the request can ` +
+  "be answered without tools. Reply with the array alone — no prose, no explanation.";
+
+export const preselectInput = (catalog: CatalogServer[], prompt: string) =>
+  `# Tool catalogue\n\n${catalogList(catalog)}\n\n# Request\n\n${prompt.slice(0, 2000)}`;
+
+/** Resolves a preselection against the catalogue: unknown names dropped, count capped. */
+export function preselection(names: unknown, catalog: CatalogServer[]): string[] {
+  if (!Array.isArray(names)) return [];
+  const wanted = names.filter((name): name is string => typeof name === "string");
+  return expandNames(wanted, catalog).matched.slice(0, MAX_PER_LOAD);
 }

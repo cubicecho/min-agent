@@ -18,9 +18,9 @@ import {
   transcriptFor,
 } from "./compaction.ts";
 import { loadLlmConfig, resolveApiKey } from "./config.ts";
-import { mcp } from "./mcp.ts";
+import { type CatalogServer, mcp } from "./mcp.ts";
 import { isGrammarError, relaxTools, sanitizeTools } from "./schema-compat.ts";
-import { ask, clean, tryAsk } from "./side-tasks.ts";
+import { ask, clean, parseJson, tryAsk } from "./side-tasks.ts";
 import { saveSession } from "./store.ts";
 import {
   carryOver,
@@ -30,6 +30,9 @@ import {
   LOAD_TOOLS,
   loadResult,
   loadToolsDefinition,
+  PRESELECT_SYSTEM,
+  preselectInput,
+  preselection,
   requestedNames,
 } from "./tool-loading.ts";
 
@@ -158,6 +161,33 @@ async function generateTitle(
   return title.length > 60 ? `${title.slice(0, 57)}…` : title;
 }
 
+/**
+ * Guesses the tools this request will need, before the turn starts.
+ *
+ * On-demand loading otherwise spends a round trip of the chat model on reading the catalogue
+ * and calling `load_tools`. A small model reading the same catalogue usually picks the right
+ * names, and then the chat model opens the turn with them already in hand.
+ *
+ * Guessing wrong is cheap: an unused definition costs a few hundred tokens for one turn, does
+ * not carry over, and the model can still load what it actually wanted. So this never blocks
+ * or overrides the model's own loading — it only tries to make it unnecessary.
+ */
+async function preselect(
+  config: LlmConfig,
+  model: string,
+  catalog: CatalogServer[],
+  prompt: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const reply = await ask(config, model, PRESELECT_SYSTEM, preselectInput(catalog, prompt), {
+    maxTokens: 256,
+    signal,
+  });
+  const chosen = preselection(parseJson<unknown>(reply), catalog);
+  if (chosen.length) console.log(`[agent] preselected: ${chosen.join(", ")}`);
+  return chosen;
+}
+
 /** Some servers stream chain-of-thought on a side channel. */
 type Delta = OpenAI.ChatCompletionChunk.Choice.Delta & {
   reasoning_content?: string | null;
@@ -228,21 +258,31 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // until it is larger than eager mode's — which is the situation on-demand loading exists to
   // avoid, and which sends the model wandering into unrelated tools.
   const used = new Set<string>();
-  const systemPrompt = onDemand
-    ? `${config.systemPrompt}\n\n${catalogPrompt(catalog)}`
-    : config.systemPrompt;
+  // Recomputed each iteration: `loaded` grows as the turn runs, and the catalogue has to stop
+  // advertising a tool the moment the model can actually call it.
+  const systemPromptFor = () =>
+    onDemand
+      ? `${config.systemPrompt}\n\n${catalogPrompt(catalog, loaded)}`.trim()
+      : config.systemPrompt;
 
-  // Compaction happens before the user's message goes on, so the summary covers settled history
-  // and the question that prompted it stays verbatim.
-  const compactionModel = modelForTask(config, "compaction");
-  if (compactionModel && contextLimit) {
-    await tryAsk("compaction", () =>
-      compact(session, config, compactionModel, contextLimit, signal),
-    );
-  }
+  // Two small-model calls have to land before the first token is asked for, and neither depends
+  // on the other, so they overlap. Compaction goes before the user's message is appended, so the
+  // summary covers settled history and the question that prompted it stays verbatim.
+  const window = contextLimit ?? 0;
+  const compactionModel = window ? modelForTask(config, "compaction") : "";
+  const preselectModel = onDemand ? modelForTask(config, "toolSelect") : "";
+  const [, preselected = []] = await Promise.all([
+    compactionModel
+      ? tryAsk("compaction", () => compact(session, config, compactionModel, window, signal))
+      : undefined,
+    preselectModel
+      ? tryAsk("preselect", () => preselect(config, preselectModel, catalog, prompt, signal))
+      : undefined,
+  ]);
 
   session.model = chosenModel;
   session.messages.push({ role: "user", content: prompt });
+  for (const name of preselected) loaded.add(name);
 
   // The truncated first line goes up immediately so the sidebar is never blank, and a model
   // titles it properly in the background if one is configured for the job.
@@ -277,8 +317,18 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   const answered = new Map<string, string>();
 
   for (let iteration = 0; iteration < config.maxToolIterations; iteration++) {
+    // With a preselection in hand the first step gets the shortlist and nothing else — no
+    // catalogue, no `load_tools`. Left with the menu in front of it the model shops: it reloads
+    // what it already has, or picks a sibling of the right tool and works its way through the
+    // rest. Taking the menu away for one step removes the choice, and everything comes back on
+    // the step after, so it can still reach for anything it turns out to need.
+    const routed = preselected.length > 0 && iteration === 0;
     const declared = sanitizeTools(
-      onDemand ? [loadToolsDefinition(), ...mcp.tools([...loaded])] : mcp.tools(),
+      routed
+        ? mcp.tools(preselected)
+        : onDemand
+          ? [loadToolsDefinition(), ...mcp.tools([...loaded])]
+          : mcp.tools(),
     );
 
     const open = (withUsage: boolean, strict: boolean) => {
@@ -290,7 +340,10 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
           temperature: config.temperature,
           stream: true,
           ...(withUsage ? { stream_options: { include_usage: true } } : {}),
-          messages: [{ role: "system", content: systemPrompt }, ...forApi(session)],
+          messages: [
+            { role: "system", content: routed ? config.systemPrompt : systemPromptFor() },
+            ...forApi(session),
+          ],
           ...(tools.length ? { tools } : {}),
         },
         { signal },

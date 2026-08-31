@@ -37,9 +37,12 @@ toolDiscovery: ondemand
 # title      — names a new chat from its opening message. Empty truncates the first line.
 # compaction — folds the oldest messages into a summary once a session fills 75% of
 #              the context window. Empty lets long sessions eventually overflow.
+# toolSelect — picks the tools a request needs before the turn starts, so on-demand
+#              loading costs no round trip. Only used when toolDiscovery is ondemand.
 taskModels:
   title: ""
   compaction: ""
+  toolSelect: ""
 systemPrompt: |
   You are min-agent, a concise and careful assistant.
   You have access to tools from the user's connected MCP servers.

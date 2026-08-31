@@ -70,10 +70,7 @@ export async function ask(
  * A side task is never worth failing the work it supports. Callers that can carry on without
  * an answer use this and get `undefined` instead of an exception.
  */
-export async function tryAsk(
-  label: string,
-  run: () => Promise<string>,
-): Promise<string | undefined> {
+export async function tryAsk<T>(label: string, run: () => Promise<T>): Promise<T | undefined> {
   try {
     return await run();
   } catch (error) {
