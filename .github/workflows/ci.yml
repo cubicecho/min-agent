@@ -42,7 +42,13 @@ jobs:
         with:
           node-version: '26'
           cache: 'npm'
-          cache-dependency-path: mobile/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+
+      # The mobile tsconfig typechecks shared/, which imports zod and openai from the
+      # root install — so the mobile install alone leaves those unresolvable.
+      - run: npm ci
 
       - run: npm ci --prefix mobile
 
