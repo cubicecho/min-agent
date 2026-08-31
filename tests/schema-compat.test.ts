@@ -68,6 +68,22 @@ describe("sanitizeTools", () => {
     expect(params(sanitizeTools([tool(undefined)]))).toEqual({ type: "object", properties: {} });
   });
 
+  it("drops a pattern using lookaround, which no grammar can express", () => {
+    const out = params(
+      sanitizeTools([
+        tool({ properties: { to: { type: "string", pattern: "^(?!\\.)[a-z]+$", maxLength: 9 } } }),
+      ]),
+    );
+    expect(out.properties).toEqual({ to: { type: "string", maxLength: 9 } });
+  });
+
+  it("keeps a pattern a grammar can express", () => {
+    const out = params(
+      sanitizeTools([tool({ properties: { hex: { type: "string", pattern: "^#[0-9a-f]{6}$" } } })]),
+    );
+    expect(out.properties).toEqual({ hex: { type: "string", pattern: "^#[0-9a-f]{6}$" } });
+  });
+
   it("keeps nested descriptions and enums", () => {
     const schema = {
       type: "object",
@@ -101,6 +117,7 @@ describe("relaxTools", () => {
 describe("isGrammarError", () => {
   it.each([
     "HTTP 400: Unable to generate parser for this template",
+    "400 Failed to initialize samplers: failed to parse grammar",
     "json-schema-to-grammar: unsupported keyword",
     "Error parsing grammar: expecting name at",
     'JSON schema conversion failed: Unrecognized schema: "object"',

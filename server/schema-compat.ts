@@ -20,6 +20,9 @@ type Schema = Record<string, unknown>;
 const isObject = (value: unknown): value is Schema =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** Lookahead and lookbehind: `(?=`, `(?!`, `(?<=`, `(?<!`. */
+const LOOKAROUND = /\(\?<?[=!]/;
+
 const PRIMITIVES = new Set(["object", "string", "number", "integer", "boolean", "array", "null"]);
 const EMPTY_OBJECT = () => ({ type: "object", properties: {} });
 
@@ -78,6 +81,9 @@ function normalize(node: Schema): Schema {
 
   collapseNullableUnion(out);
 
+  // A grammar is context-free; lookaround is not expressible in one at all, so no converter
+  // can accept it. Dropping it costs one advisory constraint on one string field.
+  if (typeof out.pattern === "string" && LOOKAROUND.test(out.pattern)) delete out.pattern;
   // `{"type": "object"}` with no properties produces invalid GBNF.
   if (out.type === "object" && !isObject(out.properties)) out.properties = {};
   // Strict validators reject any sibling of `$ref`.
@@ -158,15 +164,21 @@ export function relaxTools(tools: OpenAI.ChatCompletionTool[]) {
  */
 const NO_USER_QUERY = "no user query found";
 
-/** Does this failure look like the server could not build a grammar from our tool schemas? */
+/**
+ * Does this failure look like the server could not build a grammar from our tool schemas?
+ *
+ * Every server words this differently — llama-server says "error parsing grammar", Lemonade
+ * says "Failed to initialize samplers: failed to parse grammar", others surface the converter
+ * by name. Since a grammar is only ever involved in constrained decoding, treat any mention of
+ * one as ours; the retry is cheap and latches after a single request.
+ */
 export function isGrammarError(message: string): boolean {
   const text = message.toLowerCase();
   if (text.includes(NO_USER_QUERY)) return false;
   return (
-    text.includes("error parsing grammar") ||
-    text.includes("json-schema-to-grammar") ||
-    text.includes("json schema conversion failed") ||
+    text.includes("grammar") ||
     text.includes("unrecognized schema") ||
+    text.includes("json schema conversion failed") ||
     (text.includes("unable to generate parser") && text.includes("template"))
   );
 }

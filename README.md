@@ -129,12 +129,21 @@ normalises them before every request:
 | `anyOf: [X, {"type": "null"}]` | `X` with `nullable: true` |
 | `default` beside a `$ref` | `default` dropped |
 | `allOf` / `anyOf` / `enum` / `not` at the top level | dropped |
+| a `pattern` using lookaround, e.g. `^(?!\\.)` | `pattern` dropped |
+
+Lookaround is the one rule worth calling out: a grammar is context-free, so `(?!...)` cannot be
+expressed in one *at all* — no converter will ever accept it. One such regex, on one property of
+one Gmail tool, is enough to fail every request in a 67-tool set. Dropping it costs a single
+advisory constraint on a single string field.
 
 If a request still comes back with a grammar failure, the run retries once with `pattern` and
-`format` stripped from every schema — the converter rejects escape classes like `\d` and most
-`format` values, and both only ever narrowed a string the tool re-validates anyway. The retry latches
-for the process, so it costs one failed request, not one per turn. Cloud providers accept everything
-here, so the fallback never fires against them.
+`format` stripped from every schema — both only ever narrowed a string the tool re-validates
+anyway. The retry latches for the process, so it costs one failed request, not one per turn. Cloud
+providers accept everything here, so the fallback never fires against them.
+
+Detection is deliberately loose, because every server words it differently — llama-server says
+`error parsing grammar`, Lemonade says `Failed to initialize samplers: failed to parse grammar`.
+A grammar is only ever involved in constrained decoding, so any mention of one counts.
 
 One error is deliberately *not* treated as a schema problem: Qwen templates raise
 `No user query found` when a transcript has no user turn, and some servers wrap it in the same
