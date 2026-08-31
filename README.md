@@ -383,6 +383,10 @@ path — which is exactly why this survived a working web export.
 1.30.1 is the newest version whose round trip is intact, and it satisfies `@expo/metro-config`'s
 `^1.30.1`. The pin is scoped to `react-native-css` so Tailwind keeps its own copy.
 
+The other deliberate version choice is TypeScript. SDK 57 expects `~6.0.3`; this app is on `^7.0.2`
+so it matches the repo root, and `expo.install.exclude` in `mobile/package.json` stops
+`expo-doctor` reporting the gap. Both exports and all 21 doctor checks pass on it.
+
 ### Pointing it at your server
 
 The browser build talks to whatever origin served it, so it needs no configuration. The Android
