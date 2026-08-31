@@ -1,4 +1,5 @@
 import { Feather } from "@react-native-vector-icons/feather";
+import { SETTINGS_STALE_TIME } from "@shared/client/queries.ts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DarkTheme, ThemeProvider } from "expo-router";
 import {
@@ -37,6 +38,10 @@ const navigationTheme = {
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
 });
+
+// Sessions have to stay fresh — the list is redrawn after every turn — but these two do not.
+queryClient.setQueryDefaults(["config"], { staleTime: SETTINGS_STALE_TIME });
+queryClient.setQueryDefaults(["models"], { staleTime: SETTINGS_STALE_TIME });
 
 type IconName = React.ComponentProps<typeof Feather>["name"];
 

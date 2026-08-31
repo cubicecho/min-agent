@@ -114,7 +114,8 @@ release still goes out to GHCR. A run of chores publishes nothing.
 - `shared/types.ts` — zod schemas shared by both sides; the API contract lives here.
 - `shared/client/` — everything both front ends run: `api.ts` (the typed client and the SSE
   reader), `live.ts` (streaming-event reducer), `use-live-parts.ts` (frame-batched streaming
-  state), `sessions.ts` (the session-list filter), `usage.ts` (token/cost formatting).
+  state), `sessions.ts` (the session-list filter), `queries.ts` (how long settings stay fresh),
+  `usage.ts` (token/cost formatting).
 - `tests/` — Vitest (`npm test`).
 
 ## Files on disk
@@ -129,6 +130,11 @@ data/sessions/*.meta.json    title, dates and token totals, for the session list
 ```
 
 Override the locations with `MIN_AGENT_CONFIG_DIR` / `MIN_AGENT_DATA_DIR`.
+
+`GET /api/models` is not a local read — it asks the configured provider to list its models — so
+both front ends hold it, and the connection settings beside it, for five minutes. Saving config
+invalidates them by hand, so the only thing this hides is `llm.yaml` edited underneath a running
+server, which a reload settles.
 
 The `.meta.json` beside each session is a cache, not a source: the sidebar is refetched after
 every turn, and reading it means listing sessions no longer parses every message of every
