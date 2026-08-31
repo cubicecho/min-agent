@@ -33,6 +33,10 @@ contextLimit: 0
 # eager    — send every MCP tool definition on every request (simple, costly)
 # ondemand — send a name-only catalogue and let the model load the schemas it needs
 toolDiscovery: ondemand
+# Side jobs that need not run on the chat model — set a small fast one instead.
+# title — names a new chat from its opening message. Empty truncates the first line.
+taskModels:
+  title: ""
 systemPrompt: |
   You are min-agent, a concise and careful assistant.
   You have access to tools from the user's connected MCP servers.

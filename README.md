@@ -169,6 +169,31 @@ One error is deliberately *not* treated as a schema problem: Qwen templates rais
 `No user query found` when a transcript has no user turn, and some servers wrap it in the same
 "unable to generate parser" wording. Stripping keywords would not fix it, so it propagates.
 
+## Task models
+
+Not every model call is a chat turn. Some are short, frequent, and latency-sensitive — exactly
+what a small fast model is good at. Config has a **Task models** block under the default model
+with one select per task; leaving one unset keeps the cheap non-LLM behaviour.
+
+| Task | Set | Unset |
+| --- | --- | --- |
+| Session title | A model names the chat from its opening message | The first line is truncated |
+
+Titling runs *alongside* the turn, not before it, so it never delays the first token — the
+truncated line goes up immediately and is replaced when the title lands. A failure is swallowed:
+the fallback title is already in place, and a name is not worth failing a turn over.
+
+One wrinkle worth knowing about, because it is silent. A reasoning model asked for a six-word
+title will spend its entire budget deliberating and return **empty content** — `finish_reason:
+"length"`, 512 completion tokens, nothing to show. So the title call asks for thinking off, via
+`reasoning_effort: "none"` and `chat_template_kwargs: {enable_thinking: false}` together, since
+servers disagree about which they take. On Qwen3.6-27B that is the difference between 18s of
+thinking for an empty string and 1.0s for `Python Subprocess Pipe Hang`. A server that rejects
+the unknown fields gets one retry without them, and min-agent stops sending them after that.
+
+Adding a task is a line in `MODEL_TASKS` in `shared/types.ts` and a read of `modelForTask()`;
+`taskModels` is an open record, so no config migration is needed.
+
 ## Turn statistics
 
 Every turn asks the server for `usage` (via `stream_options`) and times itself, so a finished

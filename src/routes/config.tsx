@@ -16,6 +16,10 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
+import { MODEL_TASKS } from "../../shared/types";
+
+/** Select needs a non-empty value, so "unset" gets a sentinel that never reaches the config. */
+const NO_TASK_MODEL = "__none__";
 
 type Draft = {
   baseUrl: string;
@@ -28,6 +32,7 @@ type Draft = {
   pricing: { inputPer1M: number; outputPer1M: number };
   contextLimit: number;
   toolDiscovery: "eager" | "ondemand";
+  taskModels: Record<string, string>;
 };
 
 export function ConfigRoute() {
@@ -126,6 +131,45 @@ export function ConfigRoute() {
                 first, then refresh.
               </p>
             )}
+          </div>
+
+          <div className="flex flex-col gap-3 border-t pt-4">
+            <div>
+              <Label>Task models</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Side jobs that need not run on the chat model. Each is short and frequent, so a
+                small fast model usually serves them better.
+              </p>
+            </div>
+            {MODEL_TASKS.map((task) => (
+              <div key={task.key} className="flex flex-col gap-1.5">
+                <Label htmlFor={`task-${task.key}`} className="text-sm font-normal">
+                  {task.label}
+                </Label>
+                <Select
+                  value={draft.taskModels[task.key] || NO_TASK_MODEL}
+                  onValueChange={(value) =>
+                    set("taskModels", {
+                      ...draft.taskModels,
+                      [task.key]: value === NO_TASK_MODEL ? "" : value,
+                    })
+                  }
+                >
+                  <SelectTrigger id={`task-${task.key}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_TASK_MODEL}>{task.empty}</SelectItem>
+                    {(models.data?.models ?? []).map((entry) => (
+                      <SelectItem key={entry.id} value={entry.id}>
+                        {entry.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{task.hint}</p>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>

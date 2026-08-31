@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { llmConfigSchema, modelForTask } from "../shared/types.ts";
 
 let dir: string;
 let config: typeof import("../server/config.ts");
@@ -43,5 +44,27 @@ describe("yaml config", () => {
     config.saveLlmConfig({ ...config.loadLlmConfig(), apiKey: "from-yaml" });
     expect(config.resolveApiKey()).toBe("from-yaml");
     delete process.env.OPENAI_API_KEY;
+  });
+});
+
+describe("taskModels", () => {
+  it("defaults to none configured", () => {
+    const config = llmConfigSchema.parse({});
+    expect(config.taskModels).toEqual({});
+    expect(modelForTask(config, "title")).toBe("");
+  });
+
+  it("returns the model set for a task", () => {
+    const config = llmConfigSchema.parse({ taskModels: { title: "small-model" } });
+    expect(modelForTask(config, "title")).toBe("small-model");
+  });
+
+  it("treats a blank or whitespace value as unset", () => {
+    expect(modelForTask(llmConfigSchema.parse({ taskModels: { title: "  " } }), "title")).toBe("");
+  });
+
+  it("keeps unknown task keys rather than rejecting the file", () => {
+    const config = llmConfigSchema.parse({ taskModels: { title: "a", future: "b" } });
+    expect(config.taskModels.future).toBe("b");
   });
 });

@@ -22,6 +22,12 @@ export const llmConfigSchema = z.object({
    * catalogue and lets the model pull in the schemas it needs, mid-turn.
    */
   toolDiscovery: z.enum(["eager", "ondemand"]).default("ondemand"),
+  /**
+   * Per-task model overrides, keyed by the entries in `MODEL_TASKS`. A missing or empty value
+   * means the task is off (or falls back to `model`, per the task). Kept as an open record so
+   * adding a task needs no config migration — unknown keys are simply ignored.
+   */
+  taskModels: z.record(z.string(), z.string()).default({}),
   /** Optional, for the cost readout. Leave at 0 for local models — cost is then hidden. */
   pricing: z
     .object({
@@ -31,6 +37,25 @@ export const llmConfigSchema = z.object({
     .default({ inputPer1M: 0, outputPer1M: 0 }),
 });
 export type LlmConfig = z.infer<typeof llmConfigSchema>;
+
+/**
+ * Jobs that are not the main chat turn and do not need the main chat model. Each is small,
+ * frequent, and latency-sensitive, which is exactly what a cheap model is good at.
+ */
+export const MODEL_TASKS = [
+  {
+    key: "title",
+    label: "Session title",
+    empty: "off — use the first message",
+    hint: "Names a new chat once, from its opening message. Left off, the first line is truncated instead.",
+  },
+] as const;
+
+export type ModelTask = (typeof MODEL_TASKS)[number]["key"];
+
+/** The model to use for a side task, or "" when it is not configured. */
+export const modelForTask = (config: LlmConfig, task: ModelTask) =>
+  config.taskModels?.[task]?.trim() || "";
 
 /** What the API hands the browser — never the key itself. */
 export type LlmConfigView = Omit<LlmConfig, "apiKey"> & { hasApiKey: boolean };

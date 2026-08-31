@@ -1,7 +1,9 @@
 import OpenAI from "openai";
 import {
   emptyUsage,
+  type LlmConfig,
   type ModelInfo,
+  modelForTask,
   type Session,
   type StoredMessage,
   type StreamEvent,
@@ -75,6 +77,72 @@ function titleFrom(text: string) {
   return line.length > 60 ? `${line.slice(0, 57)}…` : line || "New chat";
 }
 
+/** Reasoning models put their scratchpad in the reply; a title is the part after it. */
+const stripThinking = (text: string) => text.replace(/<think>[\s\S]*?<\/think>/gi, "");
+
+/**
+ * Reasoning models will happily spend a whole budget deliberating over a six-word title and
+ * return empty content, so the title call asks for thinking to be turned off. `reasoning_effort`
+ * is the OpenAI-compatible spelling and `chat_template_kwargs` the llama.cpp/vLLM one; sending
+ * both covers the servers min-agent talks to. A server that rejects the unknown fields gets one
+ * retry without them, and we stop sending them after that.
+ */
+const NO_THINKING = {
+  reasoning_effort: "none",
+  chat_template_kwargs: { enable_thinking: false },
+};
+let thinkingHintsSupported = true;
+
+/**
+ * Names a session from its opening message, using whichever model is configured for the task.
+ *
+ * Runs alongside the turn rather than before it, so it never delays the first token — a small
+ * model finishes long before the chat model is done answering. Any failure is swallowed: the
+ * truncated first line is already in place, and a title is not worth failing a turn over.
+ */
+async function generateTitle(
+  config: LlmConfig,
+  model: string,
+  prompt: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const ask = (hints: boolean) =>
+    getClient(config).chat.completions.create(
+      {
+        model,
+        max_tokens: 512,
+        temperature: 0.3,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You name conversations. Reply with a title of at most six words for a chat that " +
+              "opens with the message below. Reply with the title alone — no quotes, no trailing " +
+              "punctuation, no preamble.",
+          },
+          { role: "user", content: prompt.slice(0, 2000) },
+        ],
+        ...(hints ? NO_THINKING : {}),
+      } as OpenAI.ChatCompletionCreateParamsNonStreaming,
+      { signal },
+    );
+
+  let response: Awaited<ReturnType<typeof ask>>;
+  try {
+    response = await ask(thinkingHintsSupported);
+  } catch (error) {
+    if (!thinkingHintsSupported) throw error;
+    console.warn("[agent] server rejected the no-thinking hints; titling without them");
+    thinkingHintsSupported = false;
+    response = await ask(false);
+  }
+
+  const raw = stripThinking(response.choices[0]?.message?.content ?? "");
+  const line = raw.trim().split("\n").filter(Boolean).pop() ?? "";
+  const title = line.replace(/^["'`]|["'`.]+$/g, "").trim();
+  return title.length > 60 ? `${title.slice(0, 57)}…` : title;
+}
+
 /** Some servers stream chain-of-thought on a side channel. */
 type Delta = OpenAI.ChatCompletionChunk.Choice.Delta & {
   reasoning_content?: string | null;
@@ -143,9 +211,26 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
 
   session.model = chosenModel;
   session.messages.push({ role: "user", content: prompt });
+
+  // The truncated first line goes up immediately so the sidebar is never blank, and a model
+  // titles it properly in the background if one is configured for the job.
+  let titling: Promise<void> | undefined;
   if (session.title === "New chat") {
     session.title = titleFrom(prompt);
     emit({ type: "title", title: session.title });
+
+    const titleModel = modelForTask(config, "title");
+    if (titleModel) {
+      titling = generateTitle(config, titleModel, prompt, signal)
+        .then((title) => {
+          if (!title) return;
+          session.title = title;
+          emit({ type: "title", title });
+        })
+        .catch((error) => {
+          console.warn("[agent] could not title session:", (error as Error).message);
+        });
+    }
   }
   saveSession(session);
 
@@ -289,6 +374,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       };
       assistant.stats = stats;
       if (onDemand) session.loadedTools = carryOver(carried, used);
+      await titling;
       saveSession(session);
       emit({ type: "stats", stats });
       return stats;
