@@ -1,4 +1,4 @@
-import type { StreamEvent } from "@shared/types.ts";
+import type { StreamEvent } from "../types.ts";
 
 /** One piece of an in-flight assistant turn, in arrival order. `key` is stable for React. */
 export type LivePart =

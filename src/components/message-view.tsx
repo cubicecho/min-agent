@@ -1,8 +1,8 @@
+import type { LivePart } from "@shared/client/live.ts";
+import { statsLine } from "@shared/client/usage.ts";
 import type { LlmConfig, StoredMessage, TurnStats } from "@shared/types.ts";
 import { AlertCircle, Brain, ChevronRight, Wrench } from "lucide-react";
 import { Markdown } from "@/components/markdown";
-import type { LivePart } from "@/lib/live";
-import { statsLine } from "@/lib/usage";
 import { cn } from "@/lib/utils";
 
 function text(content: StoredMessage["content"]): string {

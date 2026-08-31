@@ -1,5 +1,5 @@
+import { costOf, formatUsage } from "@shared/client/usage.ts";
 import { describe, expect, it } from "vitest";
-import { costOf, formatUsage } from "@/lib/usage";
 
 const usage = { promptTokens: 1_000_000, completionTokens: 500_000, totalTokens: 1_500_000 };
 

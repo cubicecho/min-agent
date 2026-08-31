@@ -1,3 +1,13 @@
+import { applyEvent, type LivePart, liveCharCount } from "@shared/client/live.ts";
+import {
+  contextFill,
+  formatDuration,
+  formatRate,
+  formatTokens,
+  formatUsage,
+  latestStats,
+  usageDetail,
+} from "@shared/client/usage.ts";
 import type { TurnStats } from "@shared/types.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
@@ -15,16 +25,6 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { api, streamTurn } from "@/lib/api";
-import { applyEvent, type LivePart, liveCharCount } from "@/lib/live";
-import {
-  contextFill,
-  formatDuration,
-  formatRate,
-  formatTokens,
-  formatUsage,
-  latestStats,
-  usageDetail,
-} from "@/lib/usage";
 import { cn } from "@/lib/utils";
 
 const when = (iso: string) =>

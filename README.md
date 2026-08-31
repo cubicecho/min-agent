@@ -10,6 +10,10 @@ sessions live as JSON on disk.
 Vite + React 19 + TanStack Router/Query + shadcn (Tailwind v4) on the front, a minimal Express 5
 server on the back. TypeScript everywhere, Biome for lint/format, Vitest for tests.
 
+There is a second front end in `mobile/` — Expo + expo-router + NativeWind — that builds the same
+five views for Android, Windows (via Electron) and the web. See
+[Android, Windows and web apps](#android-windows-and-web-apps).
+
 ## Quick start
 
 ```bash
@@ -41,10 +45,14 @@ npm start        # express serves the API and dist/ on :8787
 
 ## Layout
 
-- `src/` — client. `routes/` is one file per nav item, `components/app-shell.tsx` is the frame.
+- `src/` — web client. `routes/` is one file per nav item, `components/app-shell.tsx` is the frame.
+- `mobile/` — the Expo client. `app/` is one file per route, `components/ui.tsx` is the widget set,
+  `electron/` is the desktop shell.
 - `server/` — express. `agent.ts` is the tool-calling loop, `mcp.ts` the MCP client pool,
   `cron.ts` the scheduler, `store.ts` session persistence, `config.ts` YAML read/write.
 - `shared/types.ts` — zod schemas shared by both sides; the API contract lives here.
+- `shared/client/` — everything both front ends run: `api.ts` (the typed client and the SSE
+  reader), `live.ts` (streaming-event reducer), `usage.ts` (token/cost formatting).
 - `tests/` — Vitest (`npm test`).
 
 ## Files on disk
@@ -335,6 +343,68 @@ jobs:
     prompt: Summarize yesterday's commits.
 ```
 
+## Android, Windows and web apps
+
+`mobile/` is a second front end over the same server: Expo (React Native) with expo-router and
+NativeWind, shipping to Android, to Windows and Linux through Electron, and to the browser. It has
+the same five views as the web app — Chats, MCP Servers, Cron, Config, and one extra, **Settings**,
+covered below.
+
+```bash
+npm install --prefix mobile
+npm run mobile              # Expo dev server: press a for Android, w for web
+npm run mobile:android      # straight to a connected device or emulator
+```
+
+### What is actually shared
+
+`shared/types.ts` and `shared/client/` are used byte-identically by both clients — the zod
+contract, the API calls, the SSE stream reader, the live-event reducer and the usage/cost
+formatting. That is the part worth sharing and the part that would otherwise drift.
+
+The *widgets* are not shared, and cannot be: `src/components/ui/` is shadcn, which is Radix, which
+is the DOM. `mobile/components/ui.tsx` is a React Native re-implementation that keeps the same
+component and variant names (`<Button variant="outline" size="sm">`), so the screens read the same
+either side even though nothing under them is.
+
+### Pointing it at your server
+
+The browser build talks to whatever origin served it, so it needs no configuration. The Android
+and desktop builds have no origin to inherit, so they ask: open **Settings**, put in the address of
+the machine running `npm start` — `http://framework.lan:8787`, say — and press **Save and test**.
+It is remembered on the device, and the badge tells you whether the server answered.
+
+There is no auth. The API is served with a permissive CORS header so the app can reach it from
+another origin, which means anything on the network that can reach port 8787 can use your agent.
+Keep it on a network you trust, or put it behind something that does authenticate.
+
+Android additionally needs cleartext HTTP to be allowed, since a LAN server is rarely on https;
+`app.json` sets `usesCleartextTraffic` for that reason.
+
+### Web build
+
+```bash
+npm run mobile:export       # -> mobile/dist, base URL /app
+npm start                   # express serves it at http://localhost:8787/app
+```
+
+Both front ends can be served at once: `/` is the Vite app, `/app` is the Expo one.
+
+### Windows desktop
+
+The Electron shell wraps the same web export.
+
+```bash
+npm install --prefix mobile/electron
+npm run desktop             # export, then run the shell
+npm run desktop:build       # export, then package -> mobile/electron/release
+```
+
+`desktop:build` produces an NSIS installer and a portable `.exe` on Windows (`npm run dist:linux`
+in `mobile/electron` gives an AppImage). The shell serves the bundle over a loopback HTTP server
+rather than `file://`, because the export's asset URLs are absolute and `localStorage` — where the
+server address is kept — is unreliable on a file origin.
+
 ## Scripts
 
 | Script            | What it does                        |
@@ -346,3 +416,10 @@ jobs:
 | `npm run lint`    | `biome check .`                     |
 | `npm run format`  | `biome check --write .`             |
 | `npm test`        | `vitest run`                        |
+| `npm run mobile`  | Expo dev server for the `mobile/` app |
+| `npm run mobile:android` | build and run on Android      |
+| `npm run mobile:web` | Expo in the browser              |
+| `npm run mobile:export` | web build -> `mobile/dist`, served at `/app` |
+| `npm run mobile:typecheck` | `tsc --noEmit` in `mobile/`  |
+| `npm run desktop` | export, then run the Electron shell |
+| `npm run desktop:build` | export, then package the desktop app |

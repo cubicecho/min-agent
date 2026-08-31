@@ -1,9 +1,26 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.11/schema.json",
-  "vcs": { "enabled": false, "clientKind": "git", "useIgnoreFile": true },
+  "vcs": {
+    "enabled": false,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["src/**", "server/**", "shared/**", "tests/**", "*.ts", "*.json"]
+    "includes": [
+      "src/**",
+      "server/**",
+      "shared/**",
+      "tests/**",
+      "mobile/app/**",
+      "mobile/components/**",
+      "mobile/lib/**",
+      "mobile/electron/main.js",
+      "mobile/*.js",
+      "mobile/*.mjs",
+      "*.ts",
+      "*.json"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -25,10 +42,22 @@
     }
   },
   "javascript": {
-    "formatter": { "quoteStyle": "double", "trailingCommas": "all" }
+    "formatter": {
+      "quoteStyle": "double",
+      "trailingCommas": "all"
+    }
   },
   "css": {
-    "parser": { "tailwindDirectives": true }
+    "parser": {
+      "tailwindDirectives": true
+    }
   },
-  "assist": { "enabled": true, "actions": { "source": { "organizeImports": "on" } } }
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
 }

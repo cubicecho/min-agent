@@ -1,7 +1,7 @@
+import { liveCharCount } from "@shared/client/live.ts";
+import { contextFill, formatDuration, latestStats, statsLine } from "@shared/client/usage.ts";
 import type { StoredMessage, TurnStats } from "@shared/types.ts";
 import { describe, expect, it } from "vitest";
-import { liveCharCount } from "@/lib/live";
-import { contextFill, formatDuration, latestStats, statsLine } from "@/lib/usage";
 
 const stats: TurnStats = {
   promptTokens: 900,

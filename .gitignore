@@ -1,5 +1,7 @@
 node_modules
 dist
+# Expo's build cache.
+.expo
 # Runtime state: sessions, cron run log. Re-created on demand.
 data
 # Holds the API key and your own server addresses. Seeded on first boot.

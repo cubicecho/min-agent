@@ -1,0 +1,23 @@
+{
+  "name": "min-agent-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "min-agent desktop shell",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^44.1.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "lan.minagent.desktop",
+    "productName": "min-agent",
+    "files": ["main.js", "package.json", { "from": "../dist", "to": "web" }],
+    "win": { "target": ["nsis", "portable"] },
+    "linux": { "target": ["AppImage"] }
+  }
+}

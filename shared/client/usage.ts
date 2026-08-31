@@ -1,4 +1,4 @@
-import type { LlmConfig, StoredMessage, TokenUsage, TurnStats } from "@shared/types.ts";
+import type { LlmConfig, StoredMessage, TokenUsage, TurnStats } from "../types.ts";
 
 type Pricing = LlmConfig["pricing"];
 

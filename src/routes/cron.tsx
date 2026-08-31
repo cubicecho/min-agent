@@ -1,3 +1,4 @@
+import { formatUsage } from "@shared/client/usage.ts";
 import type { CronJob, CronJobState, CronRun, ModelInfo } from "@shared/types.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -27,7 +28,6 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
-import { formatUsage } from "@/lib/usage";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_MODEL = "__default__";
