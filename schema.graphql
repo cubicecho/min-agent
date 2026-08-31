@@ -1,0 +1,1939 @@
+type Setting {
+  id: String!
+  baseUrl: String!
+  model: String!
+  maxTokens: Int!
+  temperature: Float!
+  maxToolIterations: Int!
+  systemPrompt: String!
+  contextLimit: Int!
+  toolDiscovery: SettingsToolDiscoveryEnum!
+  taskModels: JSON!
+  pricing: JSON!
+
+  """
+  Opaque cursor of this row's position in the query's ordering. Pass it as `after` to resume from here. Only set on rows returned by a list query.
+  """
+  cursor: String
+}
+
+enum SettingsToolDiscoveryEnum {
+  """Value: eager"""
+  eager
+
+  """Value: ondemand"""
+  ondemand
+}
+
+"""
+The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf).
+"""
+scalar JSON @specifiedBy(url: "http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf")
+
+type SettingAggregate {
+  count: Int!
+  avg: SettingAvgAggregate
+  sum: SettingSumAggregate
+  min: SettingMinAggregate
+  max: SettingMaxAggregate
+  countNonNull: SettingCountNonNullAggregate
+  countDistinct: SettingCountDistinctAggregate
+}
+
+type SettingAvgAggregate {
+  maxTokens: Float
+  temperature: Float
+  maxToolIterations: Float
+  contextLimit: Float
+}
+
+type SettingSumAggregate {
+  maxTokens: Float
+  temperature: Float
+  maxToolIterations: Float
+  contextLimit: Float
+}
+
+type SettingMinAggregate {
+  id: String
+  baseUrl: String
+  model: String
+  maxTokens: Int
+  temperature: Float
+  maxToolIterations: Int
+  systemPrompt: String
+  contextLimit: Int
+  toolDiscovery: SettingsToolDiscoveryEnum
+}
+
+type SettingMaxAggregate {
+  id: String
+  baseUrl: String
+  model: String
+  maxTokens: Int
+  temperature: Float
+  maxToolIterations: Int
+  systemPrompt: String
+  contextLimit: Int
+  toolDiscovery: SettingsToolDiscoveryEnum
+}
+
+type SettingCountNonNullAggregate {
+  id: Int!
+  baseUrl: Int!
+  model: Int!
+  maxTokens: Int!
+  temperature: Int!
+  maxToolIterations: Int!
+  systemPrompt: Int!
+  contextLimit: Int!
+  toolDiscovery: Int!
+  taskModels: Int!
+  pricing: Int!
+}
+
+type SettingCountDistinctAggregate {
+  id: Int!
+  baseUrl: Int!
+  model: Int!
+  maxTokens: Int!
+  temperature: Int!
+  maxToolIterations: Int!
+  systemPrompt: Int!
+  contextLimit: Int!
+  toolDiscovery: Int!
+}
+
+type SettingGroupBy {
+  group: SettingGroupKeys!
+  count: Int!
+  avg: SettingAvgAggregate
+  sum: SettingSumAggregate
+  min: SettingMinAggregate
+  max: SettingMaxAggregate
+  countNonNull: SettingCountNonNullAggregate
+  countDistinct: SettingCountDistinctAggregate
+}
+
+"""
+The grouped column values of one Setting group. A column the query did not group by is null.
+"""
+type SettingGroupKeys {
+  id: String
+  baseUrl: String
+  model: String
+  maxTokens: Int
+  temperature: Float
+  maxToolIterations: Int
+  systemPrompt: String
+  contextLimit: Int
+  toolDiscovery: SettingsToolDiscoveryEnum
+}
+
+type McpServer {
+  id: String!
+  label: String!
+  enabled: Boolean!
+  transport: McpServersTransportEnum!
+  command: String!
+  args: JSON!
+  env: JSON!
+  url: String!
+  headers: JSON!
+  position: Int!
+
+  """
+  Opaque cursor of this row's position in the query's ordering. Pass it as `after` to resume from here. Only set on rows returned by a list query.
+  """
+  cursor: String
+}
+
+enum McpServersTransportEnum {
+  """Value: stdio"""
+  stdio
+
+  """Value: http"""
+  http
+}
+
+type McpServerAggregate {
+  count: Int!
+  avg: McpServerAvgAggregate
+  sum: McpServerSumAggregate
+  min: McpServerMinAggregate
+  max: McpServerMaxAggregate
+  countNonNull: McpServerCountNonNullAggregate
+  countDistinct: McpServerCountDistinctAggregate
+}
+
+type McpServerAvgAggregate {
+  position: Float
+}
+
+type McpServerSumAggregate {
+  position: Float
+}
+
+type McpServerMinAggregate {
+  id: String
+  label: String
+  transport: McpServersTransportEnum
+  command: String
+  url: String
+  position: Int
+}
+
+type McpServerMaxAggregate {
+  id: String
+  label: String
+  transport: McpServersTransportEnum
+  command: String
+  url: String
+  position: Int
+}
+
+type McpServerCountNonNullAggregate {
+  id: Int!
+  label: Int!
+  enabled: Int!
+  transport: Int!
+  command: Int!
+  args: Int!
+  env: Int!
+  url: Int!
+  headers: Int!
+  position: Int!
+}
+
+type McpServerCountDistinctAggregate {
+  id: Int!
+  label: Int!
+  transport: Int!
+  command: Int!
+  url: Int!
+  position: Int!
+}
+
+type McpServerGroupBy {
+  group: McpServerGroupKeys!
+  count: Int!
+  avg: McpServerAvgAggregate
+  sum: McpServerSumAggregate
+  min: McpServerMinAggregate
+  max: McpServerMaxAggregate
+  countNonNull: McpServerCountNonNullAggregate
+  countDistinct: McpServerCountDistinctAggregate
+}
+
+"""
+The grouped column values of one McpServer group. A column the query did not group by is null.
+"""
+type McpServerGroupKeys {
+  id: String
+  label: String
+  transport: McpServersTransportEnum
+  command: String
+  url: String
+  position: Int
+  enabled: Boolean
+}
+
+type Session {
+  id: String!
+  title: String!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  model: String!
+  usage: JSON
+  loadedTools: JSON!
+  compaction: JSON
+  messageCount: Int!
+
+  """
+  Opaque cursor of this row's position in the query's ordering. Pass it as `after` to resume from here. Only set on rows returned by a list query.
+  """
+  cursor: String
+  messages(
+    where: MessageFilters
+    orderBy: MessageOrderBy
+    offset: Int
+    limit: Int
+
+    """
+    Keyset pagination: only return related rows strictly after this cursor (a row's `cursor` field from a previous page of this relation, under the same orderBy).
+    """
+    after: String
+    distinct: [MessageDistinctColumn!]
+  ): [Message!]!
+  messagesAggregate(where: MessageFilters): MessageAggregate!
+}
+
+"""
+A date-time string at UTC, such as 2007-12-03T10:15:30Z, compliant with the `date-time` format outlined in section 5.6 of the RFC 3339 profile of the ISO 8601 standard for representation of dates and times using the Gregorian calendar.
+"""
+scalar DateTime
+
+"""Columns of Message that a query can be made distinct on"""
+enum MessageDistinctColumn {
+  id
+  sessionId
+  idx
+  role
+  content
+  reasoningContent
+  toolCalls
+  toolCallId
+  stats
+  followups
+  createdAt
+}
+
+type SessionAggregate {
+  count: Int!
+  avg: SessionAvgAggregate
+  sum: SessionSumAggregate
+  min: SessionMinAggregate
+  max: SessionMaxAggregate
+  countNonNull: SessionCountNonNullAggregate
+  countDistinct: SessionCountDistinctAggregate
+}
+
+type SessionAvgAggregate {
+  messageCount: Float
+}
+
+type SessionSumAggregate {
+  messageCount: Float
+}
+
+type SessionMinAggregate {
+  id: String
+  title: String
+  createdAt: DateTime
+  updatedAt: DateTime
+  model: String
+  messageCount: Int
+}
+
+type SessionMaxAggregate {
+  id: String
+  title: String
+  createdAt: DateTime
+  updatedAt: DateTime
+  model: String
+  messageCount: Int
+}
+
+type SessionCountNonNullAggregate {
+  id: Int!
+  title: Int!
+  createdAt: Int!
+  updatedAt: Int!
+  model: Int!
+  usage: Int!
+  loadedTools: Int!
+  compaction: Int!
+  messageCount: Int!
+}
+
+type SessionCountDistinctAggregate {
+  id: Int!
+  title: Int!
+  createdAt: Int!
+  updatedAt: Int!
+  model: Int!
+  messageCount: Int!
+}
+
+type SessionGroupBy {
+  group: SessionGroupKeys!
+  count: Int!
+  avg: SessionAvgAggregate
+  sum: SessionSumAggregate
+  min: SessionMinAggregate
+  max: SessionMaxAggregate
+  countNonNull: SessionCountNonNullAggregate
+  countDistinct: SessionCountDistinctAggregate
+}
+
+"""
+The grouped column values of one Session group. A column the query did not group by is null.
+"""
+type SessionGroupKeys {
+  id: String
+  title: String
+  createdAt: DateTime
+  updatedAt: DateTime
+  model: String
+  messageCount: Int
+}
+
+type Message {
+  id: String!
+  sessionId: String!
+  idx: Int!
+  role: MessagesRoleEnum!
+  content: JSON
+  reasoningContent: String
+  toolCalls: JSON
+  toolCallId: String
+  stats: JSON
+  followups: JSON
+  createdAt: DateTime!
+
+  """
+  Opaque cursor of this row's position in the query's ordering. Pass it as `after` to resume from here. Only set on rows returned by a list query.
+  """
+  cursor: String
+  session(where: SessionFilters): Session!
+}
+
+enum MessagesRoleEnum {
+  """Value: system"""
+  system
+
+  """Value: developer"""
+  developer
+
+  """Value: user"""
+  user
+
+  """Value: assistant"""
+  assistant
+
+  """Value: tool"""
+  tool
+}
+
+type MessageAggregate {
+  count: Int!
+  avg: MessageAvgAggregate
+  sum: MessageSumAggregate
+  min: MessageMinAggregate
+  max: MessageMaxAggregate
+  countNonNull: MessageCountNonNullAggregate
+  countDistinct: MessageCountDistinctAggregate
+}
+
+type MessageAvgAggregate {
+  idx: Float
+}
+
+type MessageSumAggregate {
+  idx: Float
+}
+
+type MessageMinAggregate {
+  id: String
+  sessionId: String
+  idx: Int
+  role: MessagesRoleEnum
+  reasoningContent: String
+  toolCallId: String
+  createdAt: DateTime
+}
+
+type MessageMaxAggregate {
+  id: String
+  sessionId: String
+  idx: Int
+  role: MessagesRoleEnum
+  reasoningContent: String
+  toolCallId: String
+  createdAt: DateTime
+}
+
+type MessageCountNonNullAggregate {
+  id: Int!
+  sessionId: Int!
+  idx: Int!
+  role: Int!
+  content: Int!
+  reasoningContent: Int!
+  toolCalls: Int!
+  toolCallId: Int!
+  stats: Int!
+  followups: Int!
+  createdAt: Int!
+}
+
+type MessageCountDistinctAggregate {
+  id: Int!
+  sessionId: Int!
+  idx: Int!
+  role: Int!
+  reasoningContent: Int!
+  toolCallId: Int!
+  createdAt: Int!
+}
+
+type MessageGroupBy {
+  group: MessageGroupKeys!
+  count: Int!
+  avg: MessageAvgAggregate
+  sum: MessageSumAggregate
+  min: MessageMinAggregate
+  max: MessageMaxAggregate
+  countNonNull: MessageCountNonNullAggregate
+  countDistinct: MessageCountDistinctAggregate
+}
+
+"""
+The grouped column values of one Message group. A column the query did not group by is null.
+"""
+type MessageGroupKeys {
+  id: String
+  sessionId: String
+  idx: Int
+  role: MessagesRoleEnum
+  reasoningContent: String
+  toolCallId: String
+  createdAt: DateTime
+}
+
+input UpdateSettingInput {
+  id: String
+  baseUrl: String
+  model: String
+  maxTokens: Int
+  temperature: Float
+  maxToolIterations: Int
+  systemPrompt: String
+  contextLimit: Int
+  toolDiscovery: SettingsToolDiscoveryEnum
+  taskModels: JSON
+  pricing: JSON
+}
+
+"""
+One entry of a batch update of Setting: the rows `where` matches get this entry's `set` applied.
+"""
+input UpdateSettingManyInput {
+  """Rows this entry updates. An omitted filter updates every row."""
+  where: SettingFilters
+  set: UpdateSettingInput!
+}
+
+input SettingFilters {
+  id: StringFilter
+  baseUrl: StringFilter
+  model: StringFilter
+  maxTokens: IntFilter
+  temperature: FloatFilter
+  maxToolIterations: IntFilter
+  systemPrompt: StringFilter
+  contextLimit: IntFilter
+  toolDiscovery: SettingsToolDiscoveryEnumFilter
+  taskModels: JSONFilter
+  pricing: JSONFilter
+
+  """At least one branch matches; ANDed with any sibling fields"""
+  OR: [SettingFilters!]
+
+  """Every branch matches"""
+  AND: [SettingFilters!]
+
+  """Negates the nested filters"""
+  NOT: SettingFilters
+}
+
+input StringFilter {
+  """Equal to"""
+  eq: String
+
+  """Not equal to"""
+  ne: String
+
+  """Less than"""
+  lt: String
+
+  """Less than or equal to"""
+  lte: String
+
+  """Greater than"""
+  gt: String
+
+  """Greater than or equal to"""
+  gte: String
+  like: String
+  notLike: String
+  ilike: String
+  notIlike: String
+
+  """
+  Matches values starting with the given string. `%`, `_` and `\` are matched literally.
+  """
+  startsWith: String
+
+  """
+  Matches values ending with the given string. `%`, `_` and `\` are matched literally.
+  """
+  endsWith: String
+
+  """
+  Matches values containing the given string. `%`, `_` and `\` are matched literally.
+  """
+  contains: String
+
+  """Case-insensitive `startsWith`."""
+  iStartsWith: String
+
+  """Case-insensitive `endsWith`."""
+  iEndsWith: String
+
+  """Case-insensitive `contains`."""
+  iContains: String
+
+  """
+  When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own.
+  """
+  insensitive: Boolean
+
+  """Matches any one of these values (SQL `IN`)"""
+  inArray: [String!]
+
+  """Matches none of these values (SQL `NOT IN`)"""
+  notInArray: [String!]
+
+  """When true, matches rows where the column is NULL"""
+  isNull: Boolean
+
+  """When true, matches rows where the column is not NULL"""
+  isNotNull: Boolean
+
+  """At least one branch matches; ANDed with any sibling operators"""
+  OR: [StringFilter!]
+
+  """Every branch matches"""
+  AND: [StringFilter!]
+
+  """Negates the nested operators"""
+  NOT: StringFilter
+}
+
+input IntFilter {
+  """Equal to"""
+  eq: Int
+
+  """Not equal to"""
+  ne: Int
+
+  """Less than"""
+  lt: Int
+
+  """Less than or equal to"""
+  lte: Int
+
+  """Greater than"""
+  gt: Int
+
+  """Greater than or equal to"""
+  gte: Int
+
+  """Matches any one of these values (SQL `IN`)"""
+  inArray: [Int!]
+
+  """Matches none of these values (SQL `NOT IN`)"""
+  notInArray: [Int!]
+
+  """When true, matches rows where the column is NULL"""
+  isNull: Boolean
+
+  """When true, matches rows where the column is not NULL"""
+  isNotNull: Boolean
+
+  """At least one branch matches; ANDed with any sibling operators"""
+  OR: [IntFilter!]
+
+  """Every branch matches"""
+  AND: [IntFilter!]
+
+  """Negates the nested operators"""
+  NOT: IntFilter
+}
+
+input FloatFilter {
+  """Equal to"""
+  eq: Float
+
+  """Not equal to"""
+  ne: Float
+
+  """Less than"""
+  lt: Float
+
+  """Less than or equal to"""
+  lte: Float
+
+  """Greater than"""
+  gt: Float
+
+  """Greater than or equal to"""
+  gte: Float
+
+  """Matches any one of these values (SQL `IN`)"""
+  inArray: [Float!]
+
+  """Matches none of these values (SQL `NOT IN`)"""
+  notInArray: [Float!]
+
+  """When true, matches rows where the column is NULL"""
+  isNull: Boolean
+
+  """When true, matches rows where the column is not NULL"""
+  isNotNull: Boolean
+
+  """At least one branch matches; ANDed with any sibling operators"""
+  OR: [FloatFilter!]
+
+  """Every branch matches"""
+  AND: [FloatFilter!]
+
+  """Negates the nested operators"""
+  NOT: FloatFilter
+}
+
+input SettingsToolDiscoveryEnumFilter {
+  """Equal to"""
+  eq: SettingsToolDiscoveryEnum
+
+  """Not equal to"""
+  ne: SettingsToolDiscoveryEnum
+
+  """Less than"""
+  lt: SettingsToolDiscoveryEnum
+
+  """Less than or equal to"""
+  lte: SettingsToolDiscoveryEnum
+
+  """Greater than"""
+  gt: SettingsToolDiscoveryEnum
+
+  """Greater than or equal to"""
+  gte: SettingsToolDiscoveryEnum
+  like: String
+  notLike: String
+  ilike: String
+  notIlike: String
+
+  """
+  Matches values starting with the given string. `%`, `_` and `\` are matched literally.
+  """
+  startsWith: String
+
+  """
+  Matches values ending with the given string. `%`, `_` and `\` are matched literally.
+  """
+  endsWith: String
+
+  """
+  Matches values containing the given string. `%`, `_` and `\` are matched literally.
+  """
+  contains: String
+
+  """Case-insensitive `startsWith`."""
+  iStartsWith: String
+
+  """Case-insensitive `endsWith`."""
+  iEndsWith: String
+
+  """Case-insensitive `contains`."""
+  iContains: String
+
+  """
+  When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own.
+  """
+  insensitive: Boolean
+
+  """Matches any one of these values (SQL `IN`)"""
+  inArray: [SettingsToolDiscoveryEnum!]
+
+  """Matches none of these values (SQL `NOT IN`)"""
+  notInArray: [SettingsToolDiscoveryEnum!]
+
+  """When true, matches rows where the column is NULL"""
+  isNull: Boolean
+
+  """When true, matches rows where the column is not NULL"""
+  isNotNull: Boolean
+
+  """At least one branch matches; ANDed with any sibling operators"""
+  OR: [SettingsToolDiscoveryEnumFilter!]
+
+  """Every branch matches"""
+  AND: [SettingsToolDiscoveryEnumFilter!]
+
+  """Negates the nested operators"""
+  NOT: SettingsToolDiscoveryEnumFilter
+}
+
+input JSONFilter {
+  """JSON equality on the whole value"""
+  eq: JSON
+
+  """JSON inequality on the whole value"""
+  ne: JSON
+
+  """
+  Value structurally contains this JSON (Postgres `@>` / MySQL JSON_CONTAINS)
+  """
+  contains: JSON
+
+  """
+  Compares the value at one path inside the document. Several entries are ANDed; a single object may be passed without the list brackets.
+  """
+  path: [JSONPathFilter!]
+  isNull: Boolean
+  isNotNull: Boolean
+
+  """At least one branch matches; ANDed with any sibling operators"""
+  OR: [JSONFilter!]
+
+  """Every branch matches"""
+  AND: [JSONFilter!]
+
+  """Negates the nested operators"""
+  NOT: JSONFilter
+}
+
+input JSONPathFilter {
+  """
+  Keys to walk from the document root, e.g. `["profile", "level"]`. An all-digits key indexes an array.
+  """
+  path: [String!]!
+
+  """Overrides how the value is read before comparing"""
+  as: JSONPathCast
+
+  """Equal to"""
+  eq: JSON
+
+  """Not equal to"""
+  ne: JSON
+
+  """Less than"""
+  lt: JSON
+
+  """Less than or equal to"""
+  lte: JSON
+
+  """Greater than"""
+  gt: JSON
+
+  """Greater than or equal to"""
+  gte: JSON
+
+  """
+  Extracted value starts with this string. `%`, `_` and `\` are matched literally.
+  """
+  startsWith: String
+
+  """
+  Extracted value ends with this string. `%`, `_` and `\` are matched literally.
+  """
+  endsWith: String
+
+  """
+  Extracted value contains this string. `%`, `_` and `\` are matched literally.
+  """
+  contains: String
+
+  """Case-insensitive `startsWith`."""
+  iStartsWith: String
+
+  """Case-insensitive `endsWith`."""
+  iEndsWith: String
+
+  """Case-insensitive `contains`."""
+  iContains: String
+
+  """When true, matches rows where the path is missing or holds JSON null"""
+  isNull: Boolean
+
+  """When true, matches rows where the path holds a value"""
+  isNotNull: Boolean
+}
+
+"""How to read the value at a JSON path before comparing it"""
+enum JSONPathCast {
+  """Compare as text (lexicographic ordering)"""
+  TEXT
+
+  """Compare as a number; a non-numeric value never matches"""
+  NUMBER
+
+  """Compare as a boolean"""
+  BOOLEAN
+}
+
+input SettingOrderBy {
+  id: InnerOrder
+  baseUrl: InnerOrder
+  model: InnerOrder
+  maxTokens: InnerOrder
+  temperature: InnerOrder
+  maxToolIterations: InnerOrder
+  systemPrompt: InnerOrder
+  contextLimit: InnerOrder
+  toolDiscovery: InnerOrder
+  taskModels: InnerOrder
+  pricing: InnerOrder
+}
+
+input InnerOrder {
+  direction: OrderDirection!
+
+  """Priority of current field"""
+  priority: Int!
+
+  """
+  Where NULL values sort. Defaults to the database's own rule (PostgreSQL: last on asc, first on desc; MySQL/SQLite: first on asc, last on desc)
+  """
+  nulls: OrderNulls
+
+  """
+  Sort by this column's position in the `inArray` list the same request's `where` gives it, rather than by the column's own value — `direction: asc` keeps the list's order, `desc` reverses it. Requires an `inArray` filter on the same column at the top level of `where`, and cannot be combined with `after` or `distinct`.
+  """
+  matchFilterOrder: Boolean
+}
+
+"""Order by direction"""
+enum OrderDirection {
+  """Ascending order"""
+  asc
+
+  """Descending order"""
+  desc
+}
+
+"""Where NULL values sort relative to non-NULL values"""
+enum OrderNulls {
+  """NULL values sort before all non-NULL values"""
+  first
+
+  """NULL values sort after all non-NULL values"""
+  last
+}
+
+"""Filters Setting groups by their aggregated values"""
+input SettingHaving {
+  """Filters groups by how many rows they contain"""
+  count: AggregateNumberFilter
+  avg: SettingAvgHaving
+  sum: SettingSumHaving
+  min: SettingMinHaving
+  max: SettingMaxHaving
+  countNonNull: SettingCountNonNullHaving
+  countDistinct: SettingCountDistinctHaving
+}
+
+"""
+Compares an aggregated value. Several operators in one filter are ANDed together.
+"""
+input AggregateNumberFilter {
+  eq: Float
+  ne: Float
+  gt: Float
+  gte: Float
+  lt: Float
+  lte: Float
+}
+
+input SettingAvgHaving {
+  maxTokens: AggregateNumberFilter
+  temperature: AggregateNumberFilter
+  maxToolIterations: AggregateNumberFilter
+  contextLimit: AggregateNumberFilter
+}
+
+input SettingSumHaving {
+  maxTokens: AggregateNumberFilter
+  temperature: AggregateNumberFilter
+  maxToolIterations: AggregateNumberFilter
+  contextLimit: AggregateNumberFilter
+}
+
+input SettingMinHaving {
+  maxTokens: AggregateNumberFilter
+  temperature: AggregateNumberFilter
+  maxToolIterations: AggregateNumberFilter
+  contextLimit: AggregateNumberFilter
+}
+
+input SettingMaxHaving {
+  maxTokens: AggregateNumberFilter
+  temperature: AggregateNumberFilter
+  maxToolIterations: AggregateNumberFilter
+  contextLimit: AggregateNumberFilter
+}
+
+input SettingCountNonNullHaving {
+  id: AggregateNumberFilter
+  baseUrl: AggregateNumberFilter
+  model: AggregateNumberFilter
+  maxTokens: AggregateNumberFilter
+  temperature: AggregateNumberFilter
+  maxToolIterations: AggregateNumberFilter
+  systemPrompt: AggregateNumberFilter
+  contextLimit: AggregateNumberFilter
+  toolDiscovery: AggregateNumberFilter
+  taskModels: AggregateNumberFilter
+  pricing: AggregateNumberFilter
+}
+
+input SettingCountDistinctHaving {
+  id: AggregateNumberFilter
+  baseUrl: AggregateNumberFilter
+  model: AggregateNumberFilter
+  maxTokens: AggregateNumberFilter
+  temperature: AggregateNumberFilter
+  maxToolIterations: AggregateNumberFilter
+  systemPrompt: AggregateNumberFilter
+  contextLimit: AggregateNumberFilter
+  toolDiscovery: AggregateNumberFilter
+}
+
+input McpServerFilters {
+  id: StringFilter
+  label: StringFilter
+  enabled: BooleanFilter
+  transport: McpServersTransportEnumFilter
+  command: StringFilter
+  args: JSONFilter
+  env: JSONFilter
+  url: StringFilter
+  headers: JSONFilter
+  position: IntFilter
+
+  """At least one branch matches; ANDed with any sibling fields"""
+  OR: [McpServerFilters!]
+
+  """Every branch matches"""
+  AND: [McpServerFilters!]
+
+  """Negates the nested filters"""
+  NOT: McpServerFilters
+}
+
+input BooleanFilter {
+  """Equal to"""
+  eq: Boolean
+
+  """Not equal to"""
+  ne: Boolean
+
+  """Less than"""
+  lt: Boolean
+
+  """Less than or equal to"""
+  lte: Boolean
+
+  """Greater than"""
+  gt: Boolean
+
+  """Greater than or equal to"""
+  gte: Boolean
+  like: String
+  notLike: String
+  ilike: String
+  notIlike: String
+
+  """
+  Matches values starting with the given string. `%`, `_` and `\` are matched literally.
+  """
+  startsWith: String
+
+  """
+  Matches values ending with the given string. `%`, `_` and `\` are matched literally.
+  """
+  endsWith: String
+
+  """
+  Matches values containing the given string. `%`, `_` and `\` are matched literally.
+  """
+  contains: String
+
+  """Case-insensitive `startsWith`."""
+  iStartsWith: String
+
+  """Case-insensitive `endsWith`."""
+  iEndsWith: String
+
+  """Case-insensitive `contains`."""
+  iContains: String
+
+  """
+  When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own.
+  """
+  insensitive: Boolean
+
+  """Matches any one of these values (SQL `IN`)"""
+  inArray: [Boolean!]
+
+  """Matches none of these values (SQL `NOT IN`)"""
+  notInArray: [Boolean!]
+
+  """When true, matches rows where the column is NULL"""
+  isNull: Boolean
+
+  """When true, matches rows where the column is not NULL"""
+  isNotNull: Boolean
+
+  """At least one branch matches; ANDed with any sibling operators"""
+  OR: [BooleanFilter!]
+
+  """Every branch matches"""
+  AND: [BooleanFilter!]
+
+  """Negates the nested operators"""
+  NOT: BooleanFilter
+}
+
+input McpServersTransportEnumFilter {
+  """Equal to"""
+  eq: McpServersTransportEnum
+
+  """Not equal to"""
+  ne: McpServersTransportEnum
+
+  """Less than"""
+  lt: McpServersTransportEnum
+
+  """Less than or equal to"""
+  lte: McpServersTransportEnum
+
+  """Greater than"""
+  gt: McpServersTransportEnum
+
+  """Greater than or equal to"""
+  gte: McpServersTransportEnum
+  like: String
+  notLike: String
+  ilike: String
+  notIlike: String
+
+  """
+  Matches values starting with the given string. `%`, `_` and `\` are matched literally.
+  """
+  startsWith: String
+
+  """
+  Matches values ending with the given string. `%`, `_` and `\` are matched literally.
+  """
+  endsWith: String
+
+  """
+  Matches values containing the given string. `%`, `_` and `\` are matched literally.
+  """
+  contains: String
+
+  """Case-insensitive `startsWith`."""
+  iStartsWith: String
+
+  """Case-insensitive `endsWith`."""
+  iEndsWith: String
+
+  """Case-insensitive `contains`."""
+  iContains: String
+
+  """
+  When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own.
+  """
+  insensitive: Boolean
+
+  """Matches any one of these values (SQL `IN`)"""
+  inArray: [McpServersTransportEnum!]
+
+  """Matches none of these values (SQL `NOT IN`)"""
+  notInArray: [McpServersTransportEnum!]
+
+  """When true, matches rows where the column is NULL"""
+  isNull: Boolean
+
+  """When true, matches rows where the column is not NULL"""
+  isNotNull: Boolean
+
+  """At least one branch matches; ANDed with any sibling operators"""
+  OR: [McpServersTransportEnumFilter!]
+
+  """Every branch matches"""
+  AND: [McpServersTransportEnumFilter!]
+
+  """Negates the nested operators"""
+  NOT: McpServersTransportEnumFilter
+}
+
+input McpServerOrderBy {
+  id: InnerOrder
+  label: InnerOrder
+  enabled: InnerOrder
+  transport: InnerOrder
+  command: InnerOrder
+  args: InnerOrder
+  env: InnerOrder
+  url: InnerOrder
+  headers: InnerOrder
+  position: InnerOrder
+}
+
+"""Filters McpServer groups by their aggregated values"""
+input McpServerHaving {
+  """Filters groups by how many rows they contain"""
+  count: AggregateNumberFilter
+  avg: McpServerAvgHaving
+  sum: McpServerSumHaving
+  min: McpServerMinHaving
+  max: McpServerMaxHaving
+  countNonNull: McpServerCountNonNullHaving
+  countDistinct: McpServerCountDistinctHaving
+}
+
+input McpServerAvgHaving {
+  position: AggregateNumberFilter
+}
+
+input McpServerSumHaving {
+  position: AggregateNumberFilter
+}
+
+input McpServerMinHaving {
+  position: AggregateNumberFilter
+}
+
+input McpServerMaxHaving {
+  position: AggregateNumberFilter
+}
+
+input McpServerCountNonNullHaving {
+  id: AggregateNumberFilter
+  label: AggregateNumberFilter
+  enabled: AggregateNumberFilter
+  transport: AggregateNumberFilter
+  command: AggregateNumberFilter
+  args: AggregateNumberFilter
+  env: AggregateNumberFilter
+  url: AggregateNumberFilter
+  headers: AggregateNumberFilter
+  position: AggregateNumberFilter
+}
+
+input McpServerCountDistinctHaving {
+  id: AggregateNumberFilter
+  label: AggregateNumberFilter
+  transport: AggregateNumberFilter
+  command: AggregateNumberFilter
+  url: AggregateNumberFilter
+  position: AggregateNumberFilter
+}
+
+input CreateSessionInput {
+  id: String
+  title: String
+  createdAt: DateTime
+  updatedAt: DateTime
+  model: String
+  usage: JSON
+  loadedTools: JSON
+  compaction: JSON
+  messageCount: Int
+}
+
+input UpdateSessionInput {
+  id: String
+  title: String
+  createdAt: DateTime
+  updatedAt: DateTime
+  model: String
+  usage: JSON
+  loadedTools: JSON
+  compaction: JSON
+  messageCount: Int
+}
+
+"""
+One entry of a batch update of Session: the rows `where` matches get this entry's `set` applied.
+"""
+input UpdateSessionManyInput {
+  """Rows this entry updates. An omitted filter updates every row."""
+  where: SessionFilters
+  set: UpdateSessionInput!
+}
+
+input SessionFilters {
+  id: StringFilter
+  title: StringFilter
+  createdAt: DateTimeFilter
+  updatedAt: DateTimeFilter
+  model: StringFilter
+  usage: JSONFilter
+  loadedTools: JSONFilter
+  compaction: JSONFilter
+  messageCount: IntFilter
+  messages: MessageListRelationFilter
+
+  """At least one branch matches; ANDed with any sibling fields"""
+  OR: [SessionFilters!]
+
+  """Every branch matches"""
+  AND: [SessionFilters!]
+
+  """Negates the nested filters"""
+  NOT: SessionFilters
+}
+
+input DateTimeFilter {
+  """Equal to"""
+  eq: DateTime
+
+  """Not equal to"""
+  ne: DateTime
+
+  """Less than"""
+  lt: DateTime
+
+  """Less than or equal to"""
+  lte: DateTime
+
+  """Greater than"""
+  gt: DateTime
+
+  """Greater than or equal to"""
+  gte: DateTime
+  like: String
+  notLike: String
+  ilike: String
+  notIlike: String
+
+  """
+  Matches values starting with the given string. `%`, `_` and `\` are matched literally.
+  """
+  startsWith: String
+
+  """
+  Matches values ending with the given string. `%`, `_` and `\` are matched literally.
+  """
+  endsWith: String
+
+  """
+  Matches values containing the given string. `%`, `_` and `\` are matched literally.
+  """
+  contains: String
+
+  """Case-insensitive `startsWith`."""
+  iStartsWith: String
+
+  """Case-insensitive `endsWith`."""
+  iEndsWith: String
+
+  """Case-insensitive `contains`."""
+  iContains: String
+
+  """
+  When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own.
+  """
+  insensitive: Boolean
+
+  """Matches any one of these values (SQL `IN`)"""
+  inArray: [DateTime!]
+
+  """Matches none of these values (SQL `NOT IN`)"""
+  notInArray: [DateTime!]
+
+  """When true, matches rows where the column is NULL"""
+  isNull: Boolean
+
+  """When true, matches rows where the column is not NULL"""
+  isNotNull: Boolean
+
+  """At least one branch matches; ANDed with any sibling operators"""
+  OR: [DateTimeFilter!]
+
+  """Every branch matches"""
+  AND: [DateTimeFilter!]
+
+  """Negates the nested operators"""
+  NOT: DateTimeFilter
+}
+
+input MessageListRelationFilter {
+  """At least one related row matches"""
+  some: MessageFilters
+
+  """No related row matches"""
+  none: MessageFilters
+
+  """Every related row matches"""
+  every: MessageFilters
+}
+
+input SessionOrderBy {
+  id: InnerOrder
+  title: InnerOrder
+  createdAt: InnerOrder
+  updatedAt: InnerOrder
+  model: InnerOrder
+  usage: InnerOrder
+  loadedTools: InnerOrder
+  compaction: InnerOrder
+  messageCount: InnerOrder
+}
+
+"""Filters Session groups by their aggregated values"""
+input SessionHaving {
+  """Filters groups by how many rows they contain"""
+  count: AggregateNumberFilter
+  avg: SessionAvgHaving
+  sum: SessionSumHaving
+  min: SessionMinHaving
+  max: SessionMaxHaving
+  countNonNull: SessionCountNonNullHaving
+  countDistinct: SessionCountDistinctHaving
+}
+
+input SessionAvgHaving {
+  messageCount: AggregateNumberFilter
+}
+
+input SessionSumHaving {
+  messageCount: AggregateNumberFilter
+}
+
+input SessionMinHaving {
+  messageCount: AggregateNumberFilter
+}
+
+input SessionMaxHaving {
+  messageCount: AggregateNumberFilter
+}
+
+input SessionCountNonNullHaving {
+  id: AggregateNumberFilter
+  title: AggregateNumberFilter
+  createdAt: AggregateNumberFilter
+  updatedAt: AggregateNumberFilter
+  model: AggregateNumberFilter
+  usage: AggregateNumberFilter
+  loadedTools: AggregateNumberFilter
+  compaction: AggregateNumberFilter
+  messageCount: AggregateNumberFilter
+}
+
+input SessionCountDistinctHaving {
+  id: AggregateNumberFilter
+  title: AggregateNumberFilter
+  createdAt: AggregateNumberFilter
+  updatedAt: AggregateNumberFilter
+  model: AggregateNumberFilter
+  messageCount: AggregateNumberFilter
+}
+
+input MessageFilters {
+  id: StringFilter
+  sessionId: StringFilter
+  idx: IntFilter
+  role: MessagesRoleEnumFilter
+  content: JSONFilter
+  reasoningContent: StringFilter
+  toolCalls: JSONFilter
+  toolCallId: StringFilter
+  stats: JSONFilter
+  followups: JSONFilter
+  createdAt: DateTimeFilter
+
+  """Matches rows whose session matches these filters"""
+  session: SessionFilters
+
+  """At least one branch matches; ANDed with any sibling fields"""
+  OR: [MessageFilters!]
+
+  """Every branch matches"""
+  AND: [MessageFilters!]
+
+  """Negates the nested filters"""
+  NOT: MessageFilters
+}
+
+input MessagesRoleEnumFilter {
+  """Equal to"""
+  eq: MessagesRoleEnum
+
+  """Not equal to"""
+  ne: MessagesRoleEnum
+
+  """Less than"""
+  lt: MessagesRoleEnum
+
+  """Less than or equal to"""
+  lte: MessagesRoleEnum
+
+  """Greater than"""
+  gt: MessagesRoleEnum
+
+  """Greater than or equal to"""
+  gte: MessagesRoleEnum
+  like: String
+  notLike: String
+  ilike: String
+  notIlike: String
+
+  """
+  Matches values starting with the given string. `%`, `_` and `\` are matched literally.
+  """
+  startsWith: String
+
+  """
+  Matches values ending with the given string. `%`, `_` and `\` are matched literally.
+  """
+  endsWith: String
+
+  """
+  Matches values containing the given string. `%`, `_` and `\` are matched literally.
+  """
+  contains: String
+
+  """Case-insensitive `startsWith`."""
+  iStartsWith: String
+
+  """Case-insensitive `endsWith`."""
+  iEndsWith: String
+
+  """Case-insensitive `contains`."""
+  iContains: String
+
+  """
+  When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own.
+  """
+  insensitive: Boolean
+
+  """Matches any one of these values (SQL `IN`)"""
+  inArray: [MessagesRoleEnum!]
+
+  """Matches none of these values (SQL `NOT IN`)"""
+  notInArray: [MessagesRoleEnum!]
+
+  """When true, matches rows where the column is NULL"""
+  isNull: Boolean
+
+  """When true, matches rows where the column is not NULL"""
+  isNotNull: Boolean
+
+  """At least one branch matches; ANDed with any sibling operators"""
+  OR: [MessagesRoleEnumFilter!]
+
+  """Every branch matches"""
+  AND: [MessagesRoleEnumFilter!]
+
+  """Negates the nested operators"""
+  NOT: MessagesRoleEnumFilter
+}
+
+input MessageOrderBy {
+  id: InnerOrder
+  sessionId: InnerOrder
+  idx: InnerOrder
+  role: InnerOrder
+  content: InnerOrder
+  reasoningContent: InnerOrder
+  toolCalls: InnerOrder
+  toolCallId: InnerOrder
+  stats: InnerOrder
+  followups: InnerOrder
+  createdAt: InnerOrder
+
+  """Order by columns of the related session row"""
+  session: SessionOrderBy
+}
+
+"""Filters Message groups by their aggregated values"""
+input MessageHaving {
+  """Filters groups by how many rows they contain"""
+  count: AggregateNumberFilter
+  avg: MessageAvgHaving
+  sum: MessageSumHaving
+  min: MessageMinHaving
+  max: MessageMaxHaving
+  countNonNull: MessageCountNonNullHaving
+  countDistinct: MessageCountDistinctHaving
+}
+
+input MessageAvgHaving {
+  idx: AggregateNumberFilter
+}
+
+input MessageSumHaving {
+  idx: AggregateNumberFilter
+}
+
+input MessageMinHaving {
+  idx: AggregateNumberFilter
+}
+
+input MessageMaxHaving {
+  idx: AggregateNumberFilter
+}
+
+input MessageCountNonNullHaving {
+  id: AggregateNumberFilter
+  sessionId: AggregateNumberFilter
+  idx: AggregateNumberFilter
+  role: AggregateNumberFilter
+  content: AggregateNumberFilter
+  reasoningContent: AggregateNumberFilter
+  toolCalls: AggregateNumberFilter
+  toolCallId: AggregateNumberFilter
+  stats: AggregateNumberFilter
+  followups: AggregateNumberFilter
+  createdAt: AggregateNumberFilter
+}
+
+input MessageCountDistinctHaving {
+  id: AggregateNumberFilter
+  sessionId: AggregateNumberFilter
+  idx: AggregateNumberFilter
+  role: AggregateNumberFilter
+  reasoningContent: AggregateNumberFilter
+  toolCallId: AggregateNumberFilter
+  createdAt: AggregateNumberFilter
+}
+
+type Query {
+  settings(
+    offset: Int
+    limit: Int
+    orderBy: SettingOrderBy
+    where: SettingFilters
+
+    """
+    Keyset pagination: only return rows strictly after this cursor (a row's `cursor` field from a previous page, under the same orderBy).
+    """
+    after: String
+    distinct: [SettingDistinctColumn!]
+  ): [Setting!]!
+  setting(offset: Int, orderBy: SettingOrderBy, where: SettingFilters): Setting
+  settingsAggregate(where: SettingFilters): SettingAggregate!
+  settingsGroupBy(
+    """
+    Columns to group by. One result row per distinct combination of their values.
+    """
+    groupBy: [SettingGroupByColumn!]!
+
+    """Filters the rows before they are grouped."""
+    where: SettingFilters
+
+    """Filters the groups after they are aggregated."""
+    having: SettingHaving
+  ): [SettingGroupBy!]!
+  mcpServers(
+    offset: Int
+    limit: Int
+    orderBy: McpServerOrderBy
+    where: McpServerFilters
+
+    """
+    Keyset pagination: only return rows strictly after this cursor (a row's `cursor` field from a previous page, under the same orderBy).
+    """
+    after: String
+    distinct: [McpServerDistinctColumn!]
+  ): [McpServer!]!
+  mcpServer(offset: Int, orderBy: McpServerOrderBy, where: McpServerFilters): McpServer
+  mcpServersAggregate(where: McpServerFilters): McpServerAggregate!
+  mcpServersGroupBy(
+    """
+    Columns to group by. One result row per distinct combination of their values.
+    """
+    groupBy: [McpServerGroupByColumn!]!
+
+    """Filters the rows before they are grouped."""
+    where: McpServerFilters
+
+    """Filters the groups after they are aggregated."""
+    having: McpServerHaving
+  ): [McpServerGroupBy!]!
+  sessions(
+    offset: Int
+    limit: Int
+    orderBy: SessionOrderBy
+    where: SessionFilters
+
+    """
+    Keyset pagination: only return rows strictly after this cursor (a row's `cursor` field from a previous page, under the same orderBy).
+    """
+    after: String
+    distinct: [SessionDistinctColumn!]
+  ): [Session!]!
+  session(offset: Int, orderBy: SessionOrderBy, where: SessionFilters): Session
+  sessionsAggregate(where: SessionFilters): SessionAggregate!
+  sessionsGroupBy(
+    """
+    Columns to group by. One result row per distinct combination of their values.
+    """
+    groupBy: [SessionGroupByColumn!]!
+
+    """Filters the rows before they are grouped."""
+    where: SessionFilters
+
+    """Filters the groups after they are aggregated."""
+    having: SessionHaving
+  ): [SessionGroupBy!]!
+  messages(
+    offset: Int
+    limit: Int
+    orderBy: MessageOrderBy
+    where: MessageFilters
+
+    """
+    Keyset pagination: only return rows strictly after this cursor (a row's `cursor` field from a previous page, under the same orderBy).
+    """
+    after: String
+    distinct: [MessageDistinctColumn!]
+  ): [Message!]!
+  message(offset: Int, orderBy: MessageOrderBy, where: MessageFilters): Message
+  messagesAggregate(where: MessageFilters): MessageAggregate!
+  messagesGroupBy(
+    """
+    Columns to group by. One result row per distinct combination of their values.
+    """
+    groupBy: [MessageGroupByColumn!]!
+
+    """Filters the rows before they are grouped."""
+    where: MessageFilters
+
+    """Filters the groups after they are aggregated."""
+    having: MessageHaving
+  ): [MessageGroupBy!]!
+
+  """Models the configured OpenAI-compatible server reports, id-sorted."""
+  models: [ModelInfo!]!
+
+  """Every configured MCP server, with its live connection state and tools."""
+  mcpStatus: [McpServerState!]!
+
+  """Answers only once the settings are loaded and the schema is up."""
+  health: Health!
+
+  """
+  Whether a key is set, without saying what it is. The Config tab shows a filled placeholder rather than an empty box; the key itself is excluded from `Setting`.
+  """
+  hasApiKey: Boolean!
+}
+
+"""Columns of Setting that a query can be made distinct on"""
+enum SettingDistinctColumn {
+  id
+  baseUrl
+  model
+  maxTokens
+  temperature
+  maxToolIterations
+  systemPrompt
+  contextLimit
+  toolDiscovery
+  taskModels
+  pricing
+}
+
+"""Columns of Setting that a query can group by"""
+enum SettingGroupByColumn {
+  id
+  baseUrl
+  model
+  maxTokens
+  temperature
+  maxToolIterations
+  systemPrompt
+  contextLimit
+  toolDiscovery
+}
+
+"""Columns of McpServer that a query can be made distinct on"""
+enum McpServerDistinctColumn {
+  id
+  label
+  enabled
+  transport
+  command
+  args
+  env
+  url
+  headers
+  position
+}
+
+"""Columns of McpServer that a query can group by"""
+enum McpServerGroupByColumn {
+  id
+  label
+  enabled
+  transport
+  command
+  url
+  position
+}
+
+"""Columns of Session that a query can be made distinct on"""
+enum SessionDistinctColumn {
+  id
+  title
+  createdAt
+  updatedAt
+  model
+  usage
+  loadedTools
+  compaction
+  messageCount
+}
+
+"""Columns of Session that a query can group by"""
+enum SessionGroupByColumn {
+  id
+  title
+  createdAt
+  updatedAt
+  model
+  messageCount
+}
+
+"""Columns of Message that a query can group by"""
+enum MessageGroupByColumn {
+  id
+  sessionId
+  idx
+  role
+  reasoningContent
+  toolCallId
+  createdAt
+}
+
+type ModelInfo {
+  id: String!
+
+  """
+  The model's window, when the server reports one. Null when it does not.
+  """
+  contextLength: Int
+}
+
+"""A configured server and what the connection to it is currently doing."""
+type McpServerState {
+  config: McpServerConfig!
+
+  """disabled | connecting | ready | error"""
+  status: String!
+  error: String
+  tools: [McpTool!]!
+}
+
+"""
+A configured MCP server. `id` is the namespace its tools are exposed under.
+"""
+type McpServerConfig {
+  id: String!
+  label: String!
+  enabled: Boolean!
+  transport: McpTransport!
+  command: String!
+  args: [String!]!
+  env: JSON!
+  url: String!
+  headers: JSON!
+}
+
+enum McpTransport {
+  stdio
+  http
+}
+
+type McpTool {
+  name: String!
+  description: String!
+}
+
+type Health {
+  ok: Boolean!
+  baseUrl: String!
+  model: String!
+  hasApiKey: Boolean!
+}
+
+type Mutation {
+  updateSetting(set: UpdateSettingInput!, where: SettingFilters): [Setting!]!
+
+  """
+  Each entry's updated rows, in entry order. An entry whose `where` matched no rows contributes `null` in its slot; an entry that matched several contributes each of its rows.
+  """
+  updateSettingsMany(updates: [UpdateSettingManyInput!]!): [Setting]!
+  updateSettingSingle(set: UpdateSettingInput!, where: SettingFilters!): Setting
+  createSessions(values: [CreateSessionInput!]!): [Session!]!
+  createSession(values: CreateSessionInput!): Session!
+  updateSession(set: UpdateSessionInput!, where: SessionFilters): [Session!]!
+
+  """
+  Each entry's updated rows, in entry order. An entry whose `where` matched no rows contributes `null` in its slot; an entry that matched several contributes each of its rows.
+  """
+  updateSessionsMany(updates: [UpdateSessionManyInput!]!): [Session]!
+  updateSessionSingle(set: UpdateSessionInput!, where: SessionFilters!): Session
+  deleteSession(where: SessionFilters): [Session!]!
+  deleteSessionSingle(where: SessionFilters!): Session
+
+  """
+  Writes the API key. Separate from the settings update because the key is write-only: it is excluded from `Setting` so it can never be read back out. An empty string clears it and falls back to $OPENAI_API_KEY.
+  """
+  setApiKey(apiKey: String!): Boolean!
+
+  """
+  Replaces the configured set and reconnects. The list is edited and saved whole — a server's id is the namespace its tools live under, so renaming one is a different server, not an edited row.
+  """
+  saveMcpServers(servers: [McpServerInput!]!): [McpServerState!]!
+
+  """Tears down one server's connection and dials it again."""
+  reconnectMcpServer(id: String!): [McpServerState!]!
+}
+
+input McpServerInput {
+  id: String!
+  label: String
+  enabled: Boolean
+  transport: McpTransport
+  command: String
+  args: [String!]
+  env: JSON
+  url: String
+  headers: JSON
+}
+
+type Subscription {
+  """
+  Runs one turn and streams what it says. Subscribing starts the turn; ending the subscription stops it, keeping whatever it had already written.
+  """
+  turn(
+    sessionId: String!
+    prompt: String!
+
+    """Overrides the session's model for this turn."""
+    model: String
+  ): TurnEvent!
+}
+
+"""
+Something a turn did while it was running — a token, a tool call, its final cost. `type` discriminates; the fields that do not belong to it are null.
+"""
+type TurnEvent {
+  """Per-turn counter from 1."""
+  seq: Int!
+
+  """
+  reasoning_delta | text_delta | tool_use | tool_result | title | stats | done | followups | error.
+  """
+  type: String!
+  text: String
+  id: String
+  name: String
+  input: String
+  toolUseId: String
+  content: String
+  isError: Boolean
+  title: String
+  stats: JSON
+  items: [String!]
+  message: String
+}

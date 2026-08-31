@@ -92,9 +92,7 @@ export default function McpScreen() {
 
       {draft.length === 0 && (
         <Card>
-          <CardDescription>
-            No servers configured yet. Add one, or edit config/mcp.yaml directly.
-          </CardDescription>
+          <CardDescription>No servers configured yet. Add one to get started.</CardDescription>
         </Card>
       )}
 

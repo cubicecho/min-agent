@@ -1,24 +1,55 @@
-import type {
-  LlmConfig,
-  LlmConfigView,
-  McpServerConfig,
-  McpServerState,
-  ModelInfo,
-  Session,
-  SessionSummary,
-  StreamEvent,
+import {
+  ConfigDocument,
+  CreateSessionDocument,
+  DeleteSessionDocument,
+  type McpServerInput,
+  type McpStateFragment,
+  McpStatusDocument,
+  ModelsDocument,
+  ReconnectMcpServerDocument,
+  RenameSessionDocument,
+  SaveConfigDocument,
+  SaveMcpServersDocument,
+  SessionDetailDocument,
+  type SessionDetailQuery,
+  type SessionSummaryFragment,
+  SessionsDocument,
+  SetApiKeyDocument,
+  TurnDocument,
+  type UpdateSettingInput,
+} from "../gql/graphql.ts";
+import { toStored } from "../messages.ts";
+import {
+  type Compaction,
+  type LlmConfig,
+  type LlmConfigView,
+  llmConfigSchema,
+  type McpServerConfig,
+  type McpServerState,
+  type ModelInfo,
+  type Session,
+  type SessionSummary,
+  type StreamEvent,
+  type TokenUsage,
+  type ToolCall,
+  type TurnStats,
 } from "../types.ts";
-
-type Options = Omit<RequestInit, "body"> & { body?: unknown };
+import { createGqlClient } from "./gql.ts";
 
 /**
- * `fetch` is injected because React Native's built-in one cannot stream: Expo apps
- * pass `fetch` from `expo/fetch`, which returns a real `ReadableStream` body.
+ * The API the two front ends call.
+ *
+ * Underneath it is GraphQL, but the shape is deliberately the small set of verbs the UI
+ * actually has — nine reads and writes and one stream — rather than a query builder. The
+ * columns that are `JSON` on the wire (`usage`, `compaction`, `stats`, ...) are cast back to
+ * their types here, in one place, so no component has to know they arrived as `unknown`.
  */
+
+/** `fetch` is injected because React Native's built-in one cannot stream: Expo passes `expo/fetch`. */
 export interface ClientOptions {
   /**
-   * Prefixed to every path — `"/api"` in the browser, an absolute
-   * `"http://host:8787/api"` on a device. A function is re-read on every call, so a
+   * The GraphQL endpoint — `"/graphql"` in the browser, an absolute
+   * `"http://host:8787/graphql"` on a device. A function is re-read on every call, so a
    * client built once still follows a server address the user edits later.
    */
   baseUrl: string | (() => string);
@@ -35,92 +66,123 @@ export interface TurnOptions {
 
 export type ApiClient = ReturnType<typeof createClient>["api"];
 
-/** Reads an error body that may not be JSON — a wrong server address returns HTML. */
-async function failure(response: Response): Promise<Error> {
-  const detail = (await response.json().catch(() => null)) as { error?: string } | null;
-  return new Error(detail?.error ?? `${response.status} ${response.statusText}`);
-}
+const summary = (row: SessionSummaryFragment): SessionSummary => ({
+  id: row.id,
+  title: row.title,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+  model: row.model,
+  usage: (row.usage as TokenUsage | null) ?? undefined,
+  loadedTools: (row.loadedTools as string[] | null) ?? undefined,
+  compaction: (row.compaction as Compaction | null) ?? undefined,
+  messageCount: row.messageCount,
+});
 
-/**
- * A 200 that will not parse is almost always a dev server answering an unknown path with
- * its `index.html`, and `Unexpected token '<'` says nothing about why. Name the address.
- */
-const wrongServer = (requested: string) =>
-  new Error(`${requested} answered with HTML, not JSON — is that the min-agent server?`);
+/** A summary is a session without its transcript, which is all a freshly created one has. */
+const asSession = (row: SessionSummaryFragment): Session => ({ ...summary(row), messages: [] });
+
+const detail = (row: NonNullable<SessionDetailQuery["session"]>): Session => ({
+  ...summary(row),
+  messages: row.messages.map((message) =>
+    toStored({
+      role: message.role,
+      content: message.content ?? null,
+      reasoningContent: message.reasoningContent,
+      toolCallId: message.toolCallId,
+      toolCalls: message.toolCalls as ToolCall[] | null,
+      stats: message.stats as TurnStats | null,
+      followups: message.followups as string[] | null,
+    }),
+  ),
+});
+
+const mcpState = (state: McpStateFragment): McpServerState => ({
+  config: state.config as McpServerConfig,
+  status: state.status as McpServerState["status"],
+  error: state.error ?? undefined,
+  tools: state.tools,
+});
+
+/** The GraphQL enum is a string on both sides; only the TypeScript spelling differs. */
+const settingsInput = (patch: Partial<LlmConfig>): UpdateSettingInput =>
+  patch as unknown as UpdateSettingInput;
 
 export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
-  const doFetch = fetchImpl ?? globalThis.fetch;
-  const url = (path: string) => `${typeof baseUrl === "function" ? baseUrl() : baseUrl}${path}`;
+  const { request, subscribe } = createGqlClient({ endpoint: baseUrl, fetch: fetchImpl });
 
-  async function request<T>(path: string, init?: Options): Promise<T> {
-    const response = await doFetch(url(path), {
-      ...init,
-      headers: init?.body ? { "Content-Type": "application/json" } : undefined,
-      body: init?.body ? JSON.stringify(init.body) : undefined,
-    });
-    if (!response.ok) throw await failure(response);
-    if (response.status === 204) return undefined as T;
-    try {
-      return (await response.json()) as T;
-    } catch {
-      throw wrongServer(url(path));
-    }
+  async function config(): Promise<LlmConfigView> {
+    const { setting, hasApiKey } = await request(ConfigDocument);
+    // The row cannot be missing — `ensureSchema` writes it — but parsing rather than casting
+    // fills in a column added since this client was built, instead of handing the UI an
+    // `undefined` where it expects a number.
+    const { apiKey: _, ...rest } = llmConfigSchema.parse(setting ?? {});
+    return { ...rest, hasApiKey };
   }
 
   const api = {
-    config: () => request<LlmConfigView>("/config"),
-    saveConfig: (config: Partial<LlmConfig>) =>
-      request<LlmConfigView>("/config", { method: "PUT", body: config }),
-    models: () => request<{ models: ModelInfo[] }>("/models"),
+    config,
 
-    sessions: () => request<SessionSummary[]>("/sessions"),
-    session: (id: string) => request<Session>(`/sessions/${id}`),
-    createSession: () => request<Session>("/sessions", { method: "POST" }),
-    renameSession: (id: string, title: string) =>
-      request<Session>(`/sessions/${id}`, { method: "PATCH", body: { title } }),
-    deleteSession: (id: string) => request<void>(`/sessions/${id}`, { method: "DELETE" }),
+    /**
+     * The key is write-only and lives on its own mutation, so a save that leaves the field
+     * blank keeps the stored one rather than blanking it.
+     */
+    async saveConfig(patch: Partial<LlmConfig>): Promise<LlmConfigView> {
+      const { apiKey, ...columns } = patch;
+      if (apiKey) await request(SetApiKeyDocument, { apiKey });
+      if (Object.keys(columns).length) {
+        await request(SaveConfigDocument, { set: settingsInput(columns) });
+      }
+      return config();
+    },
 
-    mcp: () => request<McpServerState[]>("/mcp"),
-    saveMcp: (servers: McpServerConfig[]) =>
-      request<McpServerState[]>("/mcp", { method: "PUT", body: { servers } }),
-    reconnectMcp: (id: string) =>
-      request<McpServerState[]>(`/mcp/${id}/reconnect`, { method: "POST" }),
+    models: async () => ({ models: (await request(ModelsDocument)).models as ModelInfo[] }),
+
+    sessions: async () => (await request(SessionsDocument)).sessions.map(summary),
+
+    async session(id: string): Promise<Session> {
+      const { session } = await request(SessionDetailDocument, { id });
+      if (!session) throw new Error("session not found");
+      return detail(session);
+    },
+
+    createSession: async () => asSession((await request(CreateSessionDocument)).createSession),
+
+    async renameSession(id: string, title: string): Promise<Session> {
+      const { updateSessionSingle } = await request(RenameSessionDocument, { id, title });
+      if (!updateSessionSingle) throw new Error("session not found");
+      return asSession(updateSessionSingle);
+    },
+
+    deleteSession: async (id: string) => {
+      await request(DeleteSessionDocument, { id });
+    },
+
+    mcp: async () => (await request(McpStatusDocument)).mcpStatus.map(mcpState),
+
+    saveMcp: async (servers: McpServerConfig[]) =>
+      (
+        await request(SaveMcpServersDocument, { servers: servers as McpServerInput[] })
+      ).saveMcpServers.map(mcpState),
+
+    reconnectMcp: async (id: string) =>
+      (await request(ReconnectMcpServerDocument, { id })).reconnectMcpServer.map(mcpState),
   };
 
-  /** POSTs a turn and hands the server's SSE events to `onEvent` as they arrive. */
+  /**
+   * Runs a turn and hands each event to `onEvent` as it arrives.
+   *
+   * Subscribing is what starts the turn, and returning from this function — normally, or
+   * because `signal` fired — is what stops it. One flat `TurnEvent` comes back off the wire,
+   * because a union of nine shapes costs more in generated types and inline fragments than
+   * a `type` field and a switch does here.
+   */
   async function streamTurn({ sessionId, prompt, model, onEvent, signal }: TurnOptions) {
-    const response = await doFetch(url(`/sessions/${sessionId}/messages`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({ prompt, model }),
-      signal,
-    });
-
-    if (!response.ok || !response.body) throw await failure(response);
-
-    // Decoding by hand rather than via `TextDecoderStream`, which React Native lacks.
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const frames = buffer.split("\n\n");
-      buffer = frames.pop() ?? "";
-      for (const frame of frames) {
-        // A frame carries any number of lines, and only the `data:` ones are ours — the
-        // server's keep-alives are comments, and feeding one to `JSON.parse` would end the
-        // turn on a colon.
-        const data = frame
-          .split("\n")
-          .filter((line) => line.startsWith("data:"))
-          .map((line) => line.slice(5).trim())
-          .join("");
-        if (data) onEvent(JSON.parse(data) as StreamEvent);
-      }
+    for await (const { turn } of subscribe(TurnDocument, { sessionId, prompt, model }, signal)) {
+      const { seq: _seq, ...rest } = turn;
+      const event = Object.fromEntries(
+        Object.entries(rest).filter(([, value]) => value !== null),
+      ) as unknown as StreamEvent;
+      onEvent(event);
     }
   }
 

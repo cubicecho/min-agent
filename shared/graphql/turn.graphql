@@ -1,0 +1,19 @@
+# Subscribing runs the turn; ending the subscription stops it. One stream, so nothing said
+# between "start" and "watch" can go missing — there is no gap to lose it in.
+subscription Turn($sessionId: String!, $prompt: String!, $model: String) {
+  turn(sessionId: $sessionId, prompt: $prompt, model: $model) {
+    seq
+    type
+    text
+    id
+    name
+    input
+    toolUseId
+    content
+    isError
+    title
+    stats
+    items
+    message
+  }
+}

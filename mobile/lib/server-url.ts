@@ -24,12 +24,12 @@ let fallback = "";
 /** What an install with nothing saved will talk to. Resolved by `loadServerUrl`. */
 export const defaultServerUrl = () => fallback;
 
-/** Trailing slashes and a pasted `/api` suffix are the two mistakes worth absorbing. */
+/** Trailing slashes and a pasted `/graphql` suffix are the two mistakes worth absorbing. */
 export const normalizeServerUrl = (value: string) =>
   value
     .trim()
     .replace(/\/+$/, "")
-    .replace(/\/api$/, "");
+    .replace(/\/graphql$/, "");
 
 /**
  * Baked in at bundle time by `scripts/expo.ts`, from the same `.env` the server reads, so
@@ -49,13 +49,17 @@ export const serverUrl = () => current;
 /**
  * Being on the web is not the same as having been served by the agent. `expo start --web`
  * serves the app from Metro, and Metro answers every path it does not recognise with
- * `index.html` — so an origin-relative `/api/config` comes back as `<!DOCTYPE html>` and
- * every screen fails on a JSON parse. Whether the origin actually speaks the API is a
- * question with an answer, so it is asked once here rather than inferred from the protocol.
+ * `index.html` — so an origin-relative `/graphql` comes back as `<!DOCTYPE html>` and every
+ * screen fails on a JSON parse. Whether the origin actually speaks GraphQL is a question with
+ * an answer, so it is asked once here rather than inferred from the protocol.
  */
 async function originServesTheApi() {
   try {
-    const response = await fetch("/api/config", { headers: { accept: "application/json" } });
+    const response = await fetch("/graphql", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ query: "{ health { ok } }" }),
+    });
     return response.ok && (response.headers.get("content-type") ?? "").includes("json");
   } catch {
     return false;

@@ -1,0 +1,60 @@
+# The columns the sidebar draws a row from. `messageCount` is a column on the session, so a
+# list of forty chats is one query over one table and never opens a transcript.
+fragment SessionSummary on Session {
+  id
+  title
+  createdAt
+  updatedAt
+  model
+  usage
+  loadedTools
+  compaction
+  messageCount
+}
+
+fragment MessageRow on Message {
+  id
+  idx
+  role
+  content
+  reasoningContent
+  toolCalls
+  toolCallId
+  stats
+  followups
+}
+
+query Sessions {
+  sessions {
+    ...SessionSummary
+  }
+}
+
+# `messages` is ordered by `idx` ascending server-side (see `defaults` in graphql/schema.ts),
+# so the transcript arrives in the order the model wrote it without the client asking.
+query SessionDetail($id: String!) {
+  session(where: { id: { eq: $id } }) {
+    ...SessionSummary
+    messages {
+      ...MessageRow
+    }
+  }
+}
+
+mutation CreateSession {
+  createSession(values: {}) {
+    ...SessionSummary
+  }
+}
+
+mutation RenameSession($id: String!, $title: String!) {
+  updateSessionSingle(set: { title: $title }, where: { id: { eq: $id } }) {
+    ...SessionSummary
+  }
+}
+
+mutation DeleteSession($id: String!) {
+  deleteSessionSingle(where: { id: { eq: $id } }) {
+    id
+  }
+}

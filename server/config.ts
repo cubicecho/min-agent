@@ -1,101 +1,64 @@
-import fs from "node:fs";
-import path from "node:path";
-import YAML from "yaml";
-import { z } from "zod";
+import { asc, eq } from "drizzle-orm";
 import {
   type LlmConfig,
   llmConfigSchema,
   type McpServerConfig,
-  mcpFileSchema,
+  mcpServerSchema,
 } from "../shared/types.ts";
-import { CONFIG_DIR } from "./paths.ts";
+import { db } from "./db/client.ts";
+import { mcpServers, settings } from "./db/schema.ts";
 
-const LLM_FILE = path.join(CONFIG_DIR, "llm.yaml");
-const MCP_FILE = path.join(CONFIG_DIR, "mcp.yaml");
+/** The singleton settings row. There is exactly one, created by `ensureSchema`. */
+const DEFAULT_ID = "default";
 
-const SEED_LLM = `# Connection to any OpenAI-compatible server.
-# Ollama: http://localhost:11434/v1   LM Studio: http://localhost:1234/v1
-# OpenAI: https://api.openai.com/v1   OpenRouter: https://openrouter.ai/api/v1
-baseUrl: http://localhost:11434/v1
-# Leave empty to fall back to $OPENAI_API_KEY.
-apiKey: ""
-# Chosen from the models the server reports. Set it in the Config tab.
-model: ""
-maxTokens: 4096
-temperature: 0.7
-maxToolIterations: 20
-# Context window used for the "used / total" meter. 0 asks the server, which not
-# every OpenAI-compatible server answers — set it by hand if the meter stays hidden.
-contextLimit: 0
-# eager    — send every MCP tool definition on every request (simple, costly)
-# ondemand — send a name-only catalogue and let the model load the schemas it needs
-toolDiscovery: ondemand
-# Side jobs that need not run on the chat model — set a small fast one instead.
-# title      — names a new chat from its opening message. Empty truncates the first line.
-# compaction — folds the oldest messages into a summary once a session fills 75% of
-#              the context window. Empty lets long sessions eventually overflow.
-# toolSelect — picks the tools a request needs before the turn starts, so on-demand
-#              loading costs no round trip. Only used when toolDiscovery is ondemand.
-# followups  — proposes the next few questions under a reply, as clickable chips.
-taskModels:
-  title: ""
-  compaction: ""
-  toolSelect: ""
-  followups: ""
-systemPrompt: |
-  You are min-agent, a concise and careful assistant.
-  You have access to tools from the user's connected MCP servers.
-  Prefer doing the work over describing it. Say plainly when something failed.
-# Only used for the cost readout next to the token count. Leave at 0 for local
-# models and min-agent shows tokens alone.
-pricing:
-  inputPer1M: 0
-  outputPer1M: 0
-`;
+/**
+ * The settings, kept in memory.
+ *
+ * They are read on nearly every line of a turn — the model, the system prompt, the token
+ * ceiling, four task models — and a turn is not a place to be awaiting the database for a row
+ * that changes when someone clicks Save. So the row is loaded once at boot and again after any
+ * write, and `loadLlmConfig()` stays the synchronous call it always was. Every write goes
+ * through GraphQL, which refreshes this on the way out (`onWrite` in `graphql/schema.ts`), so
+ * a second process editing the row is the only way to make this stale — and there isn't one.
+ */
+let cached: LlmConfig = llmConfigSchema.parse({});
 
-const SEED_MCP = `# MCP servers exposed to the agent as tools.
-# Tools are namespaced as <server id>__<tool name>.
-servers: []
-# servers:
-#   - id: filesystem
-#     label: Filesystem
-#     enabled: true
-#     transport: stdio
-#     command: npx
-#     args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
-#     env: {}
-#   - id: docs
-#     label: Docs (HTTP)
-#     enabled: false
-#     transport: http
-#     url: https://example.com/mcp
-#     headers: {}
-`;
+export async function refreshLlmConfig(): Promise<LlmConfig> {
+  const [row] = await db.select().from(settings).where(eq(settings.id, DEFAULT_ID)).limit(1);
+  cached = llmConfigSchema.parse(row ?? {});
+  return cached;
+}
 
-function readOrSeed<T extends z.ZodType>(file: string, seed: string, schema: T): z.infer<T> {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  if (!fs.existsSync(file)) fs.writeFileSync(file, seed, "utf8");
-  const raw = YAML.parse(fs.readFileSync(file, "utf8")) ?? {};
-  const parsed = schema.safeParse(raw);
-  if (!parsed.success) {
-    throw new Error(`${path.basename(file)} is invalid:\n${z.prettifyError(parsed.error)}`);
+export const loadLlmConfig = (): LlmConfig => cached;
+
+/** The key from the settings row, else the environment. */
+export const resolveApiKey = (config = cached) => config.apiKey || process.env.OPENAI_API_KEY || "";
+
+export async function loadMcpServers(): Promise<McpServerConfig[]> {
+  const rows = await db.select().from(mcpServers).orderBy(asc(mcpServers.position));
+  return rows.map((row) => mcpServerSchema.parse(row));
+}
+
+/**
+ * Replaces the whole set in one transaction.
+ *
+ * The MCP tab edits a list and saves it, and a row's id is the tool namespace the user chose —
+ * so a rename is a delete and an insert, not an update. Diffing that against the table row by
+ * row would be more machinery than deleting and rewriting nine rows is worth.
+ */
+export async function saveMcpServers(list: McpServerConfig[]): Promise<McpServerConfig[]> {
+  const parsed = list.map((server) => mcpServerSchema.parse(server));
+  if (new Set(parsed.map((server) => server.id)).size !== parsed.length) {
+    throw new Error("duplicate server id");
   }
-  return parsed.data;
+
+  await db.transaction(async (tx) => {
+    await tx.delete(mcpServers);
+    if (parsed.length) {
+      await tx
+        .insert(mcpServers)
+        .values(parsed.map((server, position) => ({ ...server, position })));
+    }
+  });
+  return parsed;
 }
-
-/** Note: rewriting a config file drops the comments that shipped with it. */
-function write(file: string, value: unknown) {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  fs.writeFileSync(file, YAML.stringify(value, { lineWidth: 0 }), "utf8");
-}
-
-export const loadLlmConfig = (): LlmConfig => readOrSeed(LLM_FILE, SEED_LLM, llmConfigSchema);
-export const saveLlmConfig = (config: LlmConfig) => write(LLM_FILE, config);
-
-export const loadMcpServers = (): McpServerConfig[] =>
-  readOrSeed(MCP_FILE, SEED_MCP, mcpFileSchema).servers;
-export const saveMcpServers = (servers: McpServerConfig[]) => write(MCP_FILE, { servers });
-
-/** The key from llm.yaml, else the environment. */
-export const resolveApiKey = (config = loadLlmConfig()) =>
-  config.apiKey || process.env.OPENAI_API_KEY || "";
