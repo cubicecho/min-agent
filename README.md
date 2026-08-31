@@ -14,6 +14,7 @@ Everything below the quick start is reference — read it when you want that pie
 - [MCP servers](#mcp-servers) — wiring up tools, and how they are loaded without blowing the prompt budget
 - [Task models](#task-models) — pointing a small fast model at titling, compaction, tool preselection and follow-ups
 - [Turn statistics](#turn-statistics) — what the numbers under each reply mean
+- [The session list](#the-session-list) — renaming, deleting and finding a chat
 - [Android, Windows and web apps](#android-windows-and-web-apps) — the second front end in `mobile/`
 
 ## Stack
@@ -111,7 +112,8 @@ nothing.
   `store.ts` session persistence, `config.ts` YAML read/write.
 - `shared/types.ts` — zod schemas shared by both sides; the API contract lives here.
 - `shared/client/` — everything both front ends run: `api.ts` (the typed client and the SSE
-  reader), `live.ts` (streaming-event reducer), `usage.ts` (token/cost formatting).
+  reader), `live.ts` (streaming-event reducer), `use-live-parts.ts` (frame-batched streaming
+  state), `sessions.ts` (the session-list filter), `usage.ts` (token/cost formatting).
 - `tests/` — Vitest (`npm test`).
 
 ## Files on disk
@@ -398,6 +400,27 @@ token lands on the last bubble without re-parsing the markdown of every reply ab
 Scrolling follows the turn only while you are already within 100px of the bottom. Reading back
 through the transcript mid-turn used to be impossible — every delta yanked the view down; now
 leaving the bottom unpins it and a *Jump to latest* button brings it back.
+
+## The session list
+
+Both front ends render the same rail from the same pieces. A chat is renamed in place — the
+title becomes a field, Enter or moving away commits, Escape puts it back — which is the whole
+of the `PATCH /sessions/:id` route the server has always had and nothing had ever called.
+
+Delete asks first. The bin primes the row into a `Delete?` button rather than opening a dialog:
+one tap to arm, one to confirm, and the row disarms itself after five seconds so a forgotten
+click is not a delete waiting to happen. There is no modal on either platform, which also means
+no `Alert.alert` — react-native-web does not implement it, and the mobile app runs in a browser.
+
+The row's buttons used to be `hidden group-hover:block` on the web, so they did not exist for a
+keyboard or a touchscreen. They now fade in on hover *or* focus-within, and stay visible where
+there is no hover at all (`[@media(hover:none)]`).
+
+A search box appears above the list once there are more than eight chats — below that, scanning
+is faster than the box is worth. It matches every whitespace-separated term against the title, in
+any order, so typing more always narrows. Filtering is done in the client (`matchSessions` in
+`shared/client/sessions.ts`): the list is already in memory, and a round trip per keystroke would
+be slower than the search it replaced.
 
 ## Android, Windows and web apps
 

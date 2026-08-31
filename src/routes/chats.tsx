@@ -10,12 +10,13 @@ import {
 } from "@shared/client/usage.ts";
 import { useLiveParts } from "@shared/client/use-live-parts.ts";
 import type { TurnStats } from "@shared/types.ts";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { ArrowDown, Bot, Plus, Send, Square, Trash2 } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useParams } from "@tanstack/react-router";
+import { ArrowDown, Bot, Send, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { MessageView } from "@/components/message-view";
+import { SessionList } from "@/components/session-list";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -28,20 +29,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { api, streamTurn } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const when = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
 export function ChatsRoute() {
   const { sessionId } = useParams({ strict: false }) as { sessionId?: string };
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const sessions = useQuery({ queryKey: ["sessions"], queryFn: api.sessions });
   const session = useQuery({
     queryKey: ["session", sessionId],
     queryFn: () => api.session(sessionId as string),
@@ -86,22 +78,6 @@ export function ChatsRoute() {
     // turn the view is simply moved.
     bottom.current?.scrollIntoView({ behavior: pending ? "auto" : "smooth" });
   }, [session.data?.messages.length, live, pending, pinned]);
-
-  const newChat = useMutation({
-    mutationFn: api.createSession,
-    onSuccess: async (created) => {
-      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      navigate({ to: "/chats/$sessionId", params: { sessionId: created.id } });
-    },
-  });
-
-  const remove = useMutation({
-    mutationFn: api.deleteSession,
-    onSuccess: async (_data, id) => {
-      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      if (id === sessionId) navigate({ to: "/chats" });
-    },
-  });
 
   /**
    * Puts the window back on the stored session and drops the optimistic bubbles — the refetch
@@ -293,45 +269,7 @@ export function ChatsRoute() {
         </footer>
       </section>
 
-      <aside className="flex w-72 shrink-0 flex-col border-l bg-sidebar">
-        <div className="flex items-center justify-between px-3 py-3">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Sessions
-          </span>
-          <Button size="sm" variant="ghost" onClick={() => newChat.mutate()}>
-            <Plus className="size-4" />
-            New
-          </Button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-          {(sessions.data ?? []).map((item) => (
-            <div key={item.id} className="group relative">
-              <Link
-                to="/chats/$sessionId"
-                params={{ sessionId: item.id }}
-                className={cn(
-                  "block rounded-md px-3 py-2 pr-8 text-sm hover:bg-accent",
-                  item.id === sessionId && "bg-accent",
-                )}
-              >
-                <div className="truncate">{item.title}</div>
-                <div className="truncate text-xs text-muted-foreground">{when(item.updatedAt)}</div>
-              </Link>
-              <button
-                type="button"
-                aria-label={`Delete ${item.title}`}
-                onClick={() => remove.mutate(item.id)}
-                className="absolute right-2 top-2 hidden rounded p-1 text-muted-foreground hover:text-destructive group-hover:block"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
-            </div>
-          ))}
-          {sessions.data?.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-muted-foreground">No sessions yet.</p>
-          ) : null}
-        </div>
-      </aside>
+      <SessionList activeId={sessionId} />
     </div>
   );
 }
