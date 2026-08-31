@@ -34,9 +34,12 @@ contextLimit: 0
 # ondemand — send a name-only catalogue and let the model load the schemas it needs
 toolDiscovery: ondemand
 # Side jobs that need not run on the chat model — set a small fast one instead.
-# title — names a new chat from its opening message. Empty truncates the first line.
+# title      — names a new chat from its opening message. Empty truncates the first line.
+# compaction — folds the oldest messages into a summary once a session fills 75% of
+#              the context window. Empty lets long sessions eventually overflow.
 taskModels:
   title: ""
+  compaction: ""
 systemPrompt: |
   You are min-agent, a concise and careful assistant.
   You have access to tools from the user's connected MCP servers.

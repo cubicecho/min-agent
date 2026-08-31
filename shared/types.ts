@@ -44,6 +44,12 @@ export type LlmConfig = z.infer<typeof llmConfigSchema>;
  */
 export const MODEL_TASKS = [
   {
+    key: "compaction",
+    label: "Context compaction",
+    empty: "off — long sessions eventually overflow",
+    hint: "Summarises the oldest messages once a session fills 75% of the context window, so it can keep going.",
+  },
+  {
     key: "title",
     label: "Session title",
     empty: "off — use the first message",
@@ -156,6 +162,16 @@ export type StoredMessage = OpenAI.ChatCompletionMessageParam & {
 };
 
 /** Sessions are stored on disk as one JSON file per session. */
+/** What replaces the folded-away head of a long transcript. Written by the model, kept on disk. */
+export interface Compaction {
+  /** The model's notes on messages `[0, through)`. */
+  summary: string;
+  /** Index into `messages`: everything before it is represented by the summary. */
+  through: number;
+  /** When it was written, so the chat can show where history was folded. */
+  at: string;
+}
+
 export interface Session {
   id: string;
   title: string;
@@ -168,6 +184,8 @@ export interface Session {
   usage?: TokenUsage;
   /** Tools pulled in on demand, kept for the rest of the session so they load once. */
   loadedTools?: string[];
+  /** Set once the transcript outgrew the window; the head is sent as a summary instead. */
+  compaction?: Compaction;
   /** Raw chat-completions turns — replayed verbatim on the next request. */
   messages: StoredMessage[];
 }

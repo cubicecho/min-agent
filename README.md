@@ -178,6 +178,7 @@ with one select per task; leaving one unset keeps the cheap non-LLM behaviour.
 | Task | Set | Unset |
 | --- | --- | --- |
 | Session title | A model names the chat from its opening message | The first line is truncated |
+| Context compaction | The oldest messages fold into a running summary | A long session eventually overflows |
 
 Titling runs *alongside* the turn, not before it, so it never delays the first token — the
 truncated line goes up immediately and is replaced when the title lands. A failure is swallowed:
@@ -193,6 +194,29 @@ the unknown fields gets one retry without them, and min-agent stops sending them
 
 Adding a task is a line in `MODEL_TASKS` in `shared/types.ts` and a read of `modelForTask()`;
 `taskModels` is an open record, so no config migration is needed.
+
+### Context compaction
+
+A session that runs long eventually stops fitting. Compaction is the answer: once the last turn
+reported using **75%** of the context window, the oldest messages are replaced — for the purpose
+of the API call only — by one system message holding a summary of them.
+
+Nothing is deleted. `session.compaction` records `{ summary, through, at }` and the messages stay
+on disk in full; `through` is simply the index the transcript is rebuilt from, so the UI still
+shows the whole history and a later fold re-summarises from the previous summary onward. That also
+means the summary *accumulates* — the model is handed the old summary plus the newly folded turns
+and asked for the merged one, so a fact stated in the first message survives an arbitrary number
+of folds.
+
+The cut point is the fussy part. It has to land **immediately before a `user` message**, because a
+transcript that opens mid-exchange — a tool result with no assistant call above it, an assistant
+turn answering nothing — is rejected by most servers. `planCompaction()` walks backwards from the
+end accumulating a tail worth about 35% of the window, then advances the cut forward to the next
+`user` message and gives up if that leaves fewer than two messages folded. A fold that would not
+pay for itself is not worth a round trip.
+
+Like titling, a failure is swallowed: the turn proceeds on the full transcript, which is the
+behaviour you had before compaction existed.
 
 ## Turn statistics
 

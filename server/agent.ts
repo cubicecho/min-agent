@@ -10,6 +10,13 @@ import {
   type TokenUsage,
   type TurnStats,
 } from "../shared/types.ts";
+import {
+  compactionMessage,
+  needsCompaction,
+  planCompaction,
+  SUMMARY_PROMPT,
+  transcriptFor,
+} from "./compaction.ts";
 import { loadLlmConfig, resolveApiKey } from "./config.ts";
 import { mcp } from "./mcp.ts";
 import { isGrammarError, relaxTools, sanitizeTools } from "./schema-compat.ts";
@@ -79,6 +86,54 @@ function titleFrom(text: string) {
 }
 
 /**
+ * Folds the settled head of a long transcript into a summary, if it has grown far enough into
+ * the window to need it. Returns a note for the log; the work is the mutation of `session`.
+ *
+ * The messages themselves are never deleted — only `compaction.through` moves — so the chat
+ * still shows the whole history and the next compaction can build on this summary.
+ */
+async function compact(
+  session: Session,
+  config: LlmConfig,
+  model: string,
+  contextLimit: number,
+  signal?: AbortSignal,
+): Promise<string> {
+  const used = latestContextTokens(session);
+  if (!needsCompaction(used, contextLimit)) return "";
+
+  const from = session.compaction?.through ?? 0;
+  const through = planCompaction(session.messages, from, contextLimit);
+  if (through === undefined) return "";
+
+  const previous = session.compaction
+    ? `Notes so far:\n${session.compaction.summary}\n\nContinue them with this exchange:\n\n`
+    : "";
+  const summary = await ask(
+    config,
+    model,
+    SUMMARY_PROMPT,
+    previous + transcriptFor(session.messages, from, through),
+    { maxTokens: 1024, signal },
+  );
+  if (!summary) return "";
+
+  session.compaction = { summary, through, at: new Date().toISOString() };
+  saveSession(session);
+  console.log(`[agent] compacted ${through} message(s) at ${used}/${contextLimit} tokens`);
+  return summary;
+}
+
+/** What the last turn actually cost, which is the best estimate of what the next one will. */
+function latestContextTokens(session: Session): number {
+  for (let i = session.messages.length - 1; i >= 0; i--) {
+    const { stats } = session.messages[i];
+    if (stats?.contextTokens) return stats.contextTokens;
+  }
+  return 0;
+}
+
+/**
  * Names a session from its opening message, using whichever model is configured for the task.
  *
  * Runs alongside the turn rather than before it, so it never delays the first token — a small
@@ -113,7 +168,15 @@ type Delta = OpenAI.ChatCompletionChunk.Choice.Delta & {
  * Drops our own `reasoning_content` and `stats` before the history goes back over the wire —
  * they are display artifacts, and strict servers reject unknown message fields.
  */
-function forApi(messages: StoredMessage[]): OpenAI.ChatCompletionMessageParam[] {
+/**
+ * The transcript as the server should see it: private bookkeeping stripped, and — once a
+ * session has been compacted — the folded head replaced by its summary.
+ */
+function forApi(session: Session): OpenAI.ChatCompletionMessageParam[] {
+  const { compaction } = session;
+  const messages = compaction
+    ? [compactionMessage(compaction), ...session.messages.slice(compaction.through)]
+    : session.messages;
   return messages.map((message) => {
     if (!("reasoning_content" in message) && !("stats" in message)) return message;
     const copy = { ...message } as StoredMessage;
@@ -169,6 +232,15 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     ? `${config.systemPrompt}\n\n${catalogPrompt(catalog)}`
     : config.systemPrompt;
 
+  // Compaction happens before the user's message goes on, so the summary covers settled history
+  // and the question that prompted it stays verbatim.
+  const compactionModel = modelForTask(config, "compaction");
+  if (compactionModel && contextLimit) {
+    await tryAsk("compaction", () =>
+      compact(session, config, compactionModel, contextLimit, signal),
+    );
+  }
+
   session.model = chosenModel;
   session.messages.push({ role: "user", content: prompt });
 
@@ -218,7 +290,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
           temperature: config.temperature,
           stream: true,
           ...(withUsage ? { stream_options: { include_usage: true } } : {}),
-          messages: [{ role: "system", content: systemPrompt }, ...forApi(session.messages)],
+          messages: [{ role: "system", content: systemPrompt }, ...forApi(session)],
           ...(tools.length ? { tools } : {}),
         },
         { signal },
