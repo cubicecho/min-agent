@@ -5,7 +5,7 @@ import { api } from "./api.ts";
 import { loadMcpServers } from "./config.ts";
 import * as cron from "./cron.ts";
 import { mcp } from "./mcp.ts";
-import { PORT, ROOT } from "./paths.ts";
+import { displayHost, HOST, PORT, ROOT } from "./paths.ts";
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -47,8 +47,8 @@ app.use(
   },
 );
 
-app.listen(PORT, () => {
-  console.log(`[min-agent] http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`[min-agent] http://${displayHost()}:${PORT}`);
 });
 
 await mcp.sync(loadMcpServers());

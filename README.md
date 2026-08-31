@@ -36,6 +36,19 @@ Known-good base URLs:
 The key can also come from `OPENAI_API_KEY` in the environment (see `.env.example`); the value
 saved in `config/llm.yaml` wins if both are set.
 
+### Where it listens
+
+Copy `.env.example` to `.env` to change it. Both `npm run dev` and `npm start` read that file —
+Node loads it directly, through `--env-file-if-exists`, so there is no dotenv dependency and no
+import to remember — and the Vite dev server reads the same file so its `/api` proxy follows the
+server rather than going on knocking at 8787.
+
+`PORT` is the Express port. `HOST` is the interface it binds; the default, `0.0.0.0`, accepts
+connections from the LAN, which is what the Android and desktop apps need to reach it at all.
+Setting it to `localhost` takes that back and accepts local connections only — worth doing on a
+network you do not trust, since nothing here is authenticated. The startup line prints an address
+you can actually open, so a wildcard bind shows as `localhost`.
+
 ## Production
 
 ```bash

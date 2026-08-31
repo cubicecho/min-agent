@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -n server,web -c cyan,magenta \"npm:dev:server\" \"npm:dev:web\"",
-    "dev:server": "tsx watch server/index.ts",
+    "dev:server": "tsx watch --env-file-if-exists=.env server/index.ts",
     "dev:web": "vite",
     "mobile": "npm --prefix mobile run start",
     "mobile:web": "npm --prefix mobile run web",
@@ -15,7 +15,7 @@
     "desktop": "npm run mobile:export && npm --prefix mobile/electron run start",
     "desktop:build": "npm run mobile:export && npm --prefix mobile/electron run dist",
     "build": "npm run typecheck && vite build",
-    "start": "NODE_ENV=production tsx server/index.ts",
+    "start": "NODE_ENV=production tsx --env-file-if-exists=.env server/index.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome check --write .",
