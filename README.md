@@ -402,6 +402,41 @@ handler reads `shiftKey` and the IME's `isComposing` through a documented cast �
 `preventDefault()`, which also suppresses react-native-web's own Enter branch and the blur
 that comes with it, so the cursor stays in the box between messages.
 
+### A sidebar, not a hamburger
+
+On the web the nav is always on screen. `drawerType: "permanent"` pins it beside the
+content and takes the toggle out of the header, so the five destinations are a sidebar the
+way they are in the Vite app rather than something you have to remember is there. Above
+768px it shows icons and labels; below, it narrows to a 64px rail of icons that the button
+at its top opens back out — a nav you can still see and click at 400px wide, which a
+closed drawer is not.
+
+The rail hides its labels with `display: none` on `drawerLabelStyle` rather than dropping
+them, so each icon is still announced by name. On a phone none of this applies: the drawer
+goes on sliding over the content, because 64px of permanent rail is a lot of a phone.
+
+### One chats view, two widths
+
+The web app puts the conversation on the left and the session list in a panel on the right;
+the phone has never had room for both. `mobile/components/chat-view.tsx` is both: above
+768px (`useWide()` in `mobile/lib/layout.ts`) it renders the chat and the panel side by side,
+and below it the list and the chat go back to being separate screens at `/` and `/chat/[id]`.
+
+The split is a JavaScript branch rather than a `md:` class because it decides *which panes
+exist*, not how one is styled — and `useWindowDimensions` re-renders on rotation and on a
+dragged browser window, so a resize moves the layout rather than leaving it at whatever
+width the app started at. Both routes render `ChatsView`, which is what lets the panel stay
+put while the route beneath it changes; switching chats from the panel `replace`s rather
+than `push`es, so an afternoon of browsing does not pile up on the back stack.
+
+Enter sends, as it does on the web, and Shift+Enter breaks the line. That is wired through
+`onKeyPress` in `Textarea` and is deliberately web-only: on a phone the return key is how
+you get a new line, and the send button is an inch away. react-native-web hands `onKeyPress`
+the React synthetic keyboard event rather than the bare `{ key }` its types promise, so the
+handler reads `shiftKey` and the IME's `isComposing` through a documented cast — and calls
+`preventDefault()`, which also suppresses react-native-web's own Enter branch and the blur
+that comes with it, so the cursor stays in the box between messages.
+
 ### A pinned lightningcss
 
 `mobile/package.json` pins `lightningcss` to `1.30.1` for `react-native-css`, and the pin is
