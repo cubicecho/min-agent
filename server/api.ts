@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
 import {
-  cronJobSchema,
   type LlmConfigView,
   llmConfigSchema,
   mcpServerSchema,
@@ -9,17 +8,13 @@ import {
 } from "../shared/types.ts";
 import { listModels, runTurn } from "./agent.ts";
 import {
-  loadCronJobs,
   loadLlmConfig,
   loadMcpServers,
   resolveApiKey,
-  saveCronJobs,
   saveLlmConfig,
   saveMcpServers,
 } from "./config.ts";
-import * as cron from "./cron.ts";
 import { mcp } from "./mcp.ts";
-import { listRuns } from "./runs.ts";
 import { createSession, deleteSession, getSession, listSessions, saveSession } from "./store.ts";
 
 export const api = Router();
@@ -139,35 +134,6 @@ api.put("/mcp", async (req, res) => {
 api.post("/mcp/:id/reconnect", async (req, res) => {
   await mcp.reconnect(req.params.id, loadMcpServers());
   res.json(mcp.state());
-});
-
-/* ------------------------------------------------------------------ crons */
-
-api.get("/crons", (_req, res) => res.json(cron.state()));
-
-api.put("/crons", (req, res) => {
-  const parsed = z.array(cronJobSchema).safeParse(req.body?.jobs);
-  if (!parsed.success) return res.status(400).json({ error: z.prettifyError(parsed.error) });
-  if (new Set(parsed.data.map((job) => job.id)).size !== parsed.data.length) {
-    return res.status(400).json({ error: "duplicate job id" });
-  }
-  const invalid = parsed.data.find((job) => !cron.isValidSchedule(job.schedule));
-  if (invalid)
-    return res.status(400).json({ error: `invalid cron expression: ${invalid.schedule}` });
-
-  saveCronJobs(parsed.data);
-  cron.sync(parsed.data);
-  res.json(cron.state());
-});
-
-api.get("/crons/:id/runs", (req, res) => res.json(listRuns(req.params.id)));
-
-api.post("/crons/:id/run", async (req, res) => {
-  const job = loadCronJobs().find((item) => item.id === req.params.id);
-  if (!job) return res.status(404).json({ error: "job not found" });
-
-  const sessionId = await cron.runJob(job);
-  res.json({ sessionId, state: cron.state() });
 });
 
 /* ----------------------------------------------------------------- health */

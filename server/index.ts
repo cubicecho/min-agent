@@ -3,7 +3,6 @@ import path from "node:path";
 import express from "express";
 import { api } from "./api.ts";
 import { loadMcpServers } from "./config.ts";
-import * as cron from "./cron.ts";
 import { mcp } from "./mcp.ts";
 import { displayHost, HOST, PORT, ROOT } from "./paths.ts";
 
@@ -52,7 +51,6 @@ app.listen(PORT, HOST, () => {
 });
 
 await mcp.sync(loadMcpServers());
-cron.sync();
 
 const shutdown = async () => {
   await mcp.sync([]);

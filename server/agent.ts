@@ -495,9 +495,8 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
 
       // After the answer, not before: it is on screen and being read by the time this runs, so
       // the second it costs is spent where nobody is waiting on it. The chips are read back off
-      // the stored message, so they survive a reload without a second delivery path. Cron runs
-      // skip it — there is nobody there to click.
-      const followupModel = session.source === "chat" ? modelForTask(config, "followups") : "";
+      // the stored message, so they survive a reload without a second delivery path.
+      const followupModel = modelForTask(config, "followups");
       const body = typeof assistant.content === "string" ? assistant.content : "";
       if (followupModel && body) {
         const followups = await tryAsk("followups", () =>

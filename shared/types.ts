@@ -62,12 +62,6 @@ export const MODEL_TASKS = [
     hint: "Proposes a few next questions under each reply in a chat, as chips you can click to send.",
   },
   {
-    key: "runSummary",
-    label: "Cron run summary",
-    empty: "off — open the session to see what happened",
-    hint: "Condenses each cron run's answer to one line, so the run history says what happened without opening it.",
-  },
-  {
     key: "title",
     label: "Session title",
     empty: "off — use the first message",
@@ -111,21 +105,6 @@ export const mcpServerSchema = z
 export type McpServerConfig = z.infer<typeof mcpServerSchema>;
 
 export const mcpFileSchema = z.object({ servers: z.array(mcpServerSchema).default([]) });
-
-export const cronJobSchema = z.object({
-  id: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/),
-  name: z.string().min(1),
-  /** Standard 5-field cron expression. */
-  schedule: z.string().min(1),
-  timezone: z.string().default(""),
-  enabled: z.boolean().default(true),
-  /** Empty means "use the default model from config". */
-  model: z.string().default(""),
-  prompt: z.string().min(1),
-});
-export type CronJob = z.infer<typeof cronJobSchema>;
-
-export const cronFileSchema = z.object({ jobs: z.array(cronJobSchema).default([]) });
 
 /** Token counts reported by the server for a turn, or summed over a session. */
 export interface TokenUsage {
@@ -197,8 +176,6 @@ export interface Session {
   title: string;
   createdAt: string;
   updatedAt: string;
-  source: "chat" | "cron";
-  cronJobId?: string;
   model?: string;
   /** Running total across every turn in the session. */
   usage?: TokenUsage;
@@ -219,29 +196,6 @@ export interface McpServerState {
   status: McpStatus;
   error?: string;
   tools: { name: string; description: string }[];
-}
-
-/** One execution of a cron job, kept in `data/cron-runs.json`. */
-export interface CronRun {
-  jobId: string;
-  startedAt: string;
-  finishedAt: string;
-  status: "ok" | "error";
-  error?: string;
-  /** One line on what the run actually did, if a model is set for the task. */
-  summary?: string;
-  sessionId: string;
-  usage?: TokenUsage;
-}
-
-export interface CronJobState {
-  job: CronJob;
-  nextRun?: string;
-  lastRunAt?: string;
-  lastStatus?: "ok" | "error";
-  lastError?: string;
-  lastSummary?: string;
-  lastSessionId?: string;
 }
 
 /** Server-sent events emitted while a turn is running. */

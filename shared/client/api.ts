@@ -1,7 +1,4 @@
 import type {
-  CronJob,
-  CronJobState,
-  CronRun,
   LlmConfig,
   LlmConfigView,
   McpServerConfig,
@@ -88,13 +85,6 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
       request<McpServerState[]>("/mcp", { method: "PUT", body: { servers } }),
     reconnectMcp: (id: string) =>
       request<McpServerState[]>(`/mcp/${id}/reconnect`, { method: "POST" }),
-
-    crons: () => request<CronJobState[]>("/crons"),
-    saveCrons: (jobs: CronJob[]) =>
-      request<CronJobState[]>("/crons", { method: "PUT", body: { jobs } }),
-    cronRuns: (id: string) => request<CronRun[]>(`/crons/${id}/runs`),
-    runCron: (id: string) =>
-      request<{ sessionId: string; state: CronJobState[] }>(`/crons/${id}/run`, { method: "POST" }),
   };
 
   /** POSTs a turn and hands the server's SSE events to `onEvent` as they arrive. */

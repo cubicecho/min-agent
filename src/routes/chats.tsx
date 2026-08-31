@@ -245,10 +245,7 @@ export function ChatsRoute() {
                 )}
               >
                 <div className="truncate">{item.title}</div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {item.source === "cron" ? "cron · " : ""}
-                  {when(item.updatedAt)}
-                </div>
+                <div className="truncate text-xs text-muted-foreground">{when(item.updatedAt)}</div>
               </Link>
               <button
                 type="button"

@@ -144,7 +144,6 @@ export default function RootLayout() {
               name="mcp"
               options={{ title: "MCP Servers", drawerIcon: icon("server") }}
             />
-            <Drawer.Screen name="cron" options={{ title: "Cron", drawerIcon: icon("clock") }} />
             <Drawer.Screen
               name="config"
               options={{ title: "Config", drawerIcon: icon("sliders") }}

@@ -3,8 +3,6 @@ import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
 import {
-  type CronJob,
-  cronFileSchema,
   type LlmConfig,
   llmConfigSchema,
   type McpServerConfig,
@@ -14,7 +12,6 @@ import { CONFIG_DIR } from "./paths.ts";
 
 const LLM_FILE = path.join(CONFIG_DIR, "llm.yaml");
 const MCP_FILE = path.join(CONFIG_DIR, "mcp.yaml");
-const CRONS_FILE = path.join(CONFIG_DIR, "crons.yaml");
 
 const SEED_LLM = `# Connection to any OpenAI-compatible server.
 # Ollama: http://localhost:11434/v1   LM Studio: http://localhost:1234/v1
@@ -39,13 +36,11 @@ toolDiscovery: ondemand
 #              the context window. Empty lets long sessions eventually overflow.
 # toolSelect — picks the tools a request needs before the turn starts, so on-demand
 #              loading costs no round trip. Only used when toolDiscovery is ondemand.
-# runSummary — condenses each cron run's answer to one line for the run history.
 # followups  — proposes the next few questions under a reply, as clickable chips.
 taskModels:
   title: ""
   compaction: ""
   toolSelect: ""
-  runSummary: ""
   followups: ""
 systemPrompt: |
   You are min-agent, a concise and careful assistant.
@@ -77,18 +72,6 @@ servers: []
 #     headers: {}
 `;
 
-const SEED_CRONS = `# Scheduled prompts. Each run opens a new chat session you can read back.
-jobs: []
-# jobs:
-#   - id: morning-brief
-#     name: Morning brief
-#     schedule: "0 9 * * *"
-#     timezone: America/Chicago
-#     enabled: true
-#     model: ""   # empty = the default model from llm.yaml
-#     prompt: Summarise anything that changed overnight.
-`;
-
 function readOrSeed<T extends z.ZodType>(file: string, seed: string, schema: T): z.infer<T> {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   if (!fs.existsSync(file)) fs.writeFileSync(file, seed, "utf8");
@@ -112,10 +95,6 @@ export const saveLlmConfig = (config: LlmConfig) => write(LLM_FILE, config);
 export const loadMcpServers = (): McpServerConfig[] =>
   readOrSeed(MCP_FILE, SEED_MCP, mcpFileSchema).servers;
 export const saveMcpServers = (servers: McpServerConfig[]) => write(MCP_FILE, { servers });
-
-export const loadCronJobs = (): CronJob[] =>
-  readOrSeed(CRONS_FILE, SEED_CRONS, cronFileSchema).jobs;
-export const saveCronJobs = (jobs: CronJob[]) => write(CRONS_FILE, { jobs });
 
 /** The key from llm.yaml, else the environment. */
 export const resolveApiKey = (config = loadLlmConfig()) =>

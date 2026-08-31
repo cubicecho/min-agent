@@ -2,7 +2,6 @@ import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/
 import { AppShell } from "@/components/app-shell";
 import { ChatsRoute } from "@/routes/chats";
 import { ConfigRoute } from "@/routes/config";
-import { CronRoute } from "@/routes/cron";
 import { McpRoute } from "@/routes/mcp";
 
 const rootRoute = createRootRoute({ component: AppShell });
@@ -32,11 +31,6 @@ const mcpRoute = createRoute({
   path: "/mcp",
   component: McpRoute,
 });
-const cronRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/cron",
-  component: CronRoute,
-});
 const configRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/config",
@@ -49,7 +43,6 @@ export const router = createRouter({
     chatsRoute,
     chatSessionRoute,
     mcpRoute,
-    cronRoute,
     configRoute,
   ]),
   defaultPreload: "intent",

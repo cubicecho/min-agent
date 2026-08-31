@@ -1,11 +1,10 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Bot, Calendar, MessagesSquare, Plug, SlidersHorizontal } from "lucide-react";
+import { Bot, MessagesSquare, Plug, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { to: "/chats", label: "Chats", icon: MessagesSquare },
   { to: "/mcp", label: "MCP Servers", icon: Plug },
-  { to: "/cron", label: "Cron", icon: Calendar },
   { to: "/config", label: "Config", icon: SlidersHorizontal },
 ] as const;
 

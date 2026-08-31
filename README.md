@@ -1,9 +1,9 @@
 # min-agent
 
-A very small self-hosted agent: chat sessions, MCP tools, and cron jobs that run a prompt on a
-schedule. Replies render as markdown with syntax-highlighted code, every turn reports what it cost
-in tokens, time and throughput, and each cron job keeps a run history. Config lives in YAML files you can edit by hand;
-sessions live as JSON on disk.
+A very small self-hosted agent: chat sessions over any OpenAI-compatible server, with MCP tools.
+Replies render as markdown with syntax-highlighted code, and every turn reports what it cost in
+tokens, time and throughput. Config lives in YAML files you can edit by hand; sessions live as
+JSON on disk.
 
 ## Stack
 
@@ -11,7 +11,7 @@ Vite + React 19 + TanStack Router/Query + shadcn (Tailwind v4) on the front, a m
 server on the back. TypeScript everywhere, Biome for lint/format, Vitest for tests.
 
 There is a second front end in `mobile/` — Expo + expo-router + NativeWind — that builds the same
-five views for Android, Windows (via Electron) and the web. See
+views for Android, Windows (via Electron) and the web. See
 [Android, Windows and web apps](#android-windows-and-web-apps).
 
 ## Quick start
@@ -62,7 +62,7 @@ npm start        # express serves the API and dist/ on :8787
 - `mobile/` — the Expo client. `app/` is one file per route, `components/ui.tsx` is the widget set,
   `electron/` is the desktop shell.
 - `server/` — express. `agent.ts` is the tool-calling loop, `mcp.ts` the MCP client pool,
-  `cron.ts` the scheduler, `store.ts` session persistence, `config.ts` YAML read/write.
+  `store.ts` session persistence, `config.ts` YAML read/write.
 - `shared/types.ts` — zod schemas shared by both sides; the API contract lives here.
 - `shared/client/` — everything both front ends run: `api.ts` (the typed client and the SSE
   reader), `live.ts` (streaming-event reducer), `usage.ts` (token/cost formatting).
@@ -75,9 +75,7 @@ Created on first run, both git-ignored.
 ```
 config/llm.yaml     LLM connection + agent settings (Config view)
 config/mcp.yaml     MCP servers (MCP Servers view)
-config/crons.yaml   scheduled jobs (Cron view)
 data/sessions/*.json    one file per chat session
-data/cron-runs.json     last 20 runs per cron job
 ```
 
 Override the locations with `MIN_AGENT_CONFIG_DIR` / `MIN_AGENT_DATA_DIR`.
@@ -201,7 +199,6 @@ with one select per task; leaving one unset keeps the cheap non-LLM behaviour.
 | Session title | A model names the chat from its opening message | The first line is truncated |
 | Context compaction | The oldest messages fold into a running summary | A long session eventually overflows |
 | Tool preselection | A small model picks the turn's tools up front | The chat model loads its own, one round trip in |
-| Cron run summary | Each run's history entry says what it found | You open the session to find out |
 | Follow-up suggestions | Three clickable next questions under a reply | Nothing under the reply |
 
 Titling runs *alongside* the turn, not before it, so it never delays the first token — the
@@ -236,23 +233,7 @@ worse than one fewer chip.
 They are generated after the reply has streamed, not before, so the second or so they cost is
 spent while the answer is being read — but it *is* a second, and the turn is not finished until
 they land. Only the newest message shows them: chips further up the transcript answer questions
-already moved past, and a column of them turns a chat into a menu. Cron sessions skip the task
-entirely, since nobody is there to click.
-
-### Cron run summaries
-
-A cron job's problem is that nobody watched it. The run log can tell you a job finished in 19
-seconds for 4.1k tokens without telling you whether it found anything, so the only way to know is
-to open the session — for every run, every morning.
-
-Set a model for **Cron run summary** and each successful run gets one sentence, written from the
-job's instruction and its final answer, and stored on the run record:
-
-    ✓ today 03:30 · 18.7s · 4.1k tokens
-      The job found 7 top-level entries in the root of the NAS.
-
-The newest one also sits on the job's row in the Cron list, which is usually as far as you need to
-read. Failed runs get their error instead — a summary of a failure is just the error, longer.
+already moved past, and a column of them turns a chat into a menu.
 
 ### Tool preselection
 
@@ -333,34 +314,11 @@ Cost is off by default, because a local model has none. Fill in **Config → Pri
 million input and output tokens) and the header total grows a `· $0.04`, with a finer per-turn
 figure (`$0.0055`) in the footnote.
 
-## Cron
-
-Standard 5- or 6-field cron expressions (`node-cron`). The Cron view is a list — click a row to
-edit it in a dialog, or use the trash icon to delete it. Each job has its own prompt and an
-optional model override; every run creates a normal chat session you can open and read afterwards,
-tagged `cron` in the session list. **Run now** executes a job immediately.
-
-The last 20 runs of each job are kept in `data/cron-runs.json` and shown at the bottom of the edit
-dialog: when it ran, how long it took, what it spent, the error if it failed, and a link to the
-session it produced. The list survives a restart, so "what happened overnight" is answerable in the
-morning.
-
-```yaml
-jobs:
-  - id: daily-standup
-    name: Daily standup
-    schedule: "0 9 * * 1-5"
-    timezone: America/Chicago
-    enabled: true
-    model: ""            # "" = use the model from Config
-    prompt: Summarize yesterday's commits.
-```
-
 ## Android, Windows and web apps
 
 `mobile/` is a second front end over the same server: Expo (React Native) with expo-router and
 NativeWind, shipping to Android, to Windows and Linux through Electron, and to the browser. It has
-the same five views as the web app — Chats, MCP Servers, Cron, Config, and one extra, **Settings**,
+the same views as the web app — Chats, MCP Servers, Config — and one extra, **Settings**,
 covered below.
 
 ```bash
@@ -379,28 +337,6 @@ The *widgets* are not shared, and cannot be: `src/components/ui/` is shadcn, whi
 is the DOM. `mobile/components/ui.tsx` is a React Native re-implementation that keeps the same
 component and variant names (`<Button variant="outline" size="sm">`), so the screens read the same
 either side even though nothing under them is.
-
-### One chats view, two widths
-
-The web app puts the conversation on the left and the session list in a panel on the right;
-the phone has never had room for both. `mobile/components/chat-view.tsx` is both: above
-768px (`useWide()` in `mobile/lib/layout.ts`) it renders the chat and the panel side by side,
-and below it the list and the chat go back to being separate screens at `/` and `/chat/[id]`.
-
-The split is a JavaScript branch rather than a `md:` class because it decides *which panes
-exist*, not how one is styled — and `useWindowDimensions` re-renders on rotation and on a
-dragged browser window, so a resize moves the layout rather than leaving it at whatever
-width the app started at. Both routes render `ChatsView`, which is what lets the panel stay
-put while the route beneath it changes; switching chats from the panel `replace`s rather
-than `push`es, so an afternoon of browsing does not pile up on the back stack.
-
-Enter sends, as it does on the web, and Shift+Enter breaks the line. That is wired through
-`onKeyPress` in `Textarea` and is deliberately web-only: on a phone the return key is how
-you get a new line, and the send button is an inch away. react-native-web hands `onKeyPress`
-the React synthetic keyboard event rather than the bare `{ key }` its types promise, so the
-handler reads `shiftKey` and the IME's `isComposing` through a documented cast — and calls
-`preventDefault()`, which also suppresses react-native-web's own Enter branch and the blur
-that comes with it, so the cursor stays in the box between messages.
 
 ### A sidebar, not a hamburger
 

@@ -50,8 +50,7 @@ function useSessions(activeId?: string) {
   return { sessions, newChat, remove, open: go };
 }
 
-const subtitle = (item: { source?: string; updatedAt: string }) =>
-  `${item.source === "cron" ? "cron · " : ""}${when(item.updatedAt)}`;
+const subtitle = (item: { updatedAt: string }) => when(item.updatedAt);
 
 /** The right-hand panel, as on the web app: the chat keeps the room, this keeps 18rem. */
 export function SessionsPanel({ activeId }: { activeId?: string }) {

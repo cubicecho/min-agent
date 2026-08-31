@@ -34,8 +34,8 @@ describe("yaml config", () => {
   });
 
   it("rejects a config file that does not match the schema", () => {
-    fs.writeFileSync(path.join(dir, "crons.yaml"), "jobs:\n  - id: x\n", "utf8");
-    expect(() => config.loadCronJobs()).toThrow(/crons\.yaml is invalid/);
+    fs.writeFileSync(path.join(dir, "mcp.yaml"), "servers:\n  - id: x\n", "utf8");
+    expect(() => config.loadMcpServers()).toThrow(/mcp\.yaml is invalid/);
   });
 
   it("prefers the yaml key over the environment", () => {

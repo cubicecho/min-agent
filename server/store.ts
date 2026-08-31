@@ -18,8 +18,6 @@ export function createSession(init: Partial<Session> = {}): Session {
     title: init.title ?? "New chat",
     createdAt: now,
     updatedAt: now,
-    source: init.source ?? "chat",
-    cronJobId: init.cronJobId,
     messages: init.messages ?? [],
   };
   saveSession(session);
