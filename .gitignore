@@ -8,3 +8,5 @@ data
 config
 .env
 *.local
+# The bind mount docker-compose.yml keeps config and sessions in.
+docker-data

@@ -1,0 +1,30 @@
+# Installed inside the image, for the image's own platform.
+node_modules
+**/node_modules
+
+# Built inside the image.
+dist
+**/dist
+
+# Runtime state and secrets. Both are seeded on first boot and mounted at run time;
+# baking either into the image would ship one machine's config to every other one.
+config
+data
+docker-data
+.env
+.env.local
+
+# The Expo app. The server image does not build it — see the note in the Dockerfile —
+# so none of it needs to travel to the daemon.
+mobile
+.expo
+
+# Repo furniture with nothing to contribute to a build.
+.git
+.github
+.claude
+*.log
+README.md
+Dockerfile
+docker-compose.yml
+.dockerignore

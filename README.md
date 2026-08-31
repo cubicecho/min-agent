@@ -56,6 +56,41 @@ npm run build    # typecheck + vite build -> dist/
 npm start        # express serves the API and dist/ on :8787
 ```
 
+## Docker
+
+```bash
+docker compose up -d          # http://localhost:8787
+```
+
+The image is the server and the web client, nothing else. It stays a full `node` image rather
+than something smaller because MCP stdio servers are spawned as child processes and an stdio
+server is usually `npx something`, which needs npm and a network from inside the container.
+
+Config and sessions both live in the one `/data` volume — `MIN_AGENT_CONFIG_DIR` and
+`MIN_AGENT_DATA_DIR` are set to point there — so `./docker-data` is what to keep and what to
+back up. Both are seeded on first boot, so an empty directory is the right starting point.
+
+An LLM server running on the host machine is `http://host.docker.internal:11434/v1` from in
+here, not `localhost`; the compose file maps that name on Linux, where Docker does not provide
+it. Nothing in min-agent is authenticated, so publish the port on a network you trust — or bind
+it to `127.0.0.1:8787:8787` and put something with a login in front.
+
+The Expo bundle served at `/app` is deliberately not built into the image: it would mean
+installing React Native and Metro to produce a second copy of a UI already served at `/`. Run
+`npm run mobile:export` on the host and mount `mobile/dist` if you want it there too.
+
+## Releases
+
+`.github/workflows/ci.yml` lints, tests and builds on every push and pull request, typechecks
+the Expo app in a job of its own, and builds the image and boots it far enough to answer
+`/api/health` — so a broken Dockerfile is caught before there is a version number riding on it.
+
+`.github/workflows/release.yml` runs after a green CI on `main`. semantic-release reads the
+commit messages, and if they amount to a release it tags one and pushes the image to both
+`ghcr.io/<owner>/min-agent` and Docker Hub. GHCR needs no setup; Docker Hub needs
+`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` in the repository secrets. A run of chores publishes
+nothing.
+
 ## Layout
 
 - `src/` — web client. `routes/` is one file per nav item, `components/app-shell.tsx` is the frame.
