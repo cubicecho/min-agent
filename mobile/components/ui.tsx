@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   Pressable,
   type PressableProps,
   Switch as RNSwitch,
@@ -142,11 +143,45 @@ export const Input = ({ className, ...props }: InputProps) => (
   />
 );
 
-export const Textarea = ({ className, ...props }: InputProps) => (
+/**
+ * What react-native-web actually hands to `onKeyPress`: the React synthetic keyboard
+ * event, not the bare `{ key }` React Native's types promise. Reading the rest of it is
+ * safe because the handler below only runs on web.
+ */
+type WebKeyEvent = {
+  key: string;
+  shiftKey?: boolean;
+  nativeEvent?: { isComposing?: boolean; keyCode?: number };
+  preventDefault?: () => void;
+};
+
+/**
+ * `onSubmit` sends on a bare Enter, as the web app does. It is deliberately web-only:
+ * on a phone the return key is how you get a new line, and there is a send button
+ * an inch away.
+ */
+export const Textarea = ({
+  className,
+  onSubmit,
+  onKeyPress,
+  ...props
+}: InputProps & { onSubmit?: () => void }) => (
   <TextInput
     multiline
     textAlignVertical="top"
     placeholderTextColor={colors.mutedForeground}
+    onKeyPress={(event) => {
+      onKeyPress?.(event);
+      if (Platform.OS !== "web" || !onSubmit) return;
+      const key = event as unknown as WebKeyEvent;
+      // Shift+Enter still breaks the line, and an Enter that is closing an IME candidate
+      // list belongs to the IME rather than to us.
+      const composing = key.nativeEvent?.isComposing || key.nativeEvent?.keyCode === 229;
+      if (key.key !== "Enter" || key.shiftKey || composing) return;
+      // This also suppresses react-native-web's own Enter branch, which would blur the box.
+      key.preventDefault?.();
+      onSubmit();
+    }}
     className={cn(
       "min-h-24 rounded-lg border border-input bg-background p-3 text-sm text-foreground",
       className,
