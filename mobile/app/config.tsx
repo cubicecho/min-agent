@@ -1,4 +1,4 @@
-import { MODEL_TASKS } from "@shared/types.ts";
+import { MODEL_TASKS } from "@shared/model-tasks.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";

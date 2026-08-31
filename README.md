@@ -36,10 +36,9 @@ docker compose up -d db       # or point DATABASE_URL at a Postgres you already 
 npm run dev                   # api on :8787, web on 0.0.0.0:3000 (proxies /graphql)
 ```
 
-The server creates its own tables at boot and seeds the settings row, so an empty database is the
-right starting point — there is nothing to migrate by hand. `npm run db:push` is there for when
-you have changed `server/db/schema.ts` and want the change applied without a restart, and
-`npm run db:studio` opens Drizzle Studio against the same URL.
+The server applies its migrations at boot and seeds the settings row, so an empty database is
+the right starting point and there is nothing to run by hand. `npm run db:studio` opens Drizzle
+Studio against the same URL if you want to look inside.
 
 Open http://localhost:3000, go to **Config**, point it at an OpenAI-compatible server, hit
 **Refresh** to list models, pick one, **Save**.
@@ -124,8 +123,10 @@ release still goes out to GHCR. A run of chores publishes nothing.
   `electron/` is the desktop shell.
 - `server/` — express + graphql-yoga. `agent.ts` is the tool-calling loop, `mcp.ts` the MCP
   client pool, `store.ts` session persistence, `config.ts` the settings and MCP rows.
-- `server/db/` — `schema.ts` is the Drizzle table definitions, `client.ts` the pool,
-  `migrate.ts` the boot-time `ensureSchema`.
+- `server/db/` — `schema.ts` is the Drizzle table definitions, `client.ts` the pool and the
+  boot-time wait for it, `migrate.ts` the migration runner.
+- `drizzle/` — generated migrations. Not written by hand; not edited after they have shipped.
+- `plugins/` — the Vite plugin that keeps `schema.graphql` and `shared/gql/` generated.
 - `server/graphql/` — `schema.ts` builds most of the API off the Drizzle schema and adds the
   hand-written fields (`health`, `models`, `mcpStatus`, `setApiKey`, the `turn` subscription).
 - `shared/types.ts` — zod schemas shared by both sides; the domain types live here.
@@ -139,7 +140,7 @@ release still goes out to GHCR. A run of chores publishes nothing.
 
 ## The database
 
-Four tables, created at boot by `ensureSchema()` in `server/db/migrate.ts`:
+Four tables, created by the migrations in `drizzle/`, which `runMigrations()` applies on boot:
 
 ```
 settings      one row, id 'default' — the Config view
@@ -153,9 +154,16 @@ it produced instead of rewriting the whole transcript seven times. The counters 
 row — `messageCount`, the token totals — are what the sidebar reads, so listing sessions never
 touches the messages table.
 
-`server/db/schema.ts` is the single definition. `npm run db:push` applies a change to a running
-database; `npm run db:studio` browses it. There is no migration history to keep in order, which
-is the trade this makes: a schema change is applied, not versioned.
+`server/db/schema.ts` is the single definition, and the SQL is generated from it — change the
+schema, run `npm run db:generate`, and commit the migration it writes alongside the change.
+Drizzle records what it has applied, so booting an up-to-date database does nothing and booting
+an old one catches it up. `npm run db:migrate` applies them without starting the server.
+
+Migrations run at boot rather than as a separate deploy step, which is a deliberate trade for a
+single-instance self-hosted app: `docker compose up` on a new machine is the whole install. The
+server waits for the database on the way up rather than crashing on a refused connection —
+compose gates on the healthcheck, but a bare `npm start` or a host reboot does not, and
+Postgres takes a few seconds to start accepting connections.
 
 ## The API
 
@@ -175,12 +183,15 @@ mutation reconnectMcpServer
 subscription turn        runs a turn and streams its events over SSE
 ```
 
-`npm run codegen` regenerates `shared/gql/graphql.ts`. It prints the live schema to
-`schema.graphql` first, so what the front ends are typed against is exactly what the server
-serves. Both files are committed; regenerate them in the same commit as a schema change. The generated
-documents are plain strings, not `graphql` AST objects, which is what keeps the `graphql`
-package out of both bundles: Metro pins `nodeModulesPaths` to `mobile/node_modules`, and it is
-not installed there.
+`schema.graphql` and `shared/gql/graphql.ts` are both committed and neither is written by hand.
+Keeping them current is not left to whoever remembers: `npm run dev` regenerates on start and
+again whenever `server/` or `shared/graphql/` changes, and `npm run build` regenerates before it
+typechecks. `npm run codegen` does it on demand. The schema is printed from the server first, so
+what the front ends are typed against is exactly what it serves.
+
+The generated documents are plain strings, not `graphql` AST objects, which is what keeps the
+`graphql` package out of both bundles: Metro pins `nodeModulesPaths` to `mobile/node_modules`,
+and it is not installed there.
 
 The `models` query is not a local read — it asks the configured provider to list its models — so
 both front ends hold it, and the connection settings beside it, for five minutes. Saving config
@@ -645,7 +656,8 @@ server address is kept — is unreliable on a file origin.
 | Script            | What it does                        |
 | ----------------- | ----------------------------------- |
 | `npm run dev`     | server + web with reload            |
-| `npm run db:push` | apply `server/db/schema.ts` to the database |
+| `npm run db:generate` | write a migration for a schema change |
+| `npm run db:migrate` | apply pending migrations         |
 | `npm run db:studio` | browse the database              |
 | `npm run codegen` | print `schema.graphql`, regenerate `shared/gql/` |
 | `npm run build`   | typecheck, then build to `dist/`    |

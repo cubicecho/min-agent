@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
-import { MODEL_TASKS } from "../../shared/types";
+import { MODEL_TASKS } from "../../shared/model-tasks.ts";
 
 /** Select needs a non-empty value, so "unset" gets a sentinel that never reaches the config. */
 const NO_TASK_MODEL = "__none__";

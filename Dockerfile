@@ -30,6 +30,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 # as they are, next to the client that Vite built.
 COPY server ./server
 COPY shared ./shared
+# The migrations the server applies on boot. Without them a fresh database comes up empty
+# and every query fails on a missing table.
+COPY drizzle ./drizzle
 COPY --from=builder /app/dist ./dist
 
 # The Expo bundle that would be served at /app is left out on purpose: building it means

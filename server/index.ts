@@ -4,14 +4,17 @@ import compression from "compression";
 import express from "express";
 import { createYoga } from "graphql-yoga";
 import { loadMcpServers, refreshLlmConfig } from "./config.ts";
-import { ensureSchema } from "./db/migrate.ts";
+import { waitForDatabase } from "./db/client.ts";
+import { runMigrations } from "./db/migrate.ts";
 import { schema } from "./graphql/schema.ts";
 import { mcp } from "./mcp.ts";
 import { displayHost, HOST, PORT, ROOT } from "./paths.ts";
 
 // The tables and the settings row have to exist before anything reads them, and the settings
-// cache has to be warm before the first turn asks it for a model.
-await ensureSchema();
+// cache has to be warm before the first turn asks it for a model. The database may still be
+// coming up — see `waitForDatabase` — so this is the one place that tolerates it being late.
+await waitForDatabase();
+await runMigrations();
 await refreshLlmConfig();
 
 const app = express();

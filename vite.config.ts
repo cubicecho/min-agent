@@ -2,6 +2,7 @@ import { fileURLToPath, URL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
+import { graphqlCodegen } from "./plugins/graphql-codegen.ts";
 
 export default defineConfig(({ mode }) => {
   // The API server takes HOST and PORT from .env, so the proxy has to read the same file
@@ -12,7 +13,7 @@ export default defineConfig(({ mode }) => {
   const host = !env.HOST || env.HOST === "0.0.0.0" || env.HOST === "::" ? "localhost" : env.HOST;
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [graphqlCodegen(), react(), tailwindcss()],
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),

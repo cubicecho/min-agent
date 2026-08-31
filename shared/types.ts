@@ -1,5 +1,6 @@
 import type OpenAI from "openai";
 import { z } from "zod";
+import type { ModelTask } from "./model-tasks.ts";
 
 /**
  * The settings and MCP rows live in Postgres, and GraphQL already checks the shape of a
@@ -42,39 +43,6 @@ export const llmConfigSchema = z.object({
     .default({ inputPer1M: 0, outputPer1M: 0 }),
 });
 export type LlmConfig = z.infer<typeof llmConfigSchema>;
-
-/**
- * Jobs that are not the main chat turn and do not need the main chat model. Each is small,
- * frequent, and latency-sensitive, which is exactly what a cheap model is good at.
- */
-export const MODEL_TASKS = [
-  {
-    key: "compaction",
-    label: "Context compaction",
-    empty: "off — long sessions eventually overflow",
-    hint: "Summarises the oldest messages once a session fills 75% of the context window, so it can keep going.",
-  },
-  {
-    key: "toolSelect",
-    label: "Tool preselection",
-    empty: "off — the model loads its own tools",
-    hint: "Guesses which tools a request needs before the turn starts, so the chat model usually skips the load step. Only used with on-demand tool discovery.",
-  },
-  {
-    key: "followups",
-    label: "Follow-up suggestions",
-    empty: "off — no suggestions",
-    hint: "Proposes a few next questions under each reply in a chat, as chips you can click to send.",
-  },
-  {
-    key: "title",
-    label: "Session title",
-    empty: "off — use the first message",
-    hint: "Names a new chat once, from its opening message. Left off, the first line is truncated instead.",
-  },
-] as const;
-
-export type ModelTask = (typeof MODEL_TASKS)[number]["key"];
 
 /** The model to use for a side task, or "" when it is not configured. */
 export const modelForTask = (config: LlmConfig, task: ModelTask) =>

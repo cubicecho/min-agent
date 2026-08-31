@@ -19,7 +19,7 @@ describe.skipIf(!url)("session store", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = url;
     db = (await import("../server/db/client.ts")).db;
-    await (await import("../server/db/migrate.ts")).ensureSchema();
+    await (await import("../server/db/migrate.ts")).runMigrations();
     store = await import("../server/store.ts");
   });
 
