@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Feather } from "@react-native-vector-icons/feather";
 import type { LivePart } from "@shared/client/live.ts";
 import { statsLine } from "@shared/client/usage.ts";
 import type { LlmConfig, StoredMessage, TurnStats } from "@shared/types.ts";

@@ -6,10 +6,8 @@
     "scheme": "minagent",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "android": {
-      "package": "lan.minagent.app",
-      "edgeToEdgeEnabled": true
+      "package": "lan.minagent.app"
     },
     "web": {
       "bundler": "metro",
@@ -24,7 +22,9 @@
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "expo-font",
+      "@react-native-vector-icons/feather"
     ],
     "experiments": {
       "baseUrl": "/app"

@@ -367,6 +367,22 @@ is the DOM. `mobile/components/ui.tsx` is a React Native re-implementation that 
 component and variant names (`<Button variant="outline" size="sm">`), so the screens read the same
 either side even though nothing under them is.
 
+### A pinned lightningcss
+
+`mobile/package.json` pins `lightningcss` to `1.30.1` for `react-native-css`, and the pin is
+load-bearing: without it the Android bundle does not build at all.
+
+NativeWind compiles the stylesheet for native by running lightningcss with a `StyleSheetExit`
+visitor — the whole sheet crosses into JS and back. From **1.30.2** that round trip stops working:
+any `var()` fails with `failed to deserialize; expected an object-like struct named Specifier,
+found ()`, and an `@property` without an `initial-value` fails the same way naming
+`ParsedComponent`. Tailwind's output is full of both, so the export dies on `global.css` with no
+indication of which line is at fault. The web build is unaffected, because it never takes that
+path — which is exactly why this survived a working web export.
+
+1.30.1 is the newest version whose round trip is intact, and it satisfies `@expo/metro-config`'s
+`^1.30.1`. The pin is scoped to `react-native-css` so Tailwind keeps its own copy.
+
 ### Pointing it at your server
 
 The browser build talks to whatever origin served it, so it needs no configuration. The Android

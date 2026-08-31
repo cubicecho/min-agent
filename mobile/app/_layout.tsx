@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Feather } from "@react-native-vector-icons/feather";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Drawer } from "expo-router/drawer";
 import { StatusBar } from "expo-status-bar";

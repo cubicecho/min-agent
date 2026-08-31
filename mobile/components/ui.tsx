@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Feather } from "@react-native-vector-icons/feather";
 import { cva, type VariantProps } from "class-variance-authority";
 import type { ReactNode } from "react";
 import { useState } from "react";

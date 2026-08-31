@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Feather } from "@react-native-vector-icons/feather";
 import { formatUsage } from "@shared/client/usage.ts";
 import type { CronJob, CronJobState, CronRun, ModelInfo } from "@shared/types.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
