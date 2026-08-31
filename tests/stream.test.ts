@@ -14,7 +14,7 @@ function serving(chunks: string[]) {
   });
 
   const { streamTurn } = createClient({
-    baseUrl: "/api",
+    baseUrl: "/graphql",
     fetch: (async () => new Response(body, { status: 200 })) as unknown as typeof fetch,
   });
 
@@ -29,11 +29,16 @@ function serving(chunks: string[]) {
   };
 }
 
-const frame = (event: StreamEvent) => `data: ${JSON.stringify(event)}\n\n`;
+/**
+ * What the server actually puts on the wire: a subscription payload wrapping one flat
+ * `TurnEvent`, whose unset fields come back as nulls the client is expected to drop.
+ */
+const frame = (seq: number, event: StreamEvent) =>
+  `data: ${JSON.stringify({ data: { turn: { seq, text: null, id: null, stats: null, ...event } } })}\n\n`;
 
 describe("streamTurn", () => {
   it("reads events that arrive split across chunk boundaries", async () => {
-    const whole = frame({ type: "text_delta", text: "hello" });
+    const whole = frame(1, { type: "text_delta", text: "hello" });
     const { events, run } = serving([whole.slice(0, 9), whole.slice(9)]);
     await run();
 
@@ -43,9 +48,9 @@ describe("streamTurn", () => {
   it("skips the keep-alive comments that hold an idle turn open", async () => {
     const { events, run } = serving([
       ": keep-alive\n\n",
-      frame({ type: "text_delta", text: "hi" }),
+      frame(1, { type: "text_delta", text: "hi" }),
       ": keep-alive\n\n",
-      frame({ type: "done" }),
+      frame(2, { type: "done" }),
     ]);
     await run();
 
@@ -53,9 +58,16 @@ describe("streamTurn", () => {
   });
 
   it("takes the data line out of a frame that carries a comment too", async () => {
-    const { events, run } = serving([`: keep-alive\n${frame({ type: "done" })}`]);
+    const { events, run } = serving([`: keep-alive\n${frame(1, { type: "done" })}`]);
     await run();
 
     expect(events).toEqual([{ type: "done" }]);
+  });
+
+  it("raises the error a subscription reports instead of dropping the turn", async () => {
+    const { run } = serving([
+      `data: ${JSON.stringify({ errors: [{ message: "no session" }] })}\n\n`,
+    ]);
+    await expect(run()).rejects.toThrow("no session");
   });
 });

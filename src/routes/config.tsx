@@ -48,7 +48,7 @@ export function ConfigRoute() {
   const save = useMutation({
     mutationFn: (value: Draft) => api.saveConfig(value),
     onSuccess: async () => {
-      toast.success("Saved to config/llm.yaml");
+      toast.success("Settings saved");
       setDraft(null);
       await queryClient.invalidateQueries({ queryKey: ["config"] });
       await queryClient.invalidateQueries({ queryKey: ["models"] });
@@ -64,7 +64,7 @@ export function ConfigRoute() {
   return (
     <Page
       title="Config"
-      description="Connection to an OpenAI-compatible server, stored in config/llm.yaml."
+      description="Connection to an OpenAI-compatible server. Settings are stored in Postgres."
       actions={
         <Button onClick={() => save.mutate(draft)} disabled={save.isPending}>
           Save

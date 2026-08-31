@@ -52,7 +52,7 @@ export function McpRoute() {
   const save = useMutation({
     mutationFn: (value: McpServerConfig[]) => api.saveMcp(value),
     onSuccess: async () => {
-      toast.success("Saved to config/mcp.yaml");
+      toast.success("MCP servers saved");
       setDraft(null);
       await queryClient.invalidateQueries({ queryKey: ["mcp"] });
     },
@@ -90,7 +90,7 @@ export function McpRoute() {
     >
       {draft.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No servers configured yet. Add one, or edit <code>config/mcp.yaml</code> directly.
+          No servers configured yet. Add one to get started.
         </p>
       ) : null}
 

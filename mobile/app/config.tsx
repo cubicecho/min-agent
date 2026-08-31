@@ -80,7 +80,9 @@ export default function ConfigScreen() {
     <Screen>
       <Card>
         <CardTitle>Connection</CardTitle>
-        <CardDescription>An OpenAI-compatible server, stored in config/llm.yaml.</CardDescription>
+        <CardDescription>
+          An OpenAI-compatible server. Settings are stored in Postgres.
+        </CardDescription>
 
         <Field
           label="Base URL"
@@ -266,7 +268,7 @@ export default function ConfigScreen() {
         <Button icon="save" busy={save.isPending} onPress={() => save.mutate(draft)}>
           Save
         </Button>
-        {saved && !save.isPending && <Muted>Saved to config/llm.yaml</Muted>}
+        {saved && !save.isPending && <Muted>Saved</Muted>}
       </View>
     </Screen>
   );

@@ -2,11 +2,5 @@ node_modules
 dist
 # Expo's build cache.
 .expo
-# Runtime state: sessions. Re-created on demand.
-data
-# Holds the API key and your own server addresses. Seeded on first boot.
-config
 .env
 *.local
-# The bind mount docker-compose.yml keeps config and sessions in.
-docker-data

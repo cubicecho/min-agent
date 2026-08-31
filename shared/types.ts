@@ -1,12 +1,17 @@
 import type OpenAI from "openai";
 import { z } from "zod";
 
-/** Everything under `config/*.yaml` is validated through these schemas. */
+/**
+ * The settings and MCP rows live in Postgres, and GraphQL already checks the shape of a
+ * write. These schemas are the range checks it cannot express — that `temperature` is
+ * between 0 and 2, that an stdio server names a command — applied on the way into the
+ * database and reused to fill in a row's defaults.
+ */
 
 export const llmConfigSchema = z.object({
   /** Any OpenAI-compatible endpoint: OpenAI, Ollama, LM Studio, vLLM, OpenRouter, ... */
   baseUrl: z.string().min(1).default("http://localhost:11434/v1"),
-  /** Left empty, the server falls back to $OPENAI_API_KEY. */
+  /** Left empty, the server falls back to $OPENAI_API_KEY. Write-only: never read back. */
   apiKey: z.string().default(""),
   /** Default model for chat. Picked from the models the server reports. */
   model: z.string().default(""),
@@ -104,7 +109,12 @@ export const mcpServerSchema = z
   });
 export type McpServerConfig = z.infer<typeof mcpServerSchema>;
 
-export const mcpFileSchema = z.object({ servers: z.array(mcpServerSchema).default([]) });
+/** One function call the model asked for, as the chat-completions API spells it. */
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
 
 /** Token counts reported by the server for a turn, or summed over a session. */
 export interface TokenUsage {
@@ -160,8 +170,7 @@ export type StoredMessage = OpenAI.ChatCompletionMessageParam & {
   followups?: string[];
 };
 
-/** Sessions are stored on disk as one JSON file per session. */
-/** What replaces the folded-away head of a long transcript. Written by the model, kept on disk. */
+/** What replaces the folded-away head of a long transcript. Written by the model, kept in pg. */
 export interface Compaction {
   /** The model's notes on messages `[0, through)`. */
   summary: string;
@@ -186,6 +195,12 @@ export interface Session {
   /** Raw chat-completions turns — replayed verbatim on the next request. */
   messages: StoredMessage[];
 }
+
+/**
+ * A session without its transcript, which is what the sidebar lists. `messageCount` is a
+ * column on the session rather than a count over the messages: the list is read after every
+ * turn, and it has no business touching the messages table to draw a column of titles.
+ */
 
 export type SessionSummary = Omit<Session, "messages"> & { messageCount: number };
 

@@ -6,11 +6,8 @@ node_modules
 dist
 **/dist
 
-# Runtime state and secrets. Both are seeded on first boot and mounted at run time;
-# baking either into the image would ship one machine's config to every other one.
-config
-data
-docker-data
+# Secrets. Settings live in Postgres now, so this is the only runtime state left on disk,
+# and baking it in would ship one machine's key to every other one.
 .env
 .env.local
 

@@ -10,6 +10,24 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    # The store tests skip themselves without TEST_DATABASE_URL, and a store that is now
+    # entirely Postgres is not a thing to leave untested. The runner reaches a service
+    # container on localhost, so no networking beyond the port mapping is needed.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: min_agent
+          POSTGRES_PASSWORD: min_agent
+          POSTGRES_DB: min_agent_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U min_agent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -25,6 +43,8 @@ jobs:
 
       - name: Test
         run: npm test
+        env:
+          TEST_DATABASE_URL: postgres://min_agent:min_agent@localhost:5432/min_agent_test
 
       # `build` typechecks before it bundles, so this covers `npm run typecheck` too.
       - name: Build
@@ -74,13 +94,29 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Boot the image and wait for /api/health
+      # The server creates its tables at boot and refuses to start without a database, so
+      # booting the image is also a check that the schema it ships applies to an empty one.
+      - name: Boot the image against a database
         run: |
-          docker run -d --name min-agent -p 8787:8787 min-agent:ci
+          docker network create min-agent-ci
+          docker run -d --name min-agent-db --network min-agent-ci \
+            -e POSTGRES_USER=min_agent -e POSTGRES_PASSWORD=min_agent -e POSTGRES_DB=min_agent \
+            --health-cmd "pg_isready -U min_agent" --health-interval 5s --health-retries 10 \
+            postgres:18-alpine
           for _ in $(seq 30); do
-            if curl -fsS http://localhost:8787/api/health; then exit 0; fi
+            [ "$(docker inspect -f '{{.State.Health.Status}}' min-agent-db)" = healthy ] && break
+            sleep 2
+          done
+          docker run -d --name min-agent --network min-agent-ci -p 8787:8787 \
+            -e DATABASE_URL=postgres://min_agent:min_agent@min-agent-db:5432/min_agent \
+            min-agent:ci
+          for _ in $(seq 30); do
+            if curl -fsS -X POST http://localhost:8787/graphql \
+              -H 'content-type: application/json' \
+              -d '{"query":"{ health { ok } }"}' | grep -q '"ok":true'; then exit 0; fi
             sleep 2
           done
           echo "the server never became healthy"
+          docker logs min-agent-db
           docker logs min-agent
           exit 1

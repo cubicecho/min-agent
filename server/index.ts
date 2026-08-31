@@ -1,62 +1,56 @@
 import fs from "node:fs";
 import path from "node:path";
-import zlib from "node:zlib";
+import compression from "compression";
 import express from "express";
-import { api } from "./api.ts";
-import { loadMcpServers } from "./config.ts";
+import { createYoga } from "graphql-yoga";
+import { loadMcpServers, refreshLlmConfig } from "./config.ts";
+import { ensureSchema } from "./db/migrate.ts";
+import { schema } from "./graphql/schema.ts";
 import { mcp } from "./mcp.ts";
 import { displayHost, HOST, PORT, ROOT } from "./paths.ts";
 
-const app = express();
-app.use(express.json({ limit: "2mb" }));
+// The tables and the settings row have to exist before anything reads them, and the settings
+// cache has to be warm before the first turn asks it for a model.
+await ensureSchema();
+await refreshLlmConfig();
 
-// The Android and Electron builds load their UI from somewhere other than this server,
-// so the API has to answer cross-origin. Nothing here is authenticated — min-agent is
-// meant to sit on a network you trust — so the origin is simply echoed back.
-app.use("/api", (request, response, next) => {
-  response.set("Access-Control-Allow-Origin", request.get("Origin") ?? "*");
-  response.set("Access-Control-Allow-Headers", "Content-Type");
-  response.set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-  if (request.method === "OPTIONS") {
-    response.sendStatus(204);
-    return;
-  }
-  next();
+const app = express();
+
+const yoga = createYoga({
+  schema,
+  graphqlEndpoint: "/graphql",
+  // The Android and Electron builds load their UI from somewhere other than this server, so
+  // the API has to answer cross-origin. Nothing here is authenticated — min-agent is meant to
+  // sit on a network you trust — so the origin is simply echoed back.
+  cors: (request) => ({
+    origin: request.headers.get("origin") ?? "*",
+    credentials: true,
+    allowedHeaders: ["Content-Type"],
+    methods: ["GET", "POST", "OPTIONS"],
+  }),
+  // Landing on the endpoint in a browser should explain itself; GraphiQL is how a schema
+  // this size is read.
+  graphiql: { title: "min-agent" },
 });
 
 /**
- * Gzip for JSON, which is the only large thing this server sends: a session GET is the whole
- * transcript, and a long one is megabytes that a phone across the LAN feels.
+ * Gzip for GraphQL responses, which are the only large thing this server sends: reading a
+ * session is the whole transcript, and a long one is megabytes that a phone across the LAN
+ * feels.
  *
- * This wraps `res.json` rather than the socket, which keeps it to what it is for. Streamed
- * turns write their frames with `res.write` and never come through here, so a turn cannot end
- * up buffered waiting to be compressed — the failure mode a general-purpose compressor has to
- * be talked out of. Small bodies are left alone; below about a kilobyte the header costs more
- * than the saving.
+ * The filter is the point. A streamed turn is `text/event-stream`, and buffering one to
+ * compress it would deliver the whole answer at the end — the opposite of what streaming it
+ * was for. Everything else here is JSON, and compresses well.
  */
-app.use("/api", (request, response, next) => {
-  const wanted = /\bgzip\b/.test(request.get("Accept-Encoding") ?? "");
-  const plain = response.json.bind(response);
+app.use(
+  "/graphql",
+  compression({
+    filter: (_request, response) =>
+      !String(response.getHeader("Content-Type") ?? "").includes("text/event-stream"),
+  }),
+);
 
-  response.json = ((body: unknown) => {
-    const text = JSON.stringify(body);
-    if (!wanted || Buffer.byteLength(text) < 1024) return plain(body);
-
-    response.set("Content-Type", "application/json; charset=utf-8");
-    response.set("Vary", "Accept-Encoding");
-    zlib.gzip(text, (error, packed) => {
-      if (error) return plain(body);
-      response.set("Content-Encoding", "gzip");
-      response.set("Content-Length", String(packed.length));
-      response.end(packed);
-    });
-    return response;
-  }) as typeof response.json;
-
-  next();
-});
-
-app.use("/api", api);
+app.use(yoga.graphqlEndpoint, yoga);
 
 /**
  * Both builders fingerprint what they emit — Vite into `assets/`, Expo into `_expo/static/` —
@@ -90,7 +84,7 @@ if (fs.existsSync(expo)) {
 const dist = path.join(ROOT, "dist");
 if (fs.existsSync(dist)) {
   app.use(express.static(dist, staticOptions));
-  app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(path.join(dist, "index.html"), shell));
+  app.get(/^(?!\/graphql).*/, (_req, res) => res.sendFile(path.join(dist, "index.html"), shell));
 }
 
 app.use(
@@ -104,7 +98,7 @@ app.listen(PORT, HOST, () => {
   console.log(`[min-agent] http://${displayHost()}:${PORT}`);
 });
 
-await mcp.sync(loadMcpServers());
+await mcp.sync(await loadMcpServers());
 
 const shutdown = async () => {
   await mcp.sync([]);

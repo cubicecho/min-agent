@@ -21,7 +21,7 @@ import { loadLlmConfig, resolveApiKey } from "./config.ts";
 import { type CatalogServer, mcp } from "./mcp.ts";
 import { isGrammarError, relaxTools, sanitizeTools } from "./schema-compat.ts";
 import { ask, clean, listLines, parseJson, tryAsk } from "./side-tasks.ts";
-import { saveSession } from "./store.ts";
+import { addMessage, patchMessage, updateSession } from "./store.ts";
 import {
   carryOver,
   catalogPrompt,
@@ -122,7 +122,7 @@ async function compact(
   if (!summary) return "";
 
   session.compaction = { summary, through, at: new Date().toISOString() };
-  saveSession(session);
+  await updateSession(session.id, { compaction: session.compaction });
   console.log(`[agent] compacted ${through} message(s) at ${used}/${contextLimit} tokens`);
   return summary;
 }
@@ -267,8 +267,8 @@ export interface RunOptions {
 
 /**
  * Runs one user turn to completion: streams the reply, executes any MCP tool
- * calls, and loops until the model stops asking for tools. The session file is
- * written after every turn, so a crash mid-run still leaves readable history.
+ * calls, and loops until the model stops asking for tools. Each message is written as it is
+ * produced, so a crash mid-run still leaves readable history.
  */
 export async function runTurn({ session, prompt, model, onEvent, signal }: RunOptions) {
   const config = loadLlmConfig();
@@ -314,6 +314,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
 
   session.model = chosenModel;
   session.messages.push({ role: "user", content: prompt });
+  await addMessage(session.id, session.messages.length - 1, { role: "user", content: prompt });
   for (const name of preselected) loaded.add(name);
 
   // The truncated first line goes up immediately so the sidebar is never blank, and a model
@@ -326,15 +327,16 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     const titleModel = modelForTask(config, "title");
     if (titleModel) {
       titling = tryAsk("title", () => generateTitle(config, titleModel, prompt, signal)).then(
-        (title) => {
+        async (title) => {
           if (!title) return;
           session.title = title;
+          await updateSession(session.id, { title });
           emit({ type: "title", title });
         },
       );
     }
   }
-  saveSession(session);
+  await updateSession(session.id, { title: session.title, model: chosenModel });
 
   const turnUsage = emptyUsage();
   const banked = session.usage ?? emptyUsage();
@@ -444,12 +446,13 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       // and nothing in the transcript. Keep the part that streamed, then let the error
       // through — the route stays quiet about a turn its reader ended.
       if (signal?.aborted && (text || reasoning)) {
-        session.messages.push({
+        const partial: StoredMessage = {
           role: "assistant",
           content: text || null,
           ...(reasoning ? { reasoning_content: reasoning } : {}),
-        });
-        saveSession(session);
+        };
+        session.messages.push(partial);
+        await addMessage(session.id, session.messages.length - 1, partial);
       }
       throw error;
     }
@@ -479,7 +482,8 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     };
     session.messages.push(assistant);
     session.usage = add(banked, turnUsage);
-    saveSession(session);
+    const assistantRow = await addMessage(session.id, session.messages.length - 1, assistant);
+    await updateSession(session.id, { usage: session.usage });
 
     if (!roundTripCalls.length) {
       const stats: TurnStats = {
@@ -508,7 +512,8 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       assistant.stats = stats;
       if (onDemand) session.loadedTools = carryOver(carried, used);
       await titling;
-      saveSession(session);
+      await patchMessage(assistantRow, { stats });
+      if (onDemand) await updateSession(session.id, { loadedTools: session.loadedTools });
       emit({ type: "stats", stats });
       // The turn is over at this point and the reader should not be held by what comes after
       // it, so `done` — the composer's cue to unlock — goes out here rather than once the
@@ -527,7 +532,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         );
         if (followups?.length) {
           assistant.followups = followups;
-          saveSession(session);
+          await patchMessage(assistantRow, { stats, followups });
           emit({ type: "followups", items: followups });
         }
       }
@@ -578,9 +583,11 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       }),
     );
 
-    for (const { id, content } of outcomes)
-      session.messages.push({ role: "tool", tool_call_id: id, content });
-    saveSession(session);
+    for (const { id, content } of outcomes) {
+      const result: StoredMessage = { role: "tool", tool_call_id: id, content };
+      session.messages.push(result);
+      await addMessage(session.id, session.messages.length - 1, result);
+    }
   }
 
   throw new Error(`Stopped after ${config.maxToolIterations} tool iterations.`);

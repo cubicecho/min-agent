@@ -1,0 +1,37 @@
+fragment McpState on McpServerState {
+  config {
+    id
+    label
+    enabled
+    transport
+    command
+    args
+    env
+    url
+    headers
+  }
+  status
+  error
+  tools {
+    name
+    description
+  }
+}
+
+query McpStatus {
+  mcpStatus {
+    ...McpState
+  }
+}
+
+mutation SaveMcpServers($servers: [McpServerInput!]!) {
+  saveMcpServers(servers: $servers) {
+    ...McpState
+  }
+}
+
+mutation ReconnectMcpServer($id: String!) {
+  reconnectMcpServer(id: $id) {
+    ...McpState
+  }
+}

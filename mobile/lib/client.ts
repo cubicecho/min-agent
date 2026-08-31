@@ -9,6 +9,6 @@ import { serverUrl } from "./server-url.ts";
  * `ReadableStream`; on web the platform's own fetch already does.
  */
 export const { api, streamTurn } = createClient({
-  baseUrl: () => `${serverUrl()}/api`,
+  baseUrl: () => `${serverUrl()}/graphql`,
   fetch: Platform.OS === "web" ? undefined : (expoFetch as unknown as typeof globalThis.fetch),
 });

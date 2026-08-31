@@ -1,0 +1,34 @@
+# The API key is excluded from `Setting` — it can only be written — so whether one is set is
+# its own field, and the Config tab shows a filled placeholder rather than an empty box.
+query Config {
+  setting(where: { id: { eq: "default" } }) {
+    baseUrl
+    model
+    maxTokens
+    temperature
+    maxToolIterations
+    systemPrompt
+    contextLimit
+    toolDiscovery
+    taskModels
+    pricing
+  }
+  hasApiKey
+}
+
+mutation SaveConfig($set: UpdateSettingInput!) {
+  updateSettingSingle(set: $set, where: { id: { eq: "default" } }) {
+    id
+  }
+}
+
+mutation SetApiKey($apiKey: String!) {
+  setApiKey(apiKey: $apiKey)
+}
+
+query Models {
+  models {
+    id
+    contextLength
+  }
+}

@@ -2,15 +2,15 @@
 
 A very small self-hosted agent: chat sessions over any OpenAI-compatible server, with MCP tools.
 Replies render as markdown with syntax-highlighted code, and every turn reports what it cost in
-tokens, time and throughput. Config lives in YAML files you can edit by hand; sessions live as
-JSON on disk.
+tokens, time and throughput. Everything it knows — settings, MCP servers, sessions and every
+message — lives in Postgres, reached over a GraphQL API generated from the schema.
 
 ## Contents
 
 Everything below the quick start is reference — read it when you want that piece, not in order.
 
 - [Quick start](#quick-start) · [Production](#production) · [Docker](#docker) — running it
-- [Layout](#layout) · [Files on disk](#files-on-disk) · [Scripts](#scripts) — finding your way around
+- [Layout](#layout) · [The database](#the-database) · [The API](#the-api) · [Scripts](#scripts) — finding your way around
 - [MCP servers](#mcp-servers) — wiring up tools, and how they are loaded without blowing the prompt budget
 - [Task models](#task-models) — pointing a small fast model at titling, compaction, tool preselection and follow-ups
 - [Turn statistics](#turn-statistics) — what the numbers under each reply mean
@@ -19,8 +19,9 @@ Everything below the quick start is reference — read it when you want that pie
 
 ## Stack
 
-Vite + React 19 + TanStack Router/Query + shadcn (Tailwind v4) on the front, a minimal Express 5
-server on the back. TypeScript everywhere, Biome for lint/format, Vitest for tests.
+Vite + React 19 + TanStack Router/Query + shadcn (Tailwind v4) on the front, Express 5 and
+graphql-yoga on the back, Drizzle over Postgres underneath. TypeScript everywhere, Biome for
+lint/format, Vitest for tests.
 
 There is a second front end in `mobile/` — Expo + expo-router + NativeWind — that builds the same
 views for Android, Windows (via Electron) and the web. See
@@ -30,8 +31,15 @@ views for Android, Windows (via Electron) and the web. See
 
 ```bash
 npm install
-npm run dev      # api on :8787, web on 0.0.0.0:3000 (proxies /api)
+cp .env.example .env          # DATABASE_URL lives here
+docker compose up -d db       # or point DATABASE_URL at a Postgres you already run
+npm run dev                   # api on :8787, web on 0.0.0.0:3000 (proxies /graphql)
 ```
+
+The server creates its own tables at boot and seeds the settings row, so an empty database is the
+right starting point — there is nothing to migrate by hand. `npm run db:push` is there for when
+you have changed `server/db/schema.ts` and want the change applied without a restart, and
+`npm run db:studio` opens Drizzle Studio against the same URL.
 
 Open http://localhost:3000, go to **Config**, point it at an OpenAI-compatible server, hit
 **Refresh** to list models, pick one, **Save**.
@@ -46,16 +54,17 @@ Known-good base URLs:
 | OpenRouter| `https://openrouter.ai/api/v1` | `sk-or-…`          |
 
 The key can also come from `OPENAI_API_KEY` in the environment (see `.env.example`); the value
-saved in `config/llm.yaml` wins if both are set.
+saved from the Config view wins if both are set.
 
 ### Where it listens
 
 Copy `.env.example` to `.env` to change it. Both `npm run dev` and `npm start` read that file —
 Node loads it directly, through `--env-file-if-exists`, so there is no dotenv dependency and no
-import to remember — and the Vite dev server reads the same file so its `/api` proxy follows the
+import to remember — and the Vite dev server reads the same file so its `/graphql` proxy follows the
 server rather than going on knocking at 8787.
 
-`PORT` is the Express port. `HOST` is the interface it binds; the default, `0.0.0.0`, accepts
+`DATABASE_URL` is the Postgres the server stores everything in; it refuses to start without one
+it can reach. `PORT` is the Express port. `HOST` is the interface it binds; the default, `0.0.0.0`, accepts
 connections from the LAN, which is what the Android and desktop apps need to reach it at all.
 Setting it to `localhost` takes that back and accepts local connections only — worth doing on a
 network you do not trust, since nothing here is authenticated. The startup line prints an address
@@ -78,9 +87,11 @@ The image is the server and the web client, nothing else. It stays a full `node`
 than something smaller because MCP stdio servers are spawned as child processes and an stdio
 server is usually `npx something`, which needs npm and a network from inside the container.
 
-Config and sessions both live in the one `/data` volume — `MIN_AGENT_CONFIG_DIR` and
-`MIN_AGENT_DATA_DIR` are set to point there — so `./docker-data` is what to keep and what to
-back up. Both are seeded on first boot, so an empty directory is the right starting point.
+`docker compose up` brings the database with it. Everything — settings, MCP servers, sessions,
+messages — is in the `min-agent-db` volume, which is what to keep and what to back up; `pg_dump`
+is the way to take a copy. The database port is deliberately not published: only the app
+container needs it. The volume is mounted at `/var/lib/postgresql`, not the `/data` subdirectory
+under it, because that is where postgres:18 wants it.
 
 An LLM server running on the host machine is `http://host.docker.internal:11434/v1` from in
 here, not `localhost`; the compose file maps that name on Linux, where Docker does not provide
@@ -94,8 +105,10 @@ installing React Native and Metro to produce a second copy of a UI already serve
 ## Releases
 
 `.github/workflows/ci.yml` lints, tests and builds on every push and pull request, typechecks
-the Expo app in a job of its own, and builds the image and boots it far enough to answer
-`/api/health` — so a broken Dockerfile is caught before there is a version number riding on it.
+the Expo app in a job of its own, and builds the image and boots it against a throwaway Postgres
+far enough to answer the `health` query — so a broken Dockerfile, or a schema that no longer
+applies to an empty database, is caught before there is a version number riding on it. The test
+job gets a Postgres service too, since the store tests skip themselves without one.
 
 `.github/workflows/release.yml` runs after a green CI on `main`. semantic-release reads the
 commit messages, and if they amount to a release it tags one and pushes the image to both
@@ -109,58 +122,76 @@ release still goes out to GHCR. A run of chores publishes nothing.
 - `src/` — web client. `routes/` is one file per nav item, `components/app-shell.tsx` is the frame.
 - `mobile/` — the Expo client. `app/` is one file per route, `components/ui.tsx` is the widget set,
   `electron/` is the desktop shell.
-- `server/` — express. `agent.ts` is the tool-calling loop, `mcp.ts` the MCP client pool,
-  `store.ts` session persistence, `config.ts` YAML read/write.
-- `shared/types.ts` — zod schemas shared by both sides; the API contract lives here.
+- `server/` — express + graphql-yoga. `agent.ts` is the tool-calling loop, `mcp.ts` the MCP
+  client pool, `store.ts` session persistence, `config.ts` the settings and MCP rows.
+- `server/db/` — `schema.ts` is the Drizzle table definitions, `client.ts` the pool,
+  `migrate.ts` the boot-time `ensureSchema`.
+- `server/graphql/` — `schema.ts` builds most of the API off the Drizzle schema and adds the
+  hand-written fields (`health`, `models`, `mcpStatus`, `setApiKey`, the `turn` subscription).
+- `shared/types.ts` — zod schemas shared by both sides; the domain types live here.
+- `shared/graphql/` — the `.graphql` documents both front ends send. `shared/gql/graphql.ts` is
+  generated from them and is not edited by hand.
 - `shared/client/` — everything both front ends run: `api.ts` (the typed client and the SSE
   reader), `live.ts` (streaming-event reducer), `use-live-parts.ts` (frame-batched streaming
   state), `sessions.ts` (the session-list filter), `queries.ts` (how long settings stay fresh),
   `usage.ts` (token/cost formatting).
 - `tests/` — Vitest (`npm test`).
 
-## Files on disk
+## The database
 
-Created on first run, both git-ignored.
+Four tables, created at boot by `ensureSchema()` in `server/db/migrate.ts`:
 
 ```
-config/llm.yaml     LLM connection + agent settings (Config view)
-config/mcp.yaml     MCP servers (MCP Servers view)
-data/sessions/*.json         one file per chat session
-data/sessions/*.meta.json    title, dates and token totals, for the session list
+settings      one row, id 'default' — the Config view
+mcp_servers   one row per server, ordered by position — the MCP Servers view
+sessions      one per chat: title, dates, token totals, compaction state
+messages      one per message, ordered by (session_id, idx), cascade-deleted with the session
 ```
 
-Override the locations with `MIN_AGENT_CONFIG_DIR` / `MIN_AGENT_DATA_DIR`.
+Messages are rows rather than a blob on the session, so a turn appends the two or three messages
+it produced instead of rewriting the whole transcript seven times. The counters on the session
+row — `messageCount`, the token totals — are what the sidebar reads, so listing sessions never
+touches the messages table.
 
-`GET /api/models` is not a local read — it asks the configured provider to list its models — so
+`server/db/schema.ts` is the single definition. `npm run db:push` applies a change to a running
+database; `npm run db:studio` browses it. There is no migration history to keep in order, which
+is the trade this makes: a schema change is applied, not versioned.
+
+## The API
+
+One endpoint, `POST /graphql`, plus GraphiQL at the same address in a browser. Most of it is
+generated from the Drizzle schema by `@vantreeseba/drizzle-graphql` — the CRUD over sessions,
+messages, settings and MCP servers is not hand-written. On top of that sit the fields that are
+not tables:
+
+```
+query    health          is the server up, and what is it pointed at
+query    models          asks the configured provider to list its models
+query    hasApiKey       whether a key is set, without returning it
+query    mcpStatus       each configured server with its live connection state and tools
+mutation setApiKey       write-only, so the key never comes back out over the API
+mutation saveMcpServers  replaces the whole set and reconnects
+mutation reconnectMcpServer
+subscription turn        runs a turn and streams its events over SSE
+```
+
+`npm run codegen` regenerates `shared/gql/graphql.ts`. It prints the live schema to
+`schema.graphql` first, so what the front ends are typed against is exactly what the server
+serves. Both files are committed; regenerate them in the same commit as a schema change. The generated
+documents are plain strings, not `graphql` AST objects, which is what keeps the `graphql`
+package out of both bundles: Metro pins `nodeModulesPaths` to `mobile/node_modules`, and it is
+not installed there.
+
+The `models` query is not a local read — it asks the configured provider to list its models — so
 both front ends hold it, and the connection settings beside it, for five minutes. Saving config
-invalidates them by hand, so the only thing this hides is `llm.yaml` edited underneath a running
-server, which a reload settles.
-
-The `.meta.json` beside each session is a cache, not a source: the sidebar is refetched after
-every turn, and reading it means listing sessions no longer parses every message of every
-conversation on disk to print a column of titles. Each one records the size and mtime of the
-transcript it describes, so a session file you edit by hand is noticed and its summary rebuilt on
-the next listing. Deleting the sidecars is safe — they come back.
-
-Editing the YAML by hand is supported and is often faster than the UI — the server re-reads on
-each request. Note that saving from the UI rewrites the file and drops your comments.
+invalidates them by hand, so the only thing this hides is the settings row edited underneath a
+running server, which a reload settles.
 
 ## MCP servers
 
-Both transports are supported:
-
-```yaml
-servers:
-  - id: fs
-    label: Filesystem
-    enabled: true
-    transport: stdio
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
-  - id: docs
-    transport: http
-    url: https://example.com/mcp
-```
+Both transports are supported. A stdio server is a command and its arguments —
+`npx -y @modelcontextprotocol/server-filesystem /tmp` — and an http one is a URL. Add them under
+**MCP Servers**; each row is a row in `mcp_servers`, and saving reconnects the pool.
 
 Tools are exposed to the model as `<server id>__<tool name>`, so ids must be unique and short.
 
@@ -560,9 +591,9 @@ Three things are tried, in order, and the first that works wins:
    reach it at, so a phone browser opening `http://framework.lan:8787/app` needs no setup. Being
    on the web is not the same as having been served by the agent, though: `expo start --web`
    serves the app from Metro, and Metro answers every path it does not recognise with
-   `index.html`, so an origin-relative `/api/config` comes back as `<!DOCTYPE html>` and every
-   screen fails on a JSON parse. The app asks rather than assumes — it probes `/api/config` once
-   and moves on unless the answer is JSON.
+   `index.html`, so an origin-relative `/graphql` comes back as `<!DOCTYPE html>` and every
+   screen fails on a JSON parse. The app asks rather than assumes — it posts the `health` query
+   to `/graphql` once and moves on unless the answer is JSON.
 3. **The address baked in at build time**, `EXPO_PUBLIC_AGENT_URL`. `scripts/expo.ts` sets it from
    the same `PORT` the server reads, so moving the server does not mean editing the app. This is
    why the Expo scripts are run from the repo root — `npm run mobile:web`, not `npm --prefix
@@ -614,6 +645,9 @@ server address is kept — is unreliable on a file origin.
 | Script            | What it does                        |
 | ----------------- | ----------------------------------- |
 | `npm run dev`     | server + web with reload            |
+| `npm run db:push` | apply `server/db/schema.ts` to the database |
+| `npm run db:studio` | browse the database              |
+| `npm run codegen` | print `schema.graphql`, regenerate `shared/gql/` |
 | `npm run build`   | typecheck, then build to `dist/`    |
 | `npm start`       | serve API + `dist/` on `:8787`      |
 | `npm run typecheck` | `tsc --noEmit`                    |

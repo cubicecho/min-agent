@@ -1,110 +1,97 @@
-import { randomUUID } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-import type { Session, SessionSummary } from "../shared/types.ts";
-import { SESSIONS_DIR } from "./paths.ts";
-
-const file = (id: string) => path.join(SESSIONS_DIR, `${id}.json`);
+import { asc, desc, eq, sql } from "drizzle-orm";
+import { fromStored, toStored } from "../shared/messages.ts";
+import type { Session, SessionSummary, StoredMessage } from "../shared/types.ts";
+import { db } from "./db/client.ts";
+import { messages, type NewMessageRow, type SessionRow, sessions } from "./db/schema.ts";
 
 /**
- * Everything the session list shows, kept beside the transcript rather than inside it.
+ * Sessions and their messages.
  *
- * The sidebar is refetched after every turn, and without this `listSessions` had to read and
- * parse every message of every conversation on disk to produce a column of titles and dates —
- * work that grew with the whole history each time.
+ * A turn only ever appends, so this exposes the append rather than a save: `addMessage` writes
+ * the one row a step produced, and `patchMessage` fills in the stats and follow-ups that are
+ * only known once the turn is over. Nothing here rewrites a transcript.
  */
-const metaFile = (id: string) => path.join(SESSIONS_DIR, `${id}.meta.json`);
 
-/**
- * A sidecar records what the transcript looked like when it was written. `data/sessions` is a
- * directory you are meant to be able to open, so a session file changed by anything other than
- * this module has to be noticed rather than served from a summary that no longer describes it.
- */
-interface Sidecar {
-  source: { size: number; mtimeMs: number };
-  summary: SessionSummary;
-}
-
-/** Session ids come from randomUUID, but never trust them off the wire. */
-function assertId(id: string) {
-  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(id)) throw new Error(`invalid session id: ${id}`);
-}
-
-const summarize = ({ messages, ...meta }: Session): SessionSummary => ({
-  ...meta,
-  messageCount: messages.length,
+const summarize = (row: SessionRow): SessionSummary => ({
+  id: row.id,
+  title: row.title,
+  createdAt: row.createdAt.toISOString(),
+  updatedAt: row.updatedAt.toISOString(),
+  model: row.model,
+  usage: row.usage ?? undefined,
+  loadedTools: row.loadedTools,
+  compaction: row.compaction ?? undefined,
+  messageCount: row.messageCount,
 });
 
-export function createSession(init: Partial<Session> = {}): Session {
-  const now = new Date().toISOString();
-  const session: Session = {
-    id: randomUUID(),
-    title: init.title ?? "New chat",
-    createdAt: now,
-    updatedAt: now,
-    messages: init.messages ?? [],
-  };
-  saveSession(session);
-  return session;
+export async function createSession(init: { title?: string } = {}): Promise<Session> {
+  const [row] = await db
+    .insert(sessions)
+    .values({ title: init.title ?? "New chat" })
+    .returning();
+  const { messageCount, ...summary } = summarize(row);
+  return { ...summary, messages: [] };
 }
 
-export function saveSession(session: Session) {
-  fs.mkdirSync(SESSIONS_DIR, { recursive: true });
-  session.updatedAt = new Date().toISOString();
-  fs.writeFileSync(file(session.id), JSON.stringify(session, null, 2), "utf8");
-  writeSidecar(session);
+export async function getSession(id: string): Promise<Session | null> {
+  const [row] = await db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
+  if (!row) return null;
+  const rows = await db
+    .select()
+    .from(messages)
+    .where(eq(messages.sessionId, id))
+    .orderBy(asc(messages.idx));
+  const { messageCount, ...summary } = summarize(row);
+  return { ...summary, messages: rows.map(toStored) };
 }
 
-function writeSidecar(session: Session) {
-  try {
-    const { size, mtimeMs } = fs.statSync(file(session.id));
-    const sidecar: Sidecar = { source: { size, mtimeMs }, summary: summarize(session) };
-    fs.writeFileSync(metaFile(session.id), JSON.stringify(sidecar), "utf8");
-  } catch {
-    // A read-only data directory still works; the list just pays for the parse every time.
-  }
+export async function listSessions(): Promise<SessionSummary[]> {
+  const rows = await db.select().from(sessions).orderBy(desc(sessions.updatedAt));
+  return rows.map(summarize);
 }
 
-export function getSession(id: string): Session | null {
-  assertId(id);
-  try {
-    return JSON.parse(fs.readFileSync(file(id), "utf8")) as Session;
-  } catch {
-    return null;
-  }
+export async function deleteSession(id: string): Promise<void> {
+  await db.delete(sessions).where(eq(sessions.id, id));
 }
 
-export function deleteSession(id: string) {
-  assertId(id);
-  fs.rmSync(file(id), { force: true });
-  fs.rmSync(metaFile(id), { force: true });
+/** The session's own columns — never its messages, which are only ever appended. */
+export type SessionPatch = Partial<
+  Pick<Session, "title" | "model" | "usage" | "loadedTools" | "compaction">
+>;
+
+export async function updateSession(id: string, patch: SessionPatch): Promise<void> {
+  if (!Object.keys(patch).length) return;
+  await db.update(sessions).set(patch).where(eq(sessions.id, id));
 }
 
 /**
- * One session's summary. A transcript written before the sidecar existed — or since edited by
- * hand — still has to appear in the list, so it is read in full once and leaves a fresh sidecar
- * behind for the next time.
+ * Appends one message and returns its row id, so a later `patchMessage` can reach it.
+ *
+ * `messageCount` and `updatedAt` move with it: the sidebar reads both off the session row and
+ * has no business opening a transcript to draw a list of titles.
  */
-function summaryFor(id: string): SessionSummary | null {
-  try {
-    const { size, mtimeMs } = fs.statSync(file(id));
-    const sidecar = JSON.parse(fs.readFileSync(metaFile(id), "utf8")) as Sidecar;
-    if (sidecar.source?.size === size && sidecar.source.mtimeMs === mtimeMs) return sidecar.summary;
-  } catch {
-    // No sidecar yet, or no transcript to check it against. Work it out from the session.
-  }
+export async function addMessage(
+  sessionId: string,
+  idx: number,
+  message: StoredMessage,
+): Promise<string> {
+  // `fromStored` widens `role` to `string`, which the column's enum will not take; the row
+  // itself is exactly the insert shape, so name it as one.
+  const values = { sessionId, idx, ...fromStored(message) } as NewMessageRow;
+  const [row] = await db.insert(messages).values(values).returning({ id: messages.id });
 
-  const session = getSession(id);
-  if (!session) return null;
-  writeSidecar(session);
-  return summarize(session);
+  await db
+    .update(sessions)
+    .set({ messageCount: sql`${sessions.messageCount} + 1`, updatedAt: new Date() })
+    .where(eq(sessions.id, sessionId));
+
+  return row.id;
 }
 
-export function listSessions(): SessionSummary[] {
-  fs.mkdirSync(SESSIONS_DIR, { recursive: true });
-  return fs
-    .readdirSync(SESSIONS_DIR)
-    .filter((name) => name.endsWith(".json") && !name.endsWith(".meta.json"))
-    .flatMap((name) => summaryFor(name.replace(/\.json$/, "")) ?? [])
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+/** What is only known once the turn has finished: what it cost, and what to ask next. */
+export async function patchMessage(
+  id: string,
+  patch: Pick<StoredMessage, "stats" | "followups">,
+): Promise<void> {
+  await db.update(messages).set(patch).where(eq(messages.id, id));
 }

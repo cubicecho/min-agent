@@ -39,20 +39,16 @@ COPY --from=builder /app/dist ./dist
 ENV NODE_ENV=production
 ENV PORT=8787
 ENV HOST=0.0.0.0
-# Config and sessions are both seeded on first boot, so pointing them into one volume is
-# the whole of what it takes to keep them across a new image.
-ENV MIN_AGENT_CONFIG_DIR=/data/config
-ENV MIN_AGENT_DATA_DIR=/data
-
-RUN mkdir -p /data
-VOLUME /data
+# Settings, MCP servers and every session live in Postgres now, so the image itself is
+# stateless — there is nothing left to mount. `db` is the service in docker-compose.yml.
+ENV DATABASE_URL=postgres://min_agent:min_agent@db:5432/min_agent
 
 EXPOSE 8787
 
-# /api/health reads the LLM config off disk, so it answers only once the seeding and the
-# routes are both up — which is the thing worth waiting on.
+# `health` is a real query, so answering it means the tables exist, the settings row has
+# been read and the schema is mounted — which is the thing worth waiting on.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e 'fetch("http://localhost:" + (process.env.PORT || 8787) + "/api/health").then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'
+  CMD node -e 'fetch("http://localhost:" + (process.env.PORT || 8787) + "/graphql", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: "{ health { ok } }" }) }).then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'
 
 # Run node directly rather than through `npm start`: npm would sit between Docker and the
 # server as PID 1 and swallow the SIGTERM that disconnects the MCP servers on the way out.

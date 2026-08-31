@@ -1,23 +1,44 @@
-# min-agent, as one container. `docker compose up -d`, then http://localhost:8787.
+# min-agent and its database. `docker compose up -d`, then http://localhost:8787.
 #
 # Nothing in min-agent is authenticated, and the container reaches whatever the host can:
 # the LLM server, the MCP servers, the LAN. Publish the port on a network you trust, or
 # bind it to the loopback with `127.0.0.1:8787:8787` and reach it through something that
 # does have a login.
 services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: min_agent
+      POSTGRES_PASSWORD: min_agent
+      POSTGRES_DB: min_agent
+    volumes:
+      # Settings, MCP servers and every session are in here. It is the only state there is.
+      # Mounted a level above `data/`, which is where postgres:18 wants it: the data
+      # directory then sits in a version-named subdirectory, so a later `pg_upgrade` has
+      # both versions on the same mount instead of across a mount boundary.
+      - min-agent-db:/var/lib/postgresql
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U min_agent -d min_agent']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   min-agent:
     build: .
     image: min-agent
     ports:
       - '8787:8787'
-    volumes:
-      # config/ (llm.yaml, mcp.yaml) and data/sessions both live in here, and both are
-      # seeded on first boot, so an empty directory is the right starting point.
-      - ./docker-data:/data
     environment:
-      # Only a fallback: an apiKey set in config/llm.yaml wins over it.
+      # Only a fallback: an API key saved in Config wins over it.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PORT: ${PORT:-8787}
+      DATABASE_URL: postgres://min_agent:min_agent@db:5432/min_agent
+    # The server creates its tables at boot, so it has to find a database that is actually
+    # accepting connections — not merely a container that has started.
+    depends_on:
+      db:
+        condition: service_healthy
     # `host.docker.internal` is how the container names the machine it is running on,
     # which is where an Ollama or LM Studio server usually is. Linux needs it spelled out;
     # Docker Desktop provides it already, where this line is harmless.
@@ -30,9 +51,12 @@ services:
           'CMD',
           'node',
           '-e',
-          'fetch("http://localhost:" + (process.env.PORT || 8787) + "/api/health").then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))',
+          'fetch("http://localhost:" + (process.env.PORT || 8787) + "/graphql", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: "{ health { ok } }" }) }).then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))',
         ]
       interval: 30s
       timeout: 5s
       start_period: 15s
       retries: 3
+
+volumes:
+  min-agent-db:
