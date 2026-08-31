@@ -99,9 +99,10 @@ the Expo app in a job of its own, and builds the image and boots it far enough t
 
 `.github/workflows/release.yml` runs after a green CI on `main`. semantic-release reads the
 commit messages, and if they amount to a release it tags one and pushes the image to both
-`ghcr.io/vantreeseba/min-agent` and Docker Hub. GHCR needs no setup; Docker Hub needs
-`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` in the repository secrets. A run of chores publishes
-nothing.
+`ghcr.io/vantreeseba/min-agent` and, optionally, Docker Hub. GHCR needs no setup — the workflow's
+own `GITHUB_TOKEN` can push to it. Docker Hub is published to only when `DOCKERHUB_USERNAME` and
+`DOCKERHUB_TOKEN` are in the repository secrets; without them those steps are skipped and the
+release still goes out to GHCR. A run of chores publishes nothing.
 
 ## Layout
 

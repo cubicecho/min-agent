@@ -1,7 +1,8 @@
-# Required repository secrets for Docker Hub publishing:
+# GHCR needs nothing set up: the GITHUB_TOKEN this workflow already has can push to it.
+# Docker Hub is optional. Set both of these to publish there as well; with neither set,
+# the Docker Hub steps are skipped and the release still goes out to GHCR.
 #   DOCKERHUB_USERNAME — your Docker Hub username
 #   DOCKERHUB_TOKEN    — a Docker Hub access token (not your password)
-# GHCR needs nothing set up: the GITHUB_TOKEN this workflow already has can push to it.
 
 name: Release
 
@@ -54,8 +55,39 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log in to Docker Hub
+      # Docker Hub is optional, so it is skipped rather than fatal when its secrets are
+      # absent. Logging in unconditionally failed the step, which took the image build
+      # down with it and left GHCR unpublished on a release that needed no setup at all.
+      - name: Work out where the image can go
+        id: targets
         if: steps.semantic.outputs.new_release_published == 'true'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          VERSION: ${{ steps.semantic.outputs.new_release_version }}
+        run: |
+          # GHCR rejects an uppercase path; the owner half of the repo name is free to
+          # have one, so it is lowercased here rather than assumed.
+          repo=$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          {
+            echo 'tags<<TAGS_EOF'
+            echo "ghcr.io/${repo}:latest"
+            echo "ghcr.io/${repo}:${VERSION}"
+            if [ -n "$DOCKERHUB_USERNAME" ]; then
+              echo "${DOCKERHUB_USERNAME}/min-agent:latest"
+              echo "${DOCKERHUB_USERNAME}/min-agent:${VERSION}"
+            fi
+            echo TAGS_EOF
+          } >> "$GITHUB_OUTPUT"
+
+          if [ -n "$DOCKERHUB_USERNAME" ]; then
+            echo "dockerhub=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dockerhub=false" >> "$GITHUB_OUTPUT"
+            echo "DOCKERHUB_USERNAME is not set - publishing to GHCR only." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Log in to Docker Hub
+        if: steps.targets.outputs.dockerhub == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -71,10 +103,6 @@ jobs:
         with:
           context: .
           push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ steps.semantic.outputs.new_release_version }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/min-agent:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/min-agent:${{ steps.semantic.outputs.new_release_version }}
+          tags: ${{ steps.targets.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
