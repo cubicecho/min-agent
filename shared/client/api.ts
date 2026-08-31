@@ -44,6 +44,13 @@ async function failure(response: Response): Promise<Error> {
   return new Error(detail?.error ?? `${response.status} ${response.statusText}`);
 }
 
+/**
+ * A 200 that will not parse is almost always a dev server answering an unknown path with
+ * its `index.html`, and `Unexpected token '<'` says nothing about why. Name the address.
+ */
+const wrongServer = (requested: string) =>
+  new Error(`${requested} answered with HTML, not JSON — is that the min-agent server?`);
+
 export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
   const doFetch = fetchImpl ?? globalThis.fetch;
   const url = (path: string) => `${typeof baseUrl === "function" ? baseUrl() : baseUrl}${path}`;
@@ -55,7 +62,12 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
       body: init?.body ? JSON.stringify(init.body) : undefined,
     });
     if (!response.ok) throw await failure(response);
-    return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+    if (response.status === 204) return undefined as T;
+    try {
+      return (await response.json()) as T;
+    } catch {
+      throw wrongServer(url(path));
+    }
   }
 
   const api = {

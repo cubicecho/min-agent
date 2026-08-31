@@ -405,12 +405,45 @@ The other deliberate version choice is TypeScript. SDK 57 expects `~6.0.3`; this
 so it matches the repo root, and `expo.install.exclude` in `mobile/package.json` stops
 `expo-doctor` reporting the gap. Both exports and all 21 doctor checks pass on it.
 
+### Unlayered Tailwind utilities
+
+`mobile/global.css` imports `tailwindcss/theme.css` and `tailwindcss/utilities.css` separately
+rather than `@import "tailwindcss"`, and the utilities go in unlayered.
+
+`@import "tailwindcss"` would put every utility in `@layer utilities`. react-native-web gives each
+component a base class — `padding: 0`, `border: 0 solid black`, `background-color: transparent`,
+`flex-direction: column` — in a plain, unlayered stylesheet, and an unlayered rule beats a layered
+one no matter what the layer order or the specificity is. Layered utilities therefore lose every
+property that base class happens to set: `p-4` renders with no padding, `flex-row` stays a column,
+`border` and `bg-*` do nothing, while `gap-4` and `rounded-xl` — which the base class says nothing
+about — still work, which is what makes the failure so confusing to look at. Unlayered, the
+utilities are in the same cascade as react-native-web and win on document order.
+
+Preflight is left out: react-native-web has its own reset, and the app renders no bare HTML
+elements for preflight to fix.
+
+The palette is dark, full stop — one `:root`, no `prefers-color-scheme` block, `userInterfaceStyle`
+pinned to `dark` in `app.json`. The web app hard-codes `class="dark"` and has no light mode, so
+following the device would have meant the two front ends disagreeing on any machine set to light.
+`mobile/lib/theme.ts` carries the same values as hex for the props that take a colour as a string
+rather than a class, and `app/_layout.tsx` hands them to react-navigation, which paints the drawer
+and header itself. Those theming primitives are imported from `expo-router`, not from
+`@react-navigation/native` — SDK 56 and later refuse to let app code import the latter directly.
+
 ### Pointing it at your server
 
-The browser build talks to whatever origin served it, so it needs no configuration. The Android
-and desktop builds have no origin to inherit, so they ask: open **Settings**, put in the address of
-the machine running `npm start` — `http://framework.lan:8787`, say — and press **Save and test**.
-It is remembered on the device, and the badge tells you whether the server answered.
+The browser build talks to whatever origin served it, so served from `/app` it needs no
+configuration. Being on the web is not the same as having been served by the agent, though:
+`expo start --web` serves the app from Metro, and Metro answers every path it does not recognise
+with `index.html`, so an origin-relative `/api/config` comes back as `<!DOCTYPE html>` and every
+screen fails on a JSON parse. So the app asks the question instead of assuming: on first run with
+nothing stored it probes `/api/config`, and if the origin does not answer with JSON it falls back
+to port 8787 on the same host.
+
+The Android and desktop builds have no origin to inherit, so they ask: open **Settings**, put in
+the address of the machine running `npm start` — `http://framework.lan:8787`, say — and press
+**Save and test**. It is remembered on the device, and the badge tells you whether the server
+answered.
 
 There is no auth. The API is served with a permissive CORS header so the app can reach it from
 another origin, which means anything on the network that can reach port 8787 can use your agent.

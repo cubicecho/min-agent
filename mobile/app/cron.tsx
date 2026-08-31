@@ -21,7 +21,7 @@ import {
   Textarea,
 } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
-import { useColors } from "@/lib/theme.ts";
+import { colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 
 const DEFAULT_MODEL = "__default__";
@@ -159,7 +159,6 @@ function Row({
   onDelete: () => void;
   running: boolean;
 }) {
-  const colors = useColors();
   const { job } = state;
 
   return (

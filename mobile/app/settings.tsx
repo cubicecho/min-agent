@@ -12,7 +12,7 @@ import {
   Screen,
 } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
-import { DEFAULT_SERVER_URL, serverUrl, setServerUrl } from "@/lib/server-url.ts";
+import { defaultServerUrl, serverUrl, setServerUrl } from "@/lib/server-url.ts";
 
 type Probe = { ok: boolean; detail: string } | null;
 
@@ -55,7 +55,7 @@ export default function SettingsScreen() {
         <Field
           label="Base URL"
           hint={
-            DEFAULT_SERVER_URL === ""
+            defaultServerUrl() === ""
               ? "Leave blank to use the origin this page was served from."
               : "For example http://192.168.1.20:8787 — a hostname works if your network resolves it."
           }
@@ -76,7 +76,7 @@ export default function SettingsScreen() {
           <Button onPress={save} busy={busy} icon="check">
             Save and test
           </Button>
-          <Button variant="outline" onPress={() => setDraft(DEFAULT_SERVER_URL)}>
+          <Button variant="outline" onPress={() => setDraft(defaultServerUrl())}>
             Reset
           </Button>
         </View>

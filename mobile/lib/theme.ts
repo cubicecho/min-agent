@@ -1,25 +1,12 @@
-import { useColorScheme } from "react-native";
-
 /**
  * The palette again, in TypeScript. React Native props that take a colour — icon
  * tints, `placeholderTextColor`, the navigator's own chrome — are plain strings and
  * cannot read a CSS variable, so those values live here as well as in `global.css`.
  * The two must be changed together.
+ *
+ * There is only the dark set, because the web app is dark and has no switch.
  */
-const LIGHT = {
-  background: "#ffffff",
-  foreground: "#0a0a0a",
-  card: "#ffffff",
-  muted: "#f5f5f5",
-  mutedForeground: "#737373",
-  primary: "#171717",
-  primaryForeground: "#fafafa",
-  secondaryForeground: "#171717",
-  destructive: "#e7000b",
-  border: "#e5e5e5",
-};
-
-const DARK: typeof LIGHT = {
+export const colors = {
   background: "#0a0a0a",
   foreground: "#fafafa",
   card: "#171717",
@@ -32,6 +19,4 @@ const DARK: typeof LIGHT = {
   border: "rgba(255,255,255,0.12)",
 };
 
-export type Colors = typeof LIGHT;
-
-export const useColors = (): Colors => (useColorScheme() === "dark" ? DARK : LIGHT);
+export type Colors = typeof colors;

@@ -14,7 +14,7 @@ import {
   type TextInputProps,
   View,
 } from "react-native";
-import { type Colors, useColors } from "@/lib/theme.ts";
+import { type Colors, colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 
 /**
@@ -89,7 +89,6 @@ export function Button({
   disabled,
   ...props
 }: ButtonProps) {
-  const colors = useColors();
   const off = disabled || busy;
   return (
     <Pressable
@@ -134,7 +133,7 @@ export type InputProps = TextInputProps & { className?: string };
 
 export const Input = ({ className, ...props }: InputProps) => (
   <TextInput
-    placeholderTextColor={useColors().mutedForeground}
+    placeholderTextColor={colors.mutedForeground}
     className={cn(
       "h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground",
       className,
@@ -147,7 +146,7 @@ export const Textarea = ({ className, ...props }: InputProps) => (
   <TextInput
     multiline
     textAlignVertical="top"
-    placeholderTextColor={useColors().mutedForeground}
+    placeholderTextColor={colors.mutedForeground}
     className={cn(
       "min-h-24 rounded-lg border border-input bg-background p-3 text-sm text-foreground",
       className,
@@ -283,7 +282,6 @@ export function Select({
   placeholder?: string;
   disabled?: boolean;
 }) {
-  const colors = useColors();
   const [open, setOpen] = useState(false);
   const selected = options.find((option) => option.value === value);
 

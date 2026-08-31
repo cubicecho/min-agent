@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "scheme": "minagent",
     "orientation": "default",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "android": {
       "package": "lan.minagent.app"
     },

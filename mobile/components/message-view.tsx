@@ -5,7 +5,7 @@ import type { LlmConfig, StoredMessage, TurnStats } from "@shared/types.ts";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { MarkdownBody } from "@/components/markdown.tsx";
-import { useColors } from "@/lib/theme.ts";
+import { colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 
 function text(content: StoredMessage["content"]): string {
@@ -67,7 +67,6 @@ function Details({
   defaultOpen?: boolean;
   children: ReactNode;
 }) {
-  const colors = useColors();
   const [open, setOpen] = useState(Boolean(defaultOpen));
 
   return (
