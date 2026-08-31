@@ -385,6 +385,20 @@ Stopping a turn keeps what it had already said. The assistant message used to be
 once the stream ended, so pressing stop left the reply on screen and nothing in the transcript;
 the part that streamed is now saved before the abort is passed on.
 
+### Watching a turn arrive
+
+A fast model sends several hundred token deltas a second — far more than a screen can show. Both
+front ends collect them in a ref and fold them in on the next animation frame (`useLiveParts` in
+`shared/client/`), so a burst of thirty deltas becomes one render of the same text.
+
+That render is also made narrow. The stored transcript and each row of the in-flight turn are
+separate memoised components, and `applyEvent` passes untouched parts through by reference, so a
+token lands on the last bubble without re-parsing the markdown of every reply above it.
+
+Scrolling follows the turn only while you are already within 100px of the bottom. Reading back
+through the transcript mid-turn used to be impossible — every delta yanked the view down; now
+leaving the bottom unpins it and a *Jump to latest* button brings it back.
+
 ## Android, Windows and web apps
 
 `mobile/` is a second front end over the same server: Expo (React Native) with expo-router and

@@ -1,4 +1,5 @@
-import { applyEvent, type LivePart, liveCharCount } from "@shared/client/live.ts";
+import { Feather } from "@react-native-vector-icons/feather";
+import { type LivePart, liveCharCount } from "@shared/client/live.ts";
 import {
   contextFill,
   formatDuration,
@@ -8,16 +9,27 @@ import {
   latestStats,
   usageDetail,
 } from "@shared/client/usage.ts";
+import { useLiveParts } from "@shared/client/use-live-parts.ts";
 import type { TurnStats } from "@shared/types.ts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigation, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  KeyboardAvoidingView,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { MessageView } from "@/components/message-view.tsx";
 import { SessionsPanel, SessionsScreen } from "@/components/session-list.tsx";
 import { Button, Empty, ErrorNote, Muted, Select, Textarea } from "@/components/ui.tsx";
 import { api, streamTurn } from "@/lib/client.ts";
 import { useWide } from "@/lib/layout.ts";
+import { colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 
 /**
@@ -66,10 +78,13 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const [model, setModel] = useState("");
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<string | null>(null);
-  const [live, setLive] = useState<LivePart[]>([]);
+  const { parts: live, push: pushLive, reset: resetLive } = useLiveParts();
   const [turnStats, setTurnStats] = useState<TurnStats | null>(null);
   const [startedAt, setStartedAt] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
+  // Scrolling follows the turn only while the reader is already at the bottom. Reading back
+  // through the transcript mid-turn used to be impossible: every delta yanked the view down.
+  const [pinned, setPinned] = useState(true);
   const abort = useRef<AbortController | null>(null);
   const settled = useRef(false);
   const scroller = useRef<ScrollView>(null);
@@ -88,10 +103,22 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     if (sessionId) navigation.setOptions({ title: session.data?.title ?? "Chat" });
   }, [navigation, sessionId, session.data?.title]);
 
+  /** A hundred pixels of slack, so a stray flick does not count as leaving the bottom. */
+  function onScroll({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) {
+    const { contentSize, contentOffset, layoutMeasurement } = nativeEvent;
+    const now = contentSize.height - contentOffset.y - layoutMeasurement.height < 100;
+    // Bail out when nothing changed: scrolling fires many times a second and every real state
+    // write here would re-render the transcript.
+    setPinned((was) => (was === now ? was : now));
+  }
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: these deps are the scroll triggers.
   useEffect(() => {
-    scroller.current?.scrollToEnd({ animated: true });
-  }, [session.data?.messages.length, live, pending]);
+    if (!pinned) return;
+    // Animation cannot keep up with a stream, and trying looks like stutter; during a turn the
+    // view is simply moved.
+    scroller.current?.scrollToEnd({ animated: !pending });
+  }, [session.data?.messages.length, live, pending, pinned]);
 
   /**
    * Puts the window back on the stored session and drops the optimistic bubbles — the refetch
@@ -108,7 +135,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     await queryClient.invalidateQueries({ queryKey: ["session", id] });
     await queryClient.invalidateQueries({ queryKey: ["sessions"] });
     setPending(null);
-    setLive([]);
+    resetLive();
     setTurnStats(null);
   }
 
@@ -129,10 +156,11 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     // A chip sends its own text; anything half-typed in the box is left alone.
     if (!text) setDraft("");
     setPending(prompt);
-    setLive([]);
+    resetLive();
     setTurnStats(null);
     setFailure(null);
     setStartedAt(Date.now());
+    setPinned(true);
     settled.current = false;
     abort.current = new AbortController();
 
@@ -143,7 +171,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
         model: activeModel,
         signal: abort.current.signal,
         onEvent: (event) => {
-          setLive((parts) => applyEvent(parts, event));
+          pushLive(event);
           if (event.type === "stats") setTurnStats(event.stats);
           if (event.type === "error") setFailure(event.message);
           if (event.type === "done") void settle(turnId);
@@ -163,6 +191,12 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
       if (!sessionId) router.replace(`/chat/${turnId}`);
     }
   }
+
+  // A chip must not change identity every render, or the memoised transcript re-renders on
+  // every token. The ref keeps the callback stable while still calling the current `send`.
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  const followup = useCallback((text: string) => void sendRef.current(text), []);
 
   return (
     <KeyboardAvoidingView
@@ -190,37 +224,54 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
         </View>
       </View>
 
-      <ScrollView
-        ref={scroller}
-        className="flex-1"
-        contentContainerClassName="p-4"
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Wide, the column is centred and capped as on the web app; narrow, the cap is
+      <View className="min-h-0 flex-1">
+        <ScrollView
+          ref={scroller}
+          className="flex-1"
+          contentContainerClassName="p-4"
+          keyboardShouldPersistTaps="handled"
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+        >
+          {/* Wide, the column is centred and capped as on the web app; narrow, the cap is
             wider than the screen and does nothing. */}
-        <View className="w-full max-w-3xl self-center">
-          {activeId ? (
-            <MessageView
-              messages={session.data?.messages ?? []}
-              live={live}
-              pricing={config.data?.pricing}
-              onFollowup={pending ? undefined : (text) => void send(text)}
-            />
-          ) : (
-            <Empty>Start a chat, or open one from the right.</Empty>
-          )}
-          {pending ? (
-            <>
-              <View className="mt-3 flex-row justify-end">
-                <View className="max-w-[88%] rounded-lg bg-primary px-3 py-2 opacity-70">
-                  <Text className="text-sm leading-5 text-primary-foreground">{pending}</Text>
+          <View className="w-full max-w-3xl self-center">
+            {activeId ? (
+              <MessageView
+                messages={session.data?.messages ?? []}
+                live={live}
+                pricing={config.data?.pricing}
+                onFollowup={pending ? undefined : followup}
+              />
+            ) : (
+              <Empty>Start a chat, or open one from the right.</Empty>
+            )}
+            {pending ? (
+              <>
+                <View className="mt-3 flex-row justify-end">
+                  <View className="max-w-[88%] rounded-lg bg-primary px-3 py-2 opacity-70">
+                    <Text className="text-sm leading-5 text-primary-foreground">{pending}</Text>
+                  </View>
                 </View>
-              </View>
-              <LiveMeter startedAt={startedAt} live={live} />
-            </>
-          ) : null}
-        </View>
-      </ScrollView>
+                <LiveMeter startedAt={startedAt} live={live} />
+              </>
+            ) : null}
+          </View>
+        </ScrollView>
+
+        {pinned ? null : (
+          <Pressable
+            onPress={() => {
+              setPinned(true);
+              scroller.current?.scrollToEnd({ animated: true });
+            }}
+            className="absolute bottom-4 self-center flex-row items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5"
+          >
+            <Feather name="arrow-down" size={13} color={colors.mutedForeground} />
+            <Text className="text-xs text-muted-foreground">Jump to latest</Text>
+          </Pressable>
+        )}
+      </View>
 
       {failure ? (
         <View className="px-4 pb-2">

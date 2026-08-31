@@ -1,6 +1,6 @@
 import "highlight.js/styles/github-dark.css";
 import { Check, Copy } from "lucide-react";
-import { type ReactNode, useRef, useState } from "react";
+import { memo, type ReactNode, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
@@ -35,8 +35,14 @@ const COMPONENTS = { pre: Pre };
 const REMARK = [remarkGfm];
 const REHYPE = [rehypeHighlight];
 
-/** Assistant output is markdown; user input is shown verbatim, so this is only used for replies. */
-export function Markdown({ children }: { children: string }) {
+/**
+ * Assistant output is markdown; user input is shown verbatim, so this is only used for replies.
+ *
+ * Memoised on the text: parsing and highlighting a reply is the most expensive thing in the
+ * transcript, and without this every finished reply is re-parsed on every frame of the turn
+ * still streaming below it.
+ */
+export const Markdown = memo(function Markdown({ children }: { children: string }) {
   return (
     <div className="md">
       <ReactMarkdown remarkPlugins={REMARK} rehypePlugins={REHYPE} components={COMPONENTS}>
@@ -44,4 +50,4 @@ export function Markdown({ children }: { children: string }) {
       </ReactMarkdown>
     </div>
   );
-}
+});

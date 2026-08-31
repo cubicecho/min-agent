@@ -1,4 +1,4 @@
-import { applyEvent, type LivePart, liveCharCount } from "@shared/client/live.ts";
+import { type LivePart, liveCharCount } from "@shared/client/live.ts";
 import {
   contextFill,
   formatDuration,
@@ -8,11 +8,12 @@ import {
   latestStats,
   usageDetail,
 } from "@shared/client/usage.ts";
+import { useLiveParts } from "@shared/client/use-live-parts.ts";
 import type { TurnStats } from "@shared/types.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { Bot, Plus, Send, Square, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowDown, Bot, Plus, Send, Square, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { MessageView } from "@/components/message-view";
 import { Button } from "@/components/ui/button";
@@ -52,11 +53,15 @@ export function ChatsRoute() {
   const [model, setModel] = useState("");
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<string | null>(null);
-  const [live, setLive] = useState<LivePart[]>([]);
+  const { parts: live, push: pushLive, reset: resetLive } = useLiveParts();
   const [turnStats, setTurnStats] = useState<TurnStats | null>(null);
   const [startedAt, setStartedAt] = useState(0);
+  // Scrolling follows the turn only while the reader is already at the bottom. Reading back
+  // through the transcript mid-turn used to be impossible: every delta yanked the view down.
+  const [pinned, setPinned] = useState(true);
   const abort = useRef<AbortController | null>(null);
   const settled = useRef(false);
+  const viewport = useRef<HTMLDivElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
   const activeModel = model || session.data?.model || config.data?.model || "";
@@ -67,10 +72,20 @@ export function ChatsRoute() {
   // last known fill rather than blanking the meter out.
   const fill = contextFill(turnStats ?? latestStats(session.data?.messages ?? []));
 
+  /** A hundred pixels of slack, so a stray wheel notch does not count as leaving the bottom. */
+  const atBottom = () => {
+    const view = viewport.current;
+    if (!view) return true;
+    return view.scrollHeight - view.scrollTop - view.clientHeight < 100;
+  };
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: these deps are the scroll triggers.
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth" });
-  }, [session.data?.messages.length, live, pending]);
+    if (!pinned) return;
+    // Smooth animation cannot keep up with a stream, and trying looks like stutter; during a
+    // turn the view is simply moved.
+    bottom.current?.scrollIntoView({ behavior: pending ? "auto" : "smooth" });
+  }, [session.data?.messages.length, live, pending, pinned]);
 
   const newChat = useMutation({
     mutationFn: api.createSession,
@@ -103,7 +118,7 @@ export function ChatsRoute() {
     await queryClient.invalidateQueries({ queryKey: ["session", id] });
     await queryClient.invalidateQueries({ queryKey: ["sessions"] });
     setPending(null);
-    setLive([]);
+    resetLive();
     setTurnStats(null);
   }
 
@@ -124,9 +139,10 @@ export function ChatsRoute() {
     // A chip sends its own text; anything half-typed in the box is left alone.
     if (!text) setDraft("");
     setPending(prompt);
-    setLive([]);
+    resetLive();
     setTurnStats(null);
     setStartedAt(Date.now());
+    setPinned(true);
     settled.current = false;
     abort.current = new AbortController();
 
@@ -137,7 +153,7 @@ export function ChatsRoute() {
         model: activeModel,
         signal: abort.current.signal,
         onEvent: (event) => {
-          setLive((parts) => applyEvent(parts, event));
+          pushLive(event);
           if (event.type === "stats") setTurnStats(event.stats);
           if (event.type === "error") toast.error(event.message);
           if (event.type === "done") void settle(turnId);
@@ -154,6 +170,12 @@ export function ChatsRoute() {
       await settle(turnId);
     }
   }
+
+  // A chip must not change identity every render, or the memoised transcript re-renders on
+  // every token. The ref keeps the callback stable while still calling the current `send`.
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  const followup = useCallback((text: string) => void sendRef.current(text), []);
 
   return (
     <div className="flex h-full min-h-0">
@@ -191,30 +213,56 @@ export function ChatsRoute() {
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-          <div className="mx-auto max-w-3xl">
-            {session.data || pending ? (
-              <MessageView
-                messages={session.data?.messages ?? []}
-                live={live}
-                pricing={config.data?.pricing}
-                onFollowup={pending ? undefined : (text) => void send(text)}
-              />
-            ) : (
-              <Empty />
-            )}
-            {pending ? (
-              <>
-                <div className="mt-3 flex justify-end">
-                  <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground opacity-70">
-                    {pending}
+        <div className="relative min-h-0 flex-1">
+          <div
+            ref={viewport}
+            onScroll={() => {
+              // Bail out when nothing changed: a scroll fires many times a second and every
+              // real state write here would re-render the transcript.
+              const now = atBottom();
+              setPinned((was) => (was === now ? was : now));
+            }}
+            className="h-full overflow-y-auto px-6 py-4"
+          >
+            <div className="mx-auto max-w-3xl">
+              {session.data || pending ? (
+                <MessageView
+                  messages={session.data?.messages ?? []}
+                  live={live}
+                  pricing={config.data?.pricing}
+                  onFollowup={pending ? undefined : followup}
+                />
+              ) : (
+                <Empty />
+              )}
+              {pending ? (
+                <>
+                  <div className="mt-3 flex justify-end">
+                    <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground opacity-70">
+                      {pending}
+                    </div>
                   </div>
-                </div>
-                <LiveMeter startedAt={startedAt} live={live} />
-              </>
-            ) : null}
-            <div ref={bottom} />
+                  <LiveMeter startedAt={startedAt} live={live} />
+                </>
+              ) : null}
+              <div ref={bottom} />
+            </div>
           </div>
+
+          {pinned ? null : (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 shadow-md"
+              onClick={() => {
+                setPinned(true);
+                bottom.current?.scrollIntoView({ behavior: "smooth" });
+              }}
+            >
+              <ArrowDown className="size-4" />
+              Jump to latest
+            </Button>
+          )}
         </div>
 
         <footer className="border-t px-6 py-4">

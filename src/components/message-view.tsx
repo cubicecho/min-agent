@@ -2,6 +2,7 @@ import type { LivePart } from "@shared/client/live.ts";
 import { statsLine } from "@shared/client/usage.ts";
 import type { LlmConfig, StoredMessage, TurnStats } from "@shared/types.ts";
 import { AlertCircle, Brain, ChevronRight, Wrench } from "lucide-react";
+import { memo, useMemo } from "react";
 import { Markdown } from "@/components/markdown";
 import { cn } from "@/lib/utils";
 
@@ -159,27 +160,35 @@ function Stats({ stats, pricing }: { stats: TurnStats; pricing?: LlmConfig["pric
   );
 }
 
-/** Renders stored turns, then whatever is streaming in right now. */
-export function MessageView({
+/**
+ * Everything already on disk.
+ *
+ * Split out and memoised because it is the expensive half and the half that does not change:
+ * a token delta grows the live tail while the stored transcript above it — every markdown
+ * body, every tool panel — is identical to the frame before. `messages` only gets a new
+ * identity when the session is refetched, which is exactly when this should render again.
+ */
+const StoredMessages = memo(function StoredMessages({
   messages,
-  live,
   pricing,
   onFollowup,
 }: {
   messages: StoredMessage[];
-  live: LivePart[];
   pricing?: LlmConfig["pricing"];
   onFollowup?: (text: string) => void;
 }) {
-  const results = new Map<string, { content: string; isError: boolean }>();
-  for (const item of messages) {
-    if (item.role === "tool") {
-      results.set(item.tool_call_id, { content: text(item.content), isError: false });
+  const results = useMemo(() => {
+    const map = new Map<string, { content: string; isError: boolean }>();
+    for (const item of messages) {
+      if (item.role === "tool") {
+        map.set(item.tool_call_id, { content: text(item.content), isError: false });
+      }
     }
-  }
+    return map;
+  }, [messages]);
 
   return (
-    <div className="flex flex-col gap-3">
+    <>
       {messages.map((item, index) => {
         if (item.role === "tool" || item.role === "system") return null;
         const key = `${item.role}-${index}`;
@@ -222,33 +231,48 @@ export function MessageView({
           </div>
         );
       })}
+    </>
+  );
+});
 
-      {live.map((part) => {
-        if (part.kind === "tool") {
-          return (
-            <ToolCall
-              key={part.key}
-              name={part.name}
-              input={part.input}
-              result={part.result}
-              isError={part.isError}
-            />
-          );
-        }
-        if (part.kind === "reasoning") {
-          // Thinking that is arriving right now is worth watching; stored thinking is not.
-          return (
-            <Reasoning key={part.key} defaultOpen>
-              {part.text}
-            </Reasoning>
-          );
-        }
-        return (
-          <Bubble key={part.key} from="assistant">
-            <Markdown>{part.text}</Markdown>
-          </Bubble>
-        );
-      })}
+/**
+ * One row of the in-flight turn. `applyEvent` rebuilds only the part a delta touches and passes
+ * the rest through by reference, so memoising per row means a token lands on the last bubble
+ * without re-rendering the tool panels above it.
+ */
+const LiveRow = memo(function LiveRow({ part }: { part: LivePart }) {
+  if (part.kind === "tool") {
+    return (
+      <ToolCall name={part.name} input={part.input} result={part.result} isError={part.isError} />
+    );
+  }
+  // Thinking that is arriving right now is worth watching; stored thinking is not.
+  if (part.kind === "reasoning") return <Reasoning defaultOpen>{part.text}</Reasoning>;
+  return (
+    <Bubble from="assistant">
+      <Markdown>{part.text}</Markdown>
+    </Bubble>
+  );
+});
+
+/** Renders stored turns, then whatever is streaming in right now. */
+export function MessageView({
+  messages,
+  live,
+  pricing,
+  onFollowup,
+}: {
+  messages: StoredMessage[];
+  live: LivePart[];
+  pricing?: LlmConfig["pricing"];
+  onFollowup?: (text: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <StoredMessages messages={messages} pricing={pricing} onFollowup={onFollowup} />
+      {live.map((part) => (
+        <LiveRow key={part.key} part={part} />
+      ))}
     </div>
   );
 }
