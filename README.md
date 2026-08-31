@@ -5,6 +5,17 @@ Replies render as markdown with syntax-highlighted code, and every turn reports 
 tokens, time and throughput. Config lives in YAML files you can edit by hand; sessions live as
 JSON on disk.
 
+## Contents
+
+Everything below the quick start is reference — read it when you want that piece, not in order.
+
+- [Quick start](#quick-start) · [Production](#production) · [Docker](#docker) — running it
+- [Layout](#layout) · [Files on disk](#files-on-disk) · [Scripts](#scripts) — finding your way around
+- [MCP servers](#mcp-servers) — wiring up tools, and how they are loaded without blowing the prompt budget
+- [Task models](#task-models) — pointing a small fast model at titling, compaction, tool preselection and follow-ups
+- [Turn statistics](#turn-statistics) — what the numbers under each reply mean
+- [Android, Windows and web apps](#android-windows-and-web-apps) — the second front end in `mobile/`
+
 ## Stack
 
 Vite + React 19 + TanStack Router/Query + shadcn (Tailwind v4) on the front, a minimal Express 5
@@ -87,7 +98,7 @@ the Expo app in a job of its own, and builds the image and boots it far enough t
 
 `.github/workflows/release.yml` runs after a green CI on `main`. semantic-release reads the
 commit messages, and if they amount to a release it tags one and pushes the image to both
-`ghcr.io/<owner>/min-agent` and Docker Hub. GHCR needs no setup; Docker Hub needs
+`ghcr.io/vantreeseba/min-agent` and Docker Hub. GHCR needs no setup; Docker Hub needs
 `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` in the repository secrets. A run of chores publishes
 nothing.
 
@@ -572,3 +583,7 @@ server address is kept — is unreliable on a file origin.
 | `npm run mobile:typecheck` | `tsc --noEmit` in `mobile/`  |
 | `npm run desktop` | export, then run the Electron shell |
 | `npm run desktop:build` | export, then package the desktop app |
+
+## License
+
+[MIT](LICENSE) © Benjamin Van Treese
