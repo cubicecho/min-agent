@@ -13,6 +13,7 @@ import { mcp } from "./mcp.ts";
 import { isGrammarError, relaxTools, sanitizeTools } from "./schema-compat.ts";
 import { saveSession } from "./store.ts";
 import {
+  carryOver,
   catalogPrompt,
   expandNames,
   inCatalog,
@@ -129,7 +130,13 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // definitions it needs as the turn runs; `loaded` grows between iterations.
   const catalog = mcp.catalog();
   const onDemand = config.toolDiscovery === "ondemand" && catalog.length > 0;
-  const loaded = new Set(session.loadedTools ?? []);
+  const carried = session.loadedTools ?? [];
+  const loaded = new Set(carried);
+  // Only tools the model actually *called* carry over to the next turn. Everything else it
+  // pulled in was a guess, and keeping the guesses would grow the tool array turn over turn
+  // until it is larger than eager mode's — which is the situation on-demand loading exists to
+  // avoid, and which sends the model wandering into unrelated tools.
+  const used = new Set<string>();
   const systemPrompt = onDemand
     ? `${config.systemPrompt}\n\n${catalogPrompt(catalog)}`
     : config.systemPrompt;
@@ -150,6 +157,9 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   let toolCalls = 0;
   let iterations = 0;
   let lastRoundTrip = emptyUsage();
+  // Identical call -> identical result. Replaying it from here ends the repeat loops a model
+  // falls into when a tool disappoints it, without spending another MCP round trip.
+  const answered = new Map<string, string>();
 
   for (let iteration = 0; iteration < config.maxToolIterations; iteration++) {
     const declared = sanitizeTools(
@@ -278,6 +288,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         ...(contextLimit ? { contextLimit } : {}),
       };
       assistant.stats = stats;
+      if (onDemand) session.loadedTools = carryOver(carried, used);
       saveSession(session);
       emit({ type: "stats", stats });
       return stats;
@@ -290,19 +301,25 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       try {
         const args = parseArgs(call.args);
         if (call.name === LOAD_TOOLS) {
-          const { matched, unknown } = expandNames(requestedNames(args), catalog);
-          for (const name of matched) loaded.add(name);
-          session.loadedTools = [...loaded];
-          content = loadResult(matched, unknown, catalog);
-          isError = matched.length === 0;
+          const resolved = expandNames(requestedNames(args), catalog);
+          for (const name of resolved.matched) loaded.add(name);
+          content = loadResult(resolved, catalog);
+          isError = resolved.matched.length === 0;
         } else {
           // A model that skips `load_tools` and calls a catalogued tool straight from its
           // name is right about what it wants; load it and run it rather than erroring.
-          if (onDemand && !loaded.has(call.name) && inCatalog(catalog, call.name)) {
+          if (onDemand && !loaded.has(call.name) && inCatalog(catalog, call.name))
             loaded.add(call.name);
-            session.loadedTools = [...loaded];
+          used.add(call.name);
+
+          const key = `${call.name}\u0000${call.args}`;
+          const previous = answered.get(key);
+          if (previous === undefined) {
+            content = await mcp.call(call.name, args);
+            answered.set(key, content);
+          } else {
+            content = `${previous}\n\n(Identical call already made this turn; the result is unchanged. Use it rather than calling again.)`;
           }
-          content = await mcp.call(call.name, args);
         }
       } catch (error) {
         content = error instanceof Error ? error.message : String(error);

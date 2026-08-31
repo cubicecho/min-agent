@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogServer } from "../server/mcp.ts";
 import {
+  carryOver,
   catalogPrompt,
   expandNames,
   inCatalog,
   loadResult,
+  MAX_CARRIED,
+  MAX_PER_LOAD,
   requestedNames,
 } from "../server/tool-loading.ts";
 
@@ -32,12 +35,46 @@ describe("catalogPrompt", () => {
   });
 });
 
+const wide: CatalogServer[] = [
+  {
+    id: "router",
+    label: "Router",
+    tools: Array.from({ length: MAX_PER_LOAD + 5 }, (_, i) => ({
+      name: `router__mail__tool_${i}`,
+      description: `Tool ${i}.`,
+    })),
+  },
+];
+
 describe("expandNames", () => {
   it("matches exact names", () => {
-    expect(expandNames(["router__web__search"], catalog)).toEqual({
+    expect(expandNames(["router__web__search"], catalog)).toMatchObject({
       matched: ["router__web__search"],
       unknown: [],
+      overBroad: [],
     });
+  });
+
+  it("resolves a name the model gave without its server prefix", () => {
+    expect(expandNames(["web__search"], catalog).matched).toEqual(["router__web__search"]);
+    expect(expandNames(["fs__*"], catalog).matched).toEqual([
+      "router__fs__read_file",
+      "router__fs__write_file",
+    ]);
+  });
+
+  it("refuses an unqualified name that matches more than one tool", () => {
+    const two: CatalogServer[] = [
+      { id: "a", label: "A", tools: [{ name: "a__fs__read_file", description: "" }] },
+      { id: "b", label: "B", tools: [{ name: "b__fs__read_file", description: "" }] },
+    ];
+    expect(expandNames(["read_file"], two)).toMatchObject({ matched: [], unknown: ["read_file"] });
+  });
+
+  it("refuses a wildcard wider than one call may load", () => {
+    const { matched, overBroad } = expandNames(["router__mail__*"], wide);
+    expect(matched).toEqual([]);
+    expect(overBroad[0].hits).toHaveLength(MAX_PER_LOAD + 5);
   });
 
   it("expands a trailing wildcard to a group", () => {
@@ -59,13 +96,38 @@ describe("expandNames", () => {
 
 describe("loadResult", () => {
   it("hands back the descriptions of what it loaded", () => {
-    const text = loadResult(["router__web__search"], [], catalog);
+    const text = loadResult(
+      { matched: ["router__web__search"], unknown: [], overBroad: [] },
+      catalog,
+    );
     expect(text).toContain("Loaded 1 tool(s)");
     expect(text).toContain("Search the web.");
   });
 
   it("says so when a name was not found", () => {
-    expect(loadResult([], ["nope"], catalog)).toContain("Not in the catalogue: nope");
+    expect(loadResult({ matched: [], unknown: ["nope"], overBroad: [] }, catalog)).toContain(
+      "Not in the catalogue: nope",
+    );
+  });
+
+  it("lists the candidates when a wildcard was too wide", () => {
+    const text = loadResult(expandNames(["router__mail__*"], wide), wide);
+    expect(text).toContain(`more than the ${MAX_PER_LOAD} one call may load`);
+    expect(text).toContain("router__mail__tool_3");
+  });
+});
+
+describe("carryOver", () => {
+  it("keeps only what was used, most recent last", () => {
+    expect(carryOver(["a", "b"], new Set(["b", "c"]))).toEqual(["a", "b", "c"]);
+  });
+
+  it("drops the least recently used past the cap", () => {
+    const previous = Array.from({ length: MAX_CARRIED }, (_, i) => `old_${i}`);
+    const out = carryOver(previous, new Set(["fresh"]));
+    expect(out).toHaveLength(MAX_CARRIED);
+    expect(out.at(-1)).toBe("fresh");
+    expect(out).not.toContain("old_0");
   });
 });
 

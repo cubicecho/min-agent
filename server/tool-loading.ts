@@ -60,33 +60,85 @@ export function catalogPrompt(catalog: CatalogServer[]): string {
 
 const flatten = (catalog: CatalogServer[]) => catalog.flatMap((server) => server.tools);
 
-/** Resolves requested names against the catalogue, expanding trailing `*` wildcards. */
+/**
+ * The most a single `load_tools` call may pull in.
+ *
+ * A wildcard like `server__gmail__*` matches 33 tools, and loading them all puts the model
+ * right back in the position on-demand loading exists to avoid — a tool array too large to
+ * choose from. Over-broad requests are refused with the matching names listed, so the next
+ * call can be precise.
+ */
+export const MAX_PER_LOAD = 12;
+
+/**
+ * The most a session carries between turns. Bounds the tool array no matter how long the
+ * conversation runs; least-recently-used names fall off the front.
+ */
+export const MAX_CARRIED = 16;
+
+/** The tools a session should start its next turn with: recently used, newest last, capped. */
+export const carryOver = (previous: string[], used: Set<string>) =>
+  [...previous.filter((name) => !used.has(name)), ...used].slice(-MAX_CARRIED);
+
+/**
+ * Resolves requested names against the catalogue, expanding trailing `*` wildcards.
+ *
+ * Names are matched leniently. Catalogue entries are server-qualified
+ * (`router__nas_fs__read_file`) and models routinely ask for the bare tool name, so an exact
+ * miss falls back to a suffix match on the `__` boundary — accepted only when it is
+ * unambiguous. Rejecting those outright just buys a wasted round trip while the model guesses
+ * the prefix, and pushes it toward shotgunning wildcards.
+ */
 export function expandNames(requested: string[], catalog: CatalogServer[]) {
   const all = flatten(catalog);
   const matched = new Set<string>();
   const unknown: string[] = [];
+  const overBroad: { name: string; hits: string[] }[] = [];
+
+  const resolve = (name: string): string[] => {
+    if (name.endsWith("*")) {
+      const stem = name.slice(0, -1);
+      const direct = all.filter((tool) => tool.name.startsWith(stem));
+      if (direct.length) return direct.map((tool) => tool.name);
+      return all.filter((tool) => tool.name.includes(`__${stem}`)).map((tool) => tool.name);
+    }
+    const exact = all.filter((tool) => tool.name === name);
+    if (exact.length) return exact.map((tool) => tool.name);
+    const suffix = all.filter((tool) => tool.name.endsWith(`__${name}`));
+    return suffix.length === 1 ? [suffix[0].name] : [];
+  };
 
   for (const raw of requested) {
     const name = raw.trim();
     if (!name) continue;
-    const hits = name.endsWith("*")
-      ? all.filter((tool) => tool.name.startsWith(name.slice(0, -1)))
-      : all.filter((tool) => tool.name === name);
+    const hits = resolve(name);
     if (!hits.length) unknown.push(name);
-    for (const hit of hits) matched.add(hit.name);
+    else if (hits.length > MAX_PER_LOAD) overBroad.push({ name, hits });
+    else for (const hit of hits) matched.add(hit);
   }
 
-  return { matched: [...matched], unknown };
+  return { matched: [...matched], unknown, overBroad };
 }
 
 /** What `load_tools` reports back: the descriptions, now that they are worth their tokens. */
-export function loadResult(matched: string[], unknown: string[], catalog: CatalogServer[]): string {
+export function loadResult(
+  { matched, unknown, overBroad }: ReturnType<typeof expandNames>,
+  catalog: CatalogServer[],
+): string {
   const byName = new Map(flatten(catalog).map((tool) => [tool.name, tool.description]));
   const lines: string[] = [];
 
   if (matched.length) {
     lines.push(`Loaded ${matched.length} tool(s); they are callable on your next step.`, "");
     for (const name of matched) lines.push(`${name}: ${byName.get(name) ?? ""}`.trim());
+  }
+  for (const { name, hits } of overBroad) {
+    if (lines.length) lines.push("");
+    lines.push(
+      `\`${name}\` matches ${hits.length} tools, more than the ${MAX_PER_LOAD} one call may load.`,
+      "Name the ones you need from:",
+      ...hits.map((hit) => `  ${hit}`),
+    );
   }
   if (unknown.length) {
     if (lines.length) lines.push("");

@@ -107,10 +107,30 @@ Measured on the same server, same prompt:
 The trade is one extra round trip on turns that do use a tool — the model spends a step loading
 before it can call. Turns that need no tools, which is most chat, pay nothing and save everything.
 
-Two things keep it robust. A model that skips `load_tools` and calls a catalogued tool directly by
-name gets it loaded and executed anyway rather than an "unknown tool" error. And what a session
-loads stays loaded for the rest of that session, stored as `loadedTools`, so a follow-up question
-about the same files does not pay the discovery step twice.
+Four things keep it robust, and the last three exist because leaving them out made the model loop.
+
+A model that skips `load_tools` and calls a catalogued tool directly by name gets it loaded and
+executed anyway, rather than an "unknown tool" error.
+
+Names resolve leniently. Catalogue entries are server-qualified (`router__nas_fs__read_file`) and
+models routinely ask for the bare `nas_fs__read_file`; an exact miss falls back to a suffix match,
+accepted when unambiguous. Rejecting those only buys a wasted round trip while the model guesses
+the prefix — and teaches it to shotgun wildcards instead.
+
+One call may load at most `MAX_PER_LOAD` (12) tools. A wildcard like `router__gmail__*` matches 33,
+and granting that puts the model back in front of a tool array too large to choose from — the exact
+situation on-demand loading exists to avoid. Over-broad requests come back with the matching names
+listed, so the next call can be precise.
+
+Only tools the model actually *called* carry over to the next turn, capped at `MAX_CARRIED` (16),
+least-recently-used dropped first. Everything else it pulled in was a guess. Carrying the guesses
+compounds: a session that loaded a whole Gmail server on turn two started turn three with 35 tools,
+wandered into an unrelated one, and burned 167k prompt tokens over 13 iterations on a question that
+needed one call.
+
+Within a turn, an identical `(tool, arguments)` pair is answered from the first result instead of
+being re-executed, with a note saying so. Models otherwise re-call a tool that disappointed them —
+six identical calls in a row, in one observed case.
 
 ### Schema compatibility
 
