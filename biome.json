@@ -12,6 +12,7 @@
       "server/**",
       "shared/**",
       "tests/**",
+      "scripts/**",
       "mobile/app/**",
       "mobile/components/**",
       "mobile/lib/**",

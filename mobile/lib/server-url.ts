@@ -19,7 +19,7 @@ const onWeb =
   typeof location !== "undefined" &&
   location.protocol.startsWith("http");
 
-let fallback = onWeb ? "" : `http://localhost:${AGENT_PORT}`;
+let fallback = "";
 
 /** What an install with nothing saved will talk to. Resolved by `loadServerUrl`. */
 export const defaultServerUrl = () => fallback;
@@ -30,6 +30,16 @@ export const normalizeServerUrl = (value: string) =>
     .trim()
     .replace(/\/+$/, "")
     .replace(/\/api$/, "");
+
+/**
+ * Baked in at bundle time by `scripts/expo.ts`, from the same `.env` the server reads, so
+ * moving the server with `PORT` does not also mean editing this app. Guessing 8787 was
+ * wrong in the one case that matters: a server that has moved, on a machine where 8787 is
+ * now something else entirely, which answers and is not the agent. Written out in full
+ * because Expo substitutes the whole expression at build time — it is not a lookup, so it
+ * cannot be destructured or built up from parts.
+ */
+const configured = normalizeServerUrl(process.env.EXPO_PUBLIC_AGENT_URL ?? "");
 
 let current = fallback;
 
@@ -59,13 +69,20 @@ export async function loadServerUrl() {
     return current;
   }
 
-  // Nothing saved. On the web the origin is worth trying and cheap to rule out; the
-  // agent on its default port, on whichever host served the page, is the next best guess.
-  if (onWeb && !(await originServesTheApi())) {
+  // Nothing saved. The origin is worth trying first and cheap to rule out: served from
+  // the agent's own /app, it is right even when the address baked in at build time names a
+  // host this device cannot reach. Then the build-time address, then a guess.
+  if (onWeb && (await originServesTheApi())) {
+    fallback = "";
+  } else if (configured) {
+    fallback = configured;
+  } else if (onWeb) {
     fallback = `${location.protocol}//${location.hostname}:${AGENT_PORT}`;
-    current = fallback;
+  } else {
+    fallback = `http://localhost:${AGENT_PORT}`;
   }
 
+  current = fallback;
   return current;
 }
 

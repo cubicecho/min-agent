@@ -445,18 +445,30 @@ and header itself. Those theming primitives are imported from `expo-router`, not
 
 ### Pointing it at your server
 
-The browser build talks to whatever origin served it, so served from `/app` it needs no
-configuration. Being on the web is not the same as having been served by the agent, though:
-`expo start --web` serves the app from Metro, and Metro answers every path it does not recognise
-with `index.html`, so an origin-relative `/api/config` comes back as `<!DOCTYPE html>` and every
-screen fails on a JSON parse. So the app asks the question instead of assuming: on first run with
-nothing stored it probes `/api/config`, and if the origin does not answer with JSON it falls back
-to port 8787 on the same host.
+Three things are tried, in order, and the first that works wins:
 
-The Android and desktop builds have no origin to inherit, so they ask: open **Settings**, put in
-the address of the machine running `npm start` — `http://framework.lan:8787`, say — and press
-**Save and test**. It is remembered on the device, and the badge tells you whether the server
-answered.
+1. **What you saved under Settings.** Always wins, on every platform.
+2. **The origin that served the page** — right for the `/app` build, and right whatever host you
+   reach it at, so a phone browser opening `http://framework.lan:8787/app` needs no setup. Being
+   on the web is not the same as having been served by the agent, though: `expo start --web`
+   serves the app from Metro, and Metro answers every path it does not recognise with
+   `index.html`, so an origin-relative `/api/config` comes back as `<!DOCTYPE html>` and every
+   screen fails on a JSON parse. The app asks rather than assumes — it probes `/api/config` once
+   and moves on unless the answer is JSON.
+3. **The address baked in at build time**, `EXPO_PUBLIC_AGENT_URL`. `scripts/expo.ts` sets it from
+   the same `PORT` the server reads, so moving the server does not mean editing the app. This is
+   why the Expo scripts are run from the repo root — `npm run mobile:web`, not `npm --prefix
+   mobile run web`, which skips the launcher and leaves the app guessing 8787.
+
+Metro caches the transform that inlines `EXPO_PUBLIC_*`, and the cache key does not include the
+value, so a changed address would otherwise be quietly ignored in favour of the one already
+compiled in. The launcher remembers the last address in `mobile/.expo/agent-url` and passes
+`--clear` when it has moved.
+
+Android and the desktop build have no origin to inherit and no useful `localhost`, so they are the
+case Settings exists for: open **Settings**, put in the address of the machine running `npm start`
+— `http://framework.lan:8787`, say — and press **Save and test**. It is remembered on the device,
+and the badge tells you whether the server answered.
 
 There is no auth. The API is served with a permissive CORS header so the app can reach it from
 another origin, which means anything on the network that can reach port 8787 can use your agent.
