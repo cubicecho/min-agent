@@ -56,6 +56,12 @@ export const MODEL_TASKS = [
     hint: "Guesses which tools a request needs before the turn starts, so the chat model usually skips the load step. Only used with on-demand tool discovery.",
   },
   {
+    key: "runSummary",
+    label: "Cron run summary",
+    empty: "off — open the session to see what happened",
+    hint: "Condenses each cron run's answer to one line, so the run history says what happened without opening it.",
+  },
+  {
     key: "title",
     label: "Session title",
     empty: "off — use the first message",
@@ -214,6 +220,8 @@ export interface CronRun {
   finishedAt: string;
   status: "ok" | "error";
   error?: string;
+  /** One line on what the run actually did, if a model is set for the task. */
+  summary?: string;
   sessionId: string;
   usage?: TokenUsage;
 }
@@ -224,6 +232,7 @@ export interface CronJobState {
   lastRunAt?: string;
   lastStatus?: "ok" | "error";
   lastError?: string;
+  lastSummary?: string;
   lastSessionId?: string;
 }
 

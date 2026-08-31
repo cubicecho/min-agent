@@ -180,6 +180,7 @@ with one select per task; leaving one unset keeps the cheap non-LLM behaviour.
 | Session title | A model names the chat from its opening message | The first line is truncated |
 | Context compaction | The oldest messages fold into a running summary | A long session eventually overflows |
 | Tool preselection | A small model picks the turn's tools up front | The chat model loads its own, one round trip in |
+| Cron run summary | Each run's history entry says what it found | You open the session to find out |
 
 Titling runs *alongside* the turn, not before it, so it never delays the first token — the
 truncated line goes up immediately and is replaced when the title lands. A failure is swallowed:
@@ -195,6 +196,21 @@ the unknown fields gets one retry without them, and min-agent stops sending them
 
 Adding a task is a line in `MODEL_TASKS` in `shared/types.ts` and a read of `modelForTask()`;
 `taskModels` is an open record, so no config migration is needed.
+
+### Cron run summaries
+
+A cron job's problem is that nobody watched it. The run log can tell you a job finished in 19
+seconds for 4.1k tokens without telling you whether it found anything, so the only way to know is
+to open the session — for every run, every morning.
+
+Set a model for **Cron run summary** and each successful run gets one sentence, written from the
+job's instruction and its final answer, and stored on the run record:
+
+    ✓ today 03:30 · 18.7s · 4.1k tokens
+      The job found 7 top-level entries in the root of the NAS.
+
+The newest one also sits on the job's row in the Cron list, which is usually as far as you need to
+read. Failed runs get their error instead — a summary of a failure is just the error, longer.
 
 ### Tool preselection
 

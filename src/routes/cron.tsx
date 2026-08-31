@@ -186,6 +186,9 @@ function Row({
             {job.enabled ? ` · next ${when(state.nextRun)}` : ""}
             {state.lastRunAt ? ` · last ${when(state.lastRunAt)}` : ""}
           </div>
+          {state.lastSummary ? (
+            <p className="mt-1 truncate text-xs text-foreground/80">{state.lastSummary}</p>
+          ) : null}
         </div>
       </button>
 
@@ -461,6 +464,7 @@ function RunRow({ run, pricing }: { run: CronRun; pricing?: CronPricing }) {
           <span>{seconds.toFixed(1)}s</span>
           {run.usage ? <span>{formatUsage(run.usage, pricing)}</span> : null}
         </div>
+        {run.summary ? <p className="mt-0.5 text-foreground/80">{run.summary}</p> : null}
         {run.error ? <p className="mt-0.5 break-words text-destructive">{run.error}</p> : null}
       </div>
       <Link

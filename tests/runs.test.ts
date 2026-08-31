@@ -75,3 +75,20 @@ describe("cron run log", () => {
     expect(runs.listRuns("nightly")).toEqual([]);
   });
 });
+
+describe("run summaries", () => {
+  it("survives the round trip to disk, so history reads back after a restart", async () => {
+    const { recordRun, listRuns } = await load();
+    recordRun({ ...run("job", "2026-01-01T00:00:00Z"), summary: "Found 3 new invoices." });
+
+    const reloaded = await load();
+    expect(reloaded.listRuns("job")[0].summary).toBe("Found 3 new invoices.");
+    expect(listRuns("job")[0].summary).toBe("Found 3 new invoices.");
+  });
+
+  it("leaves the field off when no model is set for the task", async () => {
+    const { recordRun, listRuns } = await load();
+    recordRun(run("job", "2026-01-01T00:00:00Z"));
+    expect(listRuns("job")[0].summary).toBeUndefined();
+  });
+});
