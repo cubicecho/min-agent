@@ -383,6 +383,24 @@ path — which is exactly why this survived a working web export.
 1.30.1 is the newest version whose round trip is intact, and it satisfies `@expo/metro-config`'s
 `^1.30.1`. The pin is scoped to `react-native-css` so Tailwind keeps its own copy.
 
+### A scoped NativeWind Babel plugin
+
+`mobile/babel.config.js` does not use `nativewind/babel` as-is. It wraps the preset's import
+plugin so that it skips any file under `react-native-web/dist`.
+
+That plugin is what makes `className` work on web: it rewrites imports of react-native-web's
+components to react-native-css's className-aware wrappers. It also fires inside react-native-web
+itself, and there it is a cycle. `Animated` pulls in `AnimatedFlatList`, which is rewritten to the
+FlatList wrapper, which imports the `react-native` barrel — the same barrel that was part-way
+through loading FlatList. Its `FlatList` getter then reads `.default` off a binding that has not
+been assigned yet, and the app dies at import time with `Cannot read properties of undefined
+(reading 'default')` before it renders anything.
+
+react-native-css's Metro resolver already refuses to rewrite anything inside react-native-web; its
+Babel plugin has no equivalent guard. Adding one costs nothing, because the wrappers are still
+substituted wherever the app — or any other package — imports a component, which is the only place
+`className` has to reach.
+
 The other deliberate version choice is TypeScript. SDK 57 expects `~6.0.3`; this app is on `^7.0.2`
 so it matches the repo root, and `expo.install.exclude` in `mobile/package.json` stops
 `expo-doctor` reporting the gap. Both exports and all 21 doctor checks pass on it.
