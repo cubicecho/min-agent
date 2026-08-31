@@ -1,0 +1,8 @@
+node_modules
+dist
+# Runtime state: sessions, cron run log. Re-created on demand.
+data
+# Holds the API key and your own server addresses. Seeded on first boot.
+config
+.env
+*.local
