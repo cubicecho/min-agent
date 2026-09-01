@@ -100,9 +100,50 @@ const mcpState = (state: McpStateFragment): McpServerState => ({
   tools: state.tools,
 });
 
+/**
+ * The settings columns a client may write.
+ *
+ * An allowlist rather than a blocklist, because the thing that goes wrong here is a field
+ * arriving that nobody thought to exclude. `config()` returns `LlmConfigView`, which is the
+ * row *plus* the derived `hasApiKey`, and the Config screen seeds its form by spreading that
+ * — so the flag rides along into the save and the server rejects the whole mutation with
+ * `Field "hasApiKey" is not defined by type "UpdateSettingInput"`. Picking known columns
+ * means any future read-only field is dropped the same way, without a second look.
+ *
+ * `apiKey` is absent on purpose: it is write-only and has its own mutation.
+ *
+ * A `Record` over the key union rather than a list of strings, so the compiler checks it both
+ * ways: a column added to `llmConfigSchema` and forgotten here is a missing property, and a
+ * name that is not a column is an excess one.
+ */
+const WRITABLE_COLUMNS: Record<keyof Omit<LlmConfig, "apiKey">, true> = {
+  baseUrl: true,
+  model: true,
+  maxTokens: true,
+  temperature: true,
+  maxToolIterations: true,
+  systemPrompt: true,
+  contextLimit: true,
+  toolDiscovery: true,
+  taskModels: true,
+  pricing: true,
+};
+
+const WRITABLE = Object.keys(WRITABLE_COLUMNS) as (keyof typeof WRITABLE_COLUMNS)[];
+
 /** The GraphQL enum is a string on both sides; only the TypeScript spelling differs. */
-const settingsInput = (patch: Partial<LlmConfig>): UpdateSettingInput =>
-  patch as unknown as UpdateSettingInput;
+const settingsInput = (patch: SaveConfigPatch): UpdateSettingInput => {
+  const set: Record<string, unknown> = {};
+  for (const key of WRITABLE) if (patch[key] !== undefined) set[key] = patch[key];
+  return set as UpdateSettingInput;
+};
+
+/**
+ * What a caller may hand `saveConfig`. Deliberately the *view* shape as well as the row:
+ * the screens hold a draft seeded from `config()`, and a signature that pretended otherwise
+ * would not have caught this anyway — excess-property checks do not apply to a spread.
+ */
+type SaveConfigPatch = Partial<LlmConfig & LlmConfigView>;
 
 export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
   const { request, subscribe } = createGqlClient({ endpoint: baseUrl, fetch: fetchImpl });
@@ -132,12 +173,10 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
      * The key is write-only and lives on its own mutation, so a save that leaves the field
      * blank keeps the stored one rather than blanking it.
      */
-    async saveConfig(patch: Partial<LlmConfig>): Promise<LlmConfigView> {
-      const { apiKey, ...columns } = patch;
-      if (apiKey) await request(SetApiKeyDocument, { apiKey });
-      if (Object.keys(columns).length) {
-        await request(SaveConfigDocument, { set: settingsInput(columns) });
-      }
+    async saveConfig(patch: SaveConfigPatch): Promise<LlmConfigView> {
+      if (patch.apiKey) await request(SetApiKeyDocument, { apiKey: patch.apiKey });
+      const set = settingsInput(patch);
+      if (Object.keys(set).length) await request(SaveConfigDocument, { set });
       return config();
     },
 

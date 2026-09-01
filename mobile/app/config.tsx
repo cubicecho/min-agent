@@ -47,7 +47,13 @@ export default function ConfigScreen() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    if (config.data && !draft) setDraft({ ...config.data, apiKey: "" });
+    // `hasApiKey` is derived, not a column, and a spread carries it in without TypeScript
+    // noticing — excess-property checks do not apply to one. `saveConfig` drops it too; this
+    // is the same fence at the other end, so the draft is only ever what a save may write.
+    if (config.data && !draft) {
+      const { hasApiKey: _, ...row } = config.data;
+      setDraft({ ...row, apiKey: "" });
+    }
   }, [config.data, draft]);
 
   const save = useMutation({
