@@ -14,6 +14,7 @@ Everything below the quick start is reference — read it when you want that pie
 - [MCP servers](#mcp-servers) — wiring up tools, and how they are loaded without blowing the prompt budget
 - [Task models](#task-models) — pointing a small fast model at titling, compaction, tool preselection and follow-ups
 - [Turn statistics](#turn-statistics) — what the numbers under each reply mean
+- [Keyboard shortcuts](#keyboard-shortcuts) — what the desktop and browser builds bind
 - [The session list](#the-session-list) — renaming, deleting and finding a chat
 - [Other apps in the sidebar](#other-apps-in-the-sidebar) — framing a kanban board or a task server beside the chat
 - [Android and Windows](#android-and-windows) — the same front end, off the browser
@@ -541,6 +542,37 @@ though they did.
 
 Neither button is offered while a turn is running. There is one stream and one composer, and
 rewinding underneath a reply that is still arriving has no sensible reading.
+
+## Keyboard shortcuts
+
+| | |
+| --- | --- |
+| `⌘`/`Ctrl` + `N` | New chat |
+| `⌘`/`Ctrl` + `K` | Focus the session search |
+| `⌘`/`Ctrl` + `,` | Settings |
+| `Esc` | Close a dialog or a select sheet; give up a rename |
+
+Browser and desktop only. The Electron build is the web build, and a phone has no keyboard to
+press them with, so on native `useShortcut` registers nothing.
+
+`mobile/lib/keys.ts` is one `keydown` listener for the whole app rather than one per screen: a
+shortcut belongs to the window, and screens come and go under it. Components say what they
+answer to with `useShortcut(combo, handler)`, and passing `undefined` for the handler declines
+the key rather than binding it to nothing — the search box takes `⌘K` only while it is on
+screen, because a shortcut that silently does nothing is worse than one the browser still owns.
+
+Bindings are a stack per combo and only the last one runs, which is what Escape needs: a dialog
+opened over a screen that already answers to Escape should be the thing that closes, and it
+should hand the key back when it goes. Chords fire wherever the caret is — `⌘K` while writing a
+message is exactly when you want it — and so does Escape; a bare key would not, and is ignored
+while a text box has focus.
+
+New chat and Settings are bound in the sidebar rather than in the list, because the nav is the
+one thing mounted on every route and they would otherwise stop working the moment you opened
+Settings. Escape closing a modal is not bound here at all: react-native-web's `Modal` already
+turns it into `onRequestClose`, which `Dialog` and `Select` were passing before any of this.
+
+One caveat: a browser will not give up `⌘N`, so that one only reaches us in Electron.
 
 ## The session list
 

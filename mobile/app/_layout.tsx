@@ -15,9 +15,11 @@ import { useEffect, useState } from "react";
 import { type ColorValue, Linking, Platform, Pressable, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "../global.css";
+import { useNewChat } from "@/components/session-list.tsx";
 import { Separator } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
 import { EMBEDS_STALE_TIME, visibleEmbeds } from "@/lib/embeds.ts";
+import { useShortcut } from "@/lib/keys.ts";
 import { useWide } from "@/lib/layout.ts";
 import { loadServerUrl } from "@/lib/server-url.ts";
 import { colors } from "@/lib/theme.ts";
@@ -80,6 +82,17 @@ function Sidebar({
   ...props
 }: DrawerContentComponentProps & { expanded: boolean; onToggle?: () => void }) {
   const router = useRouter();
+
+  /*
+    The two shortcuts that are about the app rather than about a screen live here, because
+    the nav is the one thing mounted on every route — bound in the session list they would
+    stop working the moment you opened Settings. They are web-only, like everything in
+    `lib/keys.ts`; a phone has no keyboard to press them with.
+  */
+  const newChat = useNewChat((id) => router.navigate(`/chat/${id}`));
+  useShortcut("mod+n", () => newChat.mutate());
+  useShortcut("mod+,", () => router.navigate("/settings"));
+
   const embeds = useQuery({
     queryKey: ["embeds"],
     queryFn: api.embeds,
