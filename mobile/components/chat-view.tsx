@@ -291,12 +291,19 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
           {pending ? (
             <Button
               variant="secondary"
-              size="icon"
+              size="icon-lg"
               icon="square"
+              accessibilityLabel="Stop the turn"
               onPress={() => abort.current?.abort()}
             />
           ) : (
-            <Button size="icon" icon="send" disabled={!draft.trim()} onPress={() => void send()} />
+            <Button
+              size="icon-lg"
+              icon="send"
+              accessibilityLabel="Send"
+              disabled={!draft.trim()}
+              onPress={() => void send()}
+            />
           )}
         </View>
       </View>

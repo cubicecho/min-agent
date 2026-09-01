@@ -44,6 +44,10 @@ const buttonVariants = cva(
         sm: "h-8 px-2.5",
         lg: "h-11 px-4",
         icon: "h-9 w-9 px-0",
+        // Square, and `lg`'s 44px tall: the height of the composer's box with one line in
+        // it, so the send button beside it is the same size rather than eight pixels short.
+        // It is also the smallest comfortable touch target, which the 36px `icon` is not.
+        "icon-lg": "h-11 w-11 px-0",
       },
     },
     defaultVariants: { variant: "default", size: "default" },
@@ -71,6 +75,9 @@ const iconColor = (colors: Colors): Record<NonNullable<ButtonProps["variant"]>, 
   ghost: colors.foreground,
   destructive: colors.destructive,
 });
+
+/** The taller sizes get a proportionally bigger glyph, or it swims in the button. */
+const glyph = (size: ButtonProps["size"]) => (size === "lg" || size === "icon-lg" ? 17 : 15);
 
 export type ButtonProps = PressableProps &
   VariantProps<typeof buttonVariants> & {
@@ -101,7 +108,9 @@ export function Button({
       {busy ? (
         <ActivityIndicator size="small" />
       ) : (
-        icon && <Feather name={icon} size={15} color={iconColor(colors)[variant ?? "default"]} />
+        icon && (
+          <Feather name={icon} size={glyph(size)} color={iconColor(colors)[variant ?? "default"]} />
+        )
       )}
       {typeof children === "string" ? (
         <Text className={buttonText({ variant })}>{children}</Text>
