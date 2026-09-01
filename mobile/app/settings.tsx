@@ -5,7 +5,8 @@ import { AgentPanel } from "@/components/settings/agent-panel.tsx";
 import { AppsPanel } from "@/components/settings/apps-panel.tsx";
 import { McpPanel } from "@/components/settings/mcp-panel.tsx";
 import { ServerPanel } from "@/components/settings/server-panel.tsx";
-import { type Tab, Tabs } from "@/components/ui.tsx";
+import { SETTINGS_TABS } from "@/components/settings/tabs.ts";
+import { Tabs } from "@/components/ui.tsx";
 
 /**
  * Everything there is to set up, behind one nav row.
@@ -15,19 +16,15 @@ import { type Tab, Tabs } from "@/components/ui.tsx";
  * preferences pane. They are panels now: one destination, one row of tabs, and a sidebar
  * that is chats and apps again.
  *
+ * The tabs themselves are `components/settings/tabs.ts`, which `SettingsLink` reads too, so
+ * a message that sends someone here names the panel the way its tab does.
+ *
  * The panels are components under `components/settings/` rather than files here, because
  * every file under `app/` is a route and these are not routes any more. Each one still
  * renders its own `Screen`, so it keeps its own scrolling and its own loading and error
  * states, and switching tabs unmounts the one you left — the same as navigating away from
  * it used to.
  */
-
-const TABS: Tab[] = [
-  { key: "agent", label: "Agent", icon: "sliders" },
-  { key: "mcp", label: "MCP", icon: "server" },
-  { key: "apps", label: "Apps", icon: "layout" },
-  { key: "server", label: "Server", icon: "link" },
-];
 
 const PANELS: Record<string, () => React.JSX.Element | null> = {
   agent: AgentPanel,
@@ -49,7 +46,7 @@ export default function SettingsScreen() {
   return (
     <View className="flex-1 bg-background">
       <Tabs
-        tabs={TABS}
+        tabs={SETTINGS_TABS}
         value={active}
         onChange={(key) => {
           setActive(key);

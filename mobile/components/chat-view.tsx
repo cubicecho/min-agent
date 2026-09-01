@@ -26,6 +26,7 @@ import {
 } from "react-native";
 import { MessageView } from "@/components/message-view.tsx";
 import { SessionsPanel, SessionsScreen } from "@/components/session-list.tsx";
+import { SettingsLink } from "@/components/settings/link.tsx";
 import { Button, Empty, ErrorNote, Muted, Select, Textarea } from "@/components/ui.tsx";
 import { api, streamTurn } from "@/lib/client.ts";
 import { useWide } from "@/lib/layout.ts";
@@ -244,7 +245,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
                 onFollowup={pending ? undefined : followup}
               />
             ) : (
-              <Empty>Start a chat, or open one from the right.</Empty>
+              <Nothing configured={Boolean(activeModel)} />
             )}
             {pending ? (
               <>
@@ -280,13 +281,24 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
       ) : null}
 
       <View className="border-t border-border px-4 py-3">
+        {/*
+          Nothing below this can work without a model, and the composer cannot say where to
+          get one — a placeholder is not something you can press. So the way out sits above
+          it, as a button rather than as the name of a screen to go and find.
+        */}
+        {activeModel ? null : (
+          <View className="mx-auto mb-2 w-full max-w-3xl flex-row items-center gap-3">
+            <Muted className="flex-1">No model selected, so a turn has nothing to run on.</Muted>
+            <SettingsLink tab="agent">Pick a model</SettingsLink>
+          </View>
+        )}
         <View className="w-full max-w-3xl flex-row items-end gap-2 self-center">
           <Textarea
             grows
             value={draft}
             onChangeText={setDraft}
             onSubmit={() => void send()}
-            placeholder={activeModel ? "Send a message…" : "Pick a model in Config first"}
+            placeholder={activeModel ? "Send a message…" : "Pick a model to start"}
             className="min-h-11 max-h-40 flex-1 py-2.5"
           />
           {pending ? (
@@ -309,6 +321,23 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
         </View>
       </View>
     </KeyboardAvoidingView>
+  );
+}
+
+/**
+ * The empty pane, wide, with no conversation open. On a fresh install it is also the first
+ * thing anyone sees, and "start a chat" is unhelpful advice to someone whose server has not
+ * been pointed at a model yet — so which of the two it says depends on whether there is one.
+ */
+function Nothing({ configured }: { configured: boolean }) {
+  if (configured) return <Empty>Start a chat, or open one from the right.</Empty>;
+  return (
+    <View className="items-center gap-3 p-8">
+      <Text className="text-center text-sm text-muted-foreground">
+        Point min-agent at an OpenAI-compatible server and pick a model, and this becomes a chat.
+      </Text>
+      <SettingsLink tab="agent">Set up a model</SettingsLink>
+    </View>
   );
 }
 
