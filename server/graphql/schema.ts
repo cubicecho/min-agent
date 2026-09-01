@@ -12,7 +12,7 @@ import {
   GraphQLString,
 } from "graphql";
 import { GraphQLJSON } from "graphql-scalars";
-import type { McpServerConfig } from "../../shared/types.ts";
+import type { EmbedConfig, McpServerConfig } from "../../shared/types.ts";
 import { listModels } from "../agent.ts";
 import {
   assertLlmConfigPatch,
@@ -20,6 +20,7 @@ import {
   loadMcpServers,
   refreshLlmConfig,
   resolveApiKey,
+  saveEmbeds,
   saveMcpServers,
 } from "../config.ts";
 import { db } from "../db/client.ts";
@@ -42,6 +43,8 @@ const { entities } = buildSchema(db, {
     // field too — a relation is ordered by the default of the table it reads.
     sessions: { orderBy: { updatedAt: "desc" } },
     messages: { orderBy: { idx: "asc" } },
+    // The sidebar draws them in this order, and it reads the generated query directly.
+    embeds: { orderBy: { position: "asc" } },
   },
   features: {
     // A message is written by the turn that produced it, and the MCP list is saved as a set
@@ -114,6 +117,36 @@ const McpServerInput = new GraphQLInputObjectType({
     env: { type: GraphQLJSON },
     url: { type: GraphQLString },
     headers: { type: GraphQLJSON },
+  },
+});
+
+/**
+ * The generated object type for the `embeds` table, reused as what `saveEmbeds` hands back —
+ * so a save and the `embeds` query return the same type and one fragment covers both.
+ *
+ * Read through a `Record` because `entities.types` is keyed by the *generated* type name,
+ * which `typeNameMapper: "singularize"` makes `Embed`, while the declared type of that object
+ * spells the key `Embeds`. Indexing it as declared compiles and is `undefined` at runtime.
+ */
+const EmbedType = (entities.types as unknown as Record<string, GraphQLObjectType>).Embed;
+
+const embedList = new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(EmbedType)));
+
+const EmbedModeEnum = new GraphQLEnumType({
+  name: "EmbedMode",
+  values: { iframe: { value: "iframe" }, external: { value: "external" } },
+});
+
+const EmbedInput = new GraphQLInputObjectType({
+  name: "EmbedInput",
+  description: "One row of the embed list. Reads come from the generated `embeds` query.",
+  fields: {
+    id: { type: new GraphQLNonNull(GraphQLString) },
+    label: { type: GraphQLString },
+    url: { type: GraphQLString },
+    icon: { type: GraphQLString },
+    mode: { type: EmbedModeEnum },
+    enabled: { type: GraphQLBoolean },
   },
 });
 
@@ -260,6 +293,17 @@ export const schema = new GraphQLSchema({
           await mcp.reconnect(args.id, await loadMcpServers());
           return mcp.state();
         },
+      },
+      saveEmbeds: {
+        type: embedList,
+        description:
+          "Replaces the configured embeds. Saved whole rather than row by row: an embed's id " +
+          "is the route its view lives at, so a rename is a new destination and the screen " +
+          "edits the list as a list.",
+        args: {
+          embeds: { type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(EmbedInput))) },
+        },
+        resolve: (_source, args: { embeds: EmbedConfig[] }) => saveEmbeds(args.embeds),
       },
     },
   }),

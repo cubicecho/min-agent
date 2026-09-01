@@ -1,0 +1,20 @@
+fragment Embed on Embed {
+  id
+  label
+  url
+  icon
+  mode
+  enabled
+}
+
+query Embeds {
+  embeds {
+    ...Embed
+  }
+}
+
+mutation SaveEmbeds($embeds: [EmbedInput!]!) {
+  saveEmbeds(embeds: $embeds) {
+    ...Embed
+  }
+}

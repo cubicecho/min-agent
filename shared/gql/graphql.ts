@@ -135,6 +135,259 @@ export type DateTimeFilter = {
   startsWith?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type Embed = {
+  /** Opaque cursor of this row's position in the query's ordering. Pass it as `after` to resume from here. Only set on rows returned by a list query. */
+  cursor?: Maybe<Scalars['String']['output']>;
+  enabled: Scalars['Boolean']['output'];
+  icon: Scalars['String']['output'];
+  id: Scalars['String']['output'];
+  label: Scalars['String']['output'];
+  mode: EmbedsModeEnum;
+  position: Scalars['Int']['output'];
+  url: Scalars['String']['output'];
+};
+
+export type EmbedAggregate = {
+  avg?: Maybe<EmbedAvgAggregate>;
+  count: Scalars['Int']['output'];
+  countDistinct?: Maybe<EmbedCountDistinctAggregate>;
+  countNonNull?: Maybe<EmbedCountNonNullAggregate>;
+  max?: Maybe<EmbedMaxAggregate>;
+  min?: Maybe<EmbedMinAggregate>;
+  sum?: Maybe<EmbedSumAggregate>;
+};
+
+export type EmbedAvgAggregate = {
+  position?: Maybe<Scalars['Float']['output']>;
+};
+
+export type EmbedAvgHaving = {
+  position?: InputMaybe<AggregateNumberFilter>;
+};
+
+export type EmbedCountDistinctAggregate = {
+  icon: Scalars['Int']['output'];
+  id: Scalars['Int']['output'];
+  label: Scalars['Int']['output'];
+  mode: Scalars['Int']['output'];
+  position: Scalars['Int']['output'];
+  url: Scalars['Int']['output'];
+};
+
+export type EmbedCountDistinctHaving = {
+  icon?: InputMaybe<AggregateNumberFilter>;
+  id?: InputMaybe<AggregateNumberFilter>;
+  label?: InputMaybe<AggregateNumberFilter>;
+  mode?: InputMaybe<AggregateNumberFilter>;
+  position?: InputMaybe<AggregateNumberFilter>;
+  url?: InputMaybe<AggregateNumberFilter>;
+};
+
+export type EmbedCountNonNullAggregate = {
+  enabled: Scalars['Int']['output'];
+  icon: Scalars['Int']['output'];
+  id: Scalars['Int']['output'];
+  label: Scalars['Int']['output'];
+  mode: Scalars['Int']['output'];
+  position: Scalars['Int']['output'];
+  url: Scalars['Int']['output'];
+};
+
+export type EmbedCountNonNullHaving = {
+  enabled?: InputMaybe<AggregateNumberFilter>;
+  icon?: InputMaybe<AggregateNumberFilter>;
+  id?: InputMaybe<AggregateNumberFilter>;
+  label?: InputMaybe<AggregateNumberFilter>;
+  mode?: InputMaybe<AggregateNumberFilter>;
+  position?: InputMaybe<AggregateNumberFilter>;
+  url?: InputMaybe<AggregateNumberFilter>;
+};
+
+/** Columns of Embed that a query can be made distinct on */
+export enum EmbedDistinctColumn {
+  Enabled = 'enabled',
+  Icon = 'icon',
+  Id = 'id',
+  Label = 'label',
+  Mode = 'mode',
+  Position = 'position',
+  Url = 'url'
+}
+
+export type EmbedFilters = {
+  /** Every branch matches */
+  AND?: InputMaybe<Array<EmbedFilters>>;
+  /** Negates the nested filters */
+  NOT?: InputMaybe<EmbedFilters>;
+  /** At least one branch matches; ANDed with any sibling fields */
+  OR?: InputMaybe<Array<EmbedFilters>>;
+  enabled?: InputMaybe<BooleanFilter>;
+  icon?: InputMaybe<StringFilter>;
+  id?: InputMaybe<StringFilter>;
+  label?: InputMaybe<StringFilter>;
+  mode?: InputMaybe<EmbedsModeEnumFilter>;
+  position?: InputMaybe<IntFilter>;
+  url?: InputMaybe<StringFilter>;
+};
+
+export type EmbedGroupBy = {
+  avg?: Maybe<EmbedAvgAggregate>;
+  count: Scalars['Int']['output'];
+  countDistinct?: Maybe<EmbedCountDistinctAggregate>;
+  countNonNull?: Maybe<EmbedCountNonNullAggregate>;
+  group: EmbedGroupKeys;
+  max?: Maybe<EmbedMaxAggregate>;
+  min?: Maybe<EmbedMinAggregate>;
+  sum?: Maybe<EmbedSumAggregate>;
+};
+
+/** Columns of Embed that a query can group by */
+export enum EmbedGroupByColumn {
+  Enabled = 'enabled',
+  Icon = 'icon',
+  Id = 'id',
+  Label = 'label',
+  Mode = 'mode',
+  Position = 'position',
+  Url = 'url'
+}
+
+/** The grouped column values of one Embed group. A column the query did not group by is null. */
+export type EmbedGroupKeys = {
+  enabled?: Maybe<Scalars['Boolean']['output']>;
+  icon?: Maybe<Scalars['String']['output']>;
+  id?: Maybe<Scalars['String']['output']>;
+  label?: Maybe<Scalars['String']['output']>;
+  mode?: Maybe<EmbedsModeEnum>;
+  position?: Maybe<Scalars['Int']['output']>;
+  url?: Maybe<Scalars['String']['output']>;
+};
+
+/** Filters Embed groups by their aggregated values */
+export type EmbedHaving = {
+  avg?: InputMaybe<EmbedAvgHaving>;
+  /** Filters groups by how many rows they contain */
+  count?: InputMaybe<AggregateNumberFilter>;
+  countDistinct?: InputMaybe<EmbedCountDistinctHaving>;
+  countNonNull?: InputMaybe<EmbedCountNonNullHaving>;
+  max?: InputMaybe<EmbedMaxHaving>;
+  min?: InputMaybe<EmbedMinHaving>;
+  sum?: InputMaybe<EmbedSumHaving>;
+};
+
+/** One row of the embed list. Reads come from the generated `embeds` query. */
+export type EmbedInput = {
+  enabled?: InputMaybe<Scalars['Boolean']['input']>;
+  icon?: InputMaybe<Scalars['String']['input']>;
+  id: Scalars['String']['input'];
+  label?: InputMaybe<Scalars['String']['input']>;
+  mode?: InputMaybe<EmbedMode>;
+  url?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type EmbedMaxAggregate = {
+  icon?: Maybe<Scalars['String']['output']>;
+  id?: Maybe<Scalars['String']['output']>;
+  label?: Maybe<Scalars['String']['output']>;
+  mode?: Maybe<EmbedsModeEnum>;
+  position?: Maybe<Scalars['Int']['output']>;
+  url?: Maybe<Scalars['String']['output']>;
+};
+
+export type EmbedMaxHaving = {
+  position?: InputMaybe<AggregateNumberFilter>;
+};
+
+export type EmbedMinAggregate = {
+  icon?: Maybe<Scalars['String']['output']>;
+  id?: Maybe<Scalars['String']['output']>;
+  label?: Maybe<Scalars['String']['output']>;
+  mode?: Maybe<EmbedsModeEnum>;
+  position?: Maybe<Scalars['Int']['output']>;
+  url?: Maybe<Scalars['String']['output']>;
+};
+
+export type EmbedMinHaving = {
+  position?: InputMaybe<AggregateNumberFilter>;
+};
+
+export enum EmbedMode {
+  External = 'external',
+  Iframe = 'iframe'
+}
+
+export type EmbedOrderBy = {
+  enabled?: InputMaybe<InnerOrder>;
+  icon?: InputMaybe<InnerOrder>;
+  id?: InputMaybe<InnerOrder>;
+  label?: InputMaybe<InnerOrder>;
+  mode?: InputMaybe<InnerOrder>;
+  position?: InputMaybe<InnerOrder>;
+  url?: InputMaybe<InnerOrder>;
+};
+
+export type EmbedSumAggregate = {
+  position?: Maybe<Scalars['Float']['output']>;
+};
+
+export type EmbedSumHaving = {
+  position?: InputMaybe<AggregateNumberFilter>;
+};
+
+export enum EmbedsModeEnum {
+  /** Value: external */
+  External = 'external',
+  /** Value: iframe */
+  Iframe = 'iframe'
+}
+
+export type EmbedsModeEnumFilter = {
+  /** Every branch matches */
+  AND?: InputMaybe<Array<EmbedsModeEnumFilter>>;
+  /** Negates the nested operators */
+  NOT?: InputMaybe<EmbedsModeEnumFilter>;
+  /** At least one branch matches; ANDed with any sibling operators */
+  OR?: InputMaybe<Array<EmbedsModeEnumFilter>>;
+  /** Matches values containing the given string. `%`, `_` and `\` are matched literally. */
+  contains?: InputMaybe<Scalars['String']['input']>;
+  /** Matches values ending with the given string. `%`, `_` and `\` are matched literally. */
+  endsWith?: InputMaybe<Scalars['String']['input']>;
+  /** Equal to */
+  eq?: InputMaybe<EmbedsModeEnum>;
+  /** Greater than */
+  gt?: InputMaybe<EmbedsModeEnum>;
+  /** Greater than or equal to */
+  gte?: InputMaybe<EmbedsModeEnum>;
+  /** Case-insensitive `contains`. */
+  iContains?: InputMaybe<Scalars['String']['input']>;
+  /** Case-insensitive `endsWith`. */
+  iEndsWith?: InputMaybe<Scalars['String']['input']>;
+  /** Case-insensitive `startsWith`. */
+  iStartsWith?: InputMaybe<Scalars['String']['input']>;
+  ilike?: InputMaybe<Scalars['String']['input']>;
+  /** Matches any one of these values (SQL `IN`) */
+  inArray?: InputMaybe<Array<EmbedsModeEnum>>;
+  /** When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own. */
+  insensitive?: InputMaybe<Scalars['Boolean']['input']>;
+  /** When true, matches rows where the column is not NULL */
+  isNotNull?: InputMaybe<Scalars['Boolean']['input']>;
+  /** When true, matches rows where the column is NULL */
+  isNull?: InputMaybe<Scalars['Boolean']['input']>;
+  like?: InputMaybe<Scalars['String']['input']>;
+  /** Less than */
+  lt?: InputMaybe<EmbedsModeEnum>;
+  /** Less than or equal to */
+  lte?: InputMaybe<EmbedsModeEnum>;
+  /** Not equal to */
+  ne?: InputMaybe<EmbedsModeEnum>;
+  notIlike?: InputMaybe<Scalars['String']['input']>;
+  /** Matches none of these values (SQL `NOT IN`) */
+  notInArray?: InputMaybe<Array<EmbedsModeEnum>>;
+  notLike?: InputMaybe<Scalars['String']['input']>;
+  /** Matches values starting with the given string. `%`, `_` and `\` are matched literally. */
+  startsWith?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type FloatFilter = {
   /** Every branch matches */
   AND?: InputMaybe<Array<FloatFilter>>;
@@ -878,6 +1131,8 @@ export type Mutation = {
   deleteSessionSingle?: Maybe<Session>;
   /** Tears down one server's connection and dials it again. */
   reconnectMcpServer: Array<McpServerState>;
+  /** Replaces the configured embeds. Saved whole rather than row by row: an embed's id is the route its view lives at, so a rename is a new destination and the screen edits the list as a list. */
+  saveEmbeds: Array<Embed>;
   /** Replaces the configured set and reconnects. The list is edited and saved whole — a server's id is the namespace its tools live under, so renaming one is a different server, not an edited row. */
   saveMcpServers: Array<McpServerState>;
   /** Writes the API key. Separate from the settings update because the key is write-only: it is excluded from `Setting` so it can never be read back out. An empty string clears it and falls back to $OPENAI_API_KEY. */
@@ -915,6 +1170,11 @@ export type MutationDeleteSessionSingleArgs = {
 
 export type MutationReconnectMcpServerArgs = {
   id: Scalars['String']['input'];
+};
+
+
+export type MutationSaveEmbedsArgs = {
+  embeds: Array<EmbedInput>;
 };
 
 
@@ -978,6 +1238,10 @@ export enum OrderNulls {
 }
 
 export type Query = {
+  embed?: Maybe<Embed>;
+  embeds: Array<Embed>;
+  embedsAggregate: EmbedAggregate;
+  embedsGroupBy: Array<EmbedGroupBy>;
   /** Whether a key is set, without saying what it is. The Config tab shows a filled placeholder rather than an empty box; the key itself is excluded from `Setting`. */
   hasApiKey: Scalars['Boolean']['output'];
   /** Answers only once the settings are loaded and the schema is up. */
@@ -1002,6 +1266,35 @@ export type Query = {
   settings: Array<Setting>;
   settingsAggregate: SettingAggregate;
   settingsGroupBy: Array<SettingGroupBy>;
+};
+
+
+export type QueryEmbedArgs = {
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  orderBy?: InputMaybe<EmbedOrderBy>;
+  where?: InputMaybe<EmbedFilters>;
+};
+
+
+export type QueryEmbedsArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  distinct?: InputMaybe<Array<EmbedDistinctColumn>>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  orderBy?: InputMaybe<EmbedOrderBy>;
+  where?: InputMaybe<EmbedFilters>;
+};
+
+
+export type QueryEmbedsAggregateArgs = {
+  where?: InputMaybe<EmbedFilters>;
+};
+
+
+export type QueryEmbedsGroupByArgs = {
+  groupBy: Array<EmbedGroupByColumn>;
+  having?: InputMaybe<EmbedHaving>;
+  where?: InputMaybe<EmbedFilters>;
 };
 
 
@@ -1746,6 +2039,20 @@ export type UpdateSettingManyInput = {
   where?: InputMaybe<SettingFilters>;
 };
 
+export type EmbedFragment = { id: string, label: string, url: string, icon: string, mode: EmbedsModeEnum, enabled: boolean };
+
+export type EmbedsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type EmbedsQuery = { embeds: Array<{ id: string, label: string, url: string, icon: string, mode: EmbedsModeEnum, enabled: boolean }> };
+
+export type SaveEmbedsMutationVariables = Exact<{
+  embeds: Array<EmbedInput> | EmbedInput;
+}>;
+
+
+export type SaveEmbedsMutation = { saveEmbeds: Array<{ id: string, label: string, url: string, icon: string, mode: EmbedsModeEnum, enabled: boolean }> };
+
 export type McpStateFragment = { status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown }, tools: Array<{ name: string, description: string }> };
 
 export type McpStatusQueryVariables = Exact<{ [key: string]: never; }>;
@@ -1854,6 +2161,16 @@ export class TypedDocumentString<TResult, TVariables>
     return this.value;
   }
 }
+export const EmbedFragmentDoc = new TypedDocumentString(`
+    fragment Embed on Embed {
+  id
+  label
+  url
+  icon
+  mode
+  enabled
+}
+    `, {"fragmentName":"Embed"}) as unknown as TypedDocumentString<EmbedFragment, unknown>;
 export const McpStateFragmentDoc = new TypedDocumentString(`
     fragment McpState on McpServerState {
   config {
@@ -1901,6 +2218,34 @@ export const MessageRowFragmentDoc = new TypedDocumentString(`
   followups
 }
     `, {"fragmentName":"MessageRow"}) as unknown as TypedDocumentString<MessageRowFragment, unknown>;
+export const EmbedsDocument = new TypedDocumentString(`
+    query Embeds {
+  embeds {
+    ...Embed
+  }
+}
+    fragment Embed on Embed {
+  id
+  label
+  url
+  icon
+  mode
+  enabled
+}`) as unknown as TypedDocumentString<EmbedsQuery, EmbedsQueryVariables>;
+export const SaveEmbedsDocument = new TypedDocumentString(`
+    mutation SaveEmbeds($embeds: [EmbedInput!]!) {
+  saveEmbeds(embeds: $embeds) {
+    ...Embed
+  }
+}
+    fragment Embed on Embed {
+  id
+  label
+  url
+  icon
+  mode
+  enabled
+}`) as unknown as TypedDocumentString<SaveEmbedsMutation, SaveEmbedsMutationVariables>;
 export const McpStatusDocument = new TypedDocumentString(`
     query McpStatus {
   mcpStatus {
