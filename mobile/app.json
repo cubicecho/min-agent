@@ -24,7 +24,13 @@
         }
       ],
       "expo-font",
-      "@react-native-vector-icons/feather"
+      "@react-native-vector-icons/feather",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow min-agent to use the microphone so you can speak a message instead of typing it."
+        }
+      ]
     ]
   }
 }

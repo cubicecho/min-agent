@@ -9,6 +9,7 @@ import { runMigrations } from "./db/migrate.ts";
 import { schema } from "./graphql/schema.ts";
 import { mcp } from "./mcp.ts";
 import { displayHost, HOST, PORT, ROOT } from "./paths.ts";
+import { voice } from "./voice.ts";
 
 // The tables and the settings row have to exist before anything reads them, and the settings
 // cache has to be warm before the first turn asks it for a model. The database may still be
@@ -56,6 +57,12 @@ app.use(
 app.use(yoga.graphqlEndpoint, yoga);
 
 /**
+ * The one part of the API that is not GraphQL, because both directions of it are bytes: a
+ * recording on the way in and a spoken reply on the way out. See `voice.ts`.
+ */
+app.use("/api/voice", voice);
+
+/**
  * Expo fingerprints what it emits into `_expo/static/`, so those files are good forever and a
  * changed one arrives under a different name. Everything else, the HTML shell above all, keeps
  * its name across every build and has to be revalidated or a deploy never reaches the browser.
@@ -85,7 +92,9 @@ const shell = { headers: { "Cache-Control": "no-cache" } };
 const web = path.join(ROOT, "mobile", "dist");
 if (fs.existsSync(web)) {
   app.use(express.static(web, staticOptions));
-  app.get(/^(?!\/graphql).*/, (_req, res) => res.sendFile(path.join(web, "index.html"), shell));
+  app.get(/^(?!\/graphql|\/api\/).*/, (_req, res) =>
+    res.sendFile(path.join(web, "index.html"), shell),
+  );
 }
 
 app.use(

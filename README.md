@@ -14,6 +14,7 @@ Everything below the quick start is reference — read it when you want that pie
 - [MCP servers](#mcp-servers) — wiring up tools, and how they are loaded without blowing the prompt budget
 - [Task models](#task-models) — pointing a small fast model at titling, compaction, tool preselection and follow-ups
 - [Turn statistics](#turn-statistics) — what the numbers under each reply mean
+- [Voice](#voice) — speaking a message and having replies read back, with or without a model for it
 - [Keyboard shortcuts](#keyboard-shortcuts) — what the desktop and browser builds bind
 - [The session list](#the-session-list) — renaming, deleting and finding a chat
 - [Other apps in the sidebar](#other-apps-in-the-sidebar) — framing a kanban board or a task server beside the chat
@@ -212,6 +213,11 @@ exactly what it serves.
 The generated documents are plain strings, not `graphql` AST objects, which is what keeps the
 `graphql` package out of the bundle: Metro pins `nodeModulesPaths` to `mobile/node_modules`, and
 it is not installed there.
+
+The one thing not on it is [voice](#voice), which is two REST routes under `/api/voice`
+because both directions of it are bytes — a recording up, an audio stream back — and neither
+survives a round trip through a JSON scalar worth the trouble. The SPA catch-all excludes
+`/api/` for that reason: an unknown path under it is a 404, not the HTML shell.
 
 The `models` query is not a local read — it asks the configured provider to list its models — so
 the app holds it, and the connection settings beside it, for five minutes. Saving config
@@ -542,6 +548,54 @@ though they did.
 
 Neither button is offered while a turn is running. There is one stream and one composer, and
 rewinding underneath a reply that is still arriving has no sensible reading.
+
+## Voice
+
+A microphone beside the composer, and a speaker under every reply. Both work out of the box
+with nothing configured, and both get better if you point them at a model.
+
+Left alone, voice runs on whatever the device already has. A browser reads replies aloud with
+`speechSynthesis` and takes dictation with its own speech recognition, which costs nothing and
+sends no audio anywhere; Firefox has the first and not the second, so there the microphone
+button is simply absent. On Android replies are read by the system voice and dictation is the
+microphone key already on the keyboard — a React Native runtime has no Web Speech API, and the
+keyboard's key types into the same box.
+
+Naming a model under **Settings → Agent → Voice** moves that work to the server:
+
+| | |
+| --- | --- |
+| **Speech to text** | `whisper-1`. The recording is posted to the agent and comes back as text. This is the only way the Android and desktop builds get a microphone button of their own. |
+| **Text to speech** | `tts-1`. Replies come back as audio the app plays. |
+| **Voice** | Which voice the speech model uses — `alloy` and friends. Blank takes the provider's default. |
+| **Audio base URL** | Where those endpoints are, when that is not where the chat model is. Blank means the base URL above. |
+| **Read every reply aloud** | Speaks each answer as it finishes, rather than waiting to be asked. |
+
+The separate audio base URL is there because the usual local setup cannot serve audio at all:
+Ollama has no `/audio/transcriptions`, so a transcription model named against it would be a
+request to a server that has never heard of the route. Point the chat model at the machine in
+the corner and the audio at a provider, and both work. The API key is not doubled — the one key
+is sent to both.
+
+Nothing is called directly from the app, for the same reason the API key is write-only: the key
+is something the server has and a browser on the LAN does not. The app posts to the agent and
+the agent posts to the model, which is `server/voice.ts` — two routes, off unless a model is
+named, answering 409 rather than guessing when one is not.
+
+The recording goes up as base64 inside JSON rather than as multipart. It is the one encoding
+all three builds produce without a second transport — a browser reads its blob with a
+`FileReader`, a device reads the file with `expo-file-system` — and a voice clip is kilobytes,
+so the third it adds is cheaper than a multipart parser in the dependency list.
+
+What gets read aloud is the reply with its markdown taken off (`speakableText` in
+`shared/client/voice.ts`): a fenced block read out is a minute of punctuation, and a link read
+out is a URL spelled character by character. It is a strip rather than a parse — nothing
+downstream of it reads anything but a voice, and the worst a missed case costs is one asterisk
+pronounced.
+
+Autoplay speaks the answer accumulated from the stream, once, when the turn ends. Not the
+deltas as they land, which stutters; and not the stored transcript, which would read the whole
+conversation back every turn.
 
 ## Keyboard shortcuts
 

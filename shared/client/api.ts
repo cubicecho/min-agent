@@ -132,6 +132,11 @@ const WRITABLE_COLUMNS: Record<keyof Omit<LlmConfig, "apiKey">, true> = {
   toolDiscovery: true,
   taskModels: true,
   pricing: true,
+  voiceBaseUrl: true,
+  sttModel: true,
+  ttsModel: true,
+  ttsVoice: true,
+  speakReplies: true,
 };
 
 const WRITABLE = Object.keys(WRITABLE_COLUMNS) as (keyof typeof WRITABLE_COLUMNS)[];

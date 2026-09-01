@@ -14,6 +14,11 @@ const STORED = {
   toolDiscovery: "ondemand",
   taskModels: {},
   pricing: { inputPer1M: 0, outputPer1M: 0 },
+  voiceBaseUrl: "",
+  sttModel: "",
+  ttsModel: "",
+  ttsVoice: "",
+  speakReplies: false,
 };
 
 /**

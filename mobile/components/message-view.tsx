@@ -218,6 +218,8 @@ const StoredMessages = memo(function StoredMessages({
   onFollowup,
   onRetry,
   onEdit,
+  onSpeak,
+  speakingIndex,
 }: {
   messages: StoredMessage[];
   pricing?: LlmConfig["pricing"];
@@ -226,6 +228,10 @@ const StoredMessages = memo(function StoredMessages({
   onRetry?: (index: number) => void;
   /** Put this question back in the composer, and forget everything after it. */
   onEdit?: (index: number) => void;
+  /** Read this reply out, or stop reading it. Absent where no voice is available. */
+  onSpeak?: (index: number, text: string) => void;
+  /** Which reply is being read right now, so its button offers to stop instead. */
+  speakingIndex?: number | null;
 }) {
   const results = useMemo(() => {
     const map = new Map<string, { content: string; isError: boolean }>();
@@ -302,6 +308,17 @@ const StoredMessages = memo(function StoredMessages({
                     onPress={() => onRetry(index)}
                   />
                 ) : null}
+                {/*
+                  One button for both directions: whatever is being read is the only thing
+                  that can be stopped, so pressing it again is the way to stop it.
+                */}
+                {onSpeak && body ? (
+                  <IconAction
+                    icon={speakingIndex === index ? "square" : "volume-2"}
+                    label={speakingIndex === index ? "Stop reading" : "Read this reply aloud"}
+                    onPress={() => onSpeak(index, body)}
+                  />
+                ) : null}
                 {item.stats ? <Stats stats={item.stats} pricing={pricing} /> : null}
               </View>
             ) : null}
@@ -343,6 +360,8 @@ export function MessageView({
   onFollowup,
   onRetry,
   onEdit,
+  onSpeak,
+  speakingIndex,
 }: {
   messages: StoredMessage[];
   live: LivePart[];
@@ -350,6 +369,8 @@ export function MessageView({
   onFollowup?: (text: string) => void;
   onRetry?: (index: number) => void;
   onEdit?: (index: number) => void;
+  onSpeak?: (index: number, text: string) => void;
+  speakingIndex?: number | null;
 }) {
   return (
     <View className="gap-3">
@@ -359,6 +380,8 @@ export function MessageView({
         onFollowup={onFollowup}
         onRetry={onRetry}
         onEdit={onEdit}
+        onSpeak={onSpeak}
+        speakingIndex={speakingIndex}
       />
       {live.map((part) => (
         <LiveRow key={part.key} part={part} />

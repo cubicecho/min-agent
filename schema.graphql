@@ -10,6 +10,11 @@ type Setting {
   toolDiscovery: SettingsToolDiscoveryEnum!
   taskModels: JSON!
   pricing: JSON!
+  voiceBaseUrl: String!
+  sttModel: String!
+  ttsModel: String!
+  ttsVoice: String!
+  speakReplies: Boolean!
 
   """
   Opaque cursor of this row's position in the query's ordering. Pass it as `after` to resume from here. Only set on rows returned by a list query.
@@ -64,6 +69,10 @@ type SettingMinAggregate {
   systemPrompt: String
   contextLimit: Int
   toolDiscovery: SettingsToolDiscoveryEnum
+  voiceBaseUrl: String
+  sttModel: String
+  ttsModel: String
+  ttsVoice: String
 }
 
 type SettingMaxAggregate {
@@ -76,6 +85,10 @@ type SettingMaxAggregate {
   systemPrompt: String
   contextLimit: Int
   toolDiscovery: SettingsToolDiscoveryEnum
+  voiceBaseUrl: String
+  sttModel: String
+  ttsModel: String
+  ttsVoice: String
 }
 
 type SettingCountNonNullAggregate {
@@ -90,6 +103,11 @@ type SettingCountNonNullAggregate {
   toolDiscovery: Int!
   taskModels: Int!
   pricing: Int!
+  voiceBaseUrl: Int!
+  sttModel: Int!
+  ttsModel: Int!
+  ttsVoice: Int!
+  speakReplies: Int!
 }
 
 type SettingCountDistinctAggregate {
@@ -102,6 +120,10 @@ type SettingCountDistinctAggregate {
   systemPrompt: Int!
   contextLimit: Int!
   toolDiscovery: Int!
+  voiceBaseUrl: Int!
+  sttModel: Int!
+  ttsModel: Int!
+  ttsVoice: Int!
 }
 
 type SettingGroupBy {
@@ -128,6 +150,11 @@ type SettingGroupKeys {
   systemPrompt: String
   contextLimit: Int
   toolDiscovery: SettingsToolDiscoveryEnum
+  voiceBaseUrl: String
+  sttModel: String
+  ttsModel: String
+  ttsVoice: String
+  speakReplies: Boolean
 }
 
 type McpServer {
@@ -605,6 +632,11 @@ input UpdateSettingInput {
   toolDiscovery: SettingsToolDiscoveryEnum
   taskModels: JSON
   pricing: JSON
+  voiceBaseUrl: String
+  sttModel: String
+  ttsModel: String
+  ttsVoice: String
+  speakReplies: Boolean
 }
 
 """
@@ -628,6 +660,11 @@ input SettingFilters {
   toolDiscovery: SettingsToolDiscoveryEnumFilter
   taskModels: JSONFilter
   pricing: JSONFilter
+  voiceBaseUrl: StringFilter
+  sttModel: StringFilter
+  ttsModel: StringFilter
+  ttsVoice: StringFilter
+  speakReplies: BooleanFilter
 
   """At least one branch matches; ANDed with any sibling fields"""
   OR: [SettingFilters!]
@@ -968,6 +1005,80 @@ enum JSONPathCast {
   BOOLEAN
 }
 
+input BooleanFilter {
+  """Equal to"""
+  eq: Boolean
+
+  """Not equal to"""
+  ne: Boolean
+
+  """Less than"""
+  lt: Boolean
+
+  """Less than or equal to"""
+  lte: Boolean
+
+  """Greater than"""
+  gt: Boolean
+
+  """Greater than or equal to"""
+  gte: Boolean
+  like: String
+  notLike: String
+  ilike: String
+  notIlike: String
+
+  """
+  Matches values starting with the given string. `%`, `_` and `\` are matched literally.
+  """
+  startsWith: String
+
+  """
+  Matches values ending with the given string. `%`, `_` and `\` are matched literally.
+  """
+  endsWith: String
+
+  """
+  Matches values containing the given string. `%`, `_` and `\` are matched literally.
+  """
+  contains: String
+
+  """Case-insensitive `startsWith`."""
+  iStartsWith: String
+
+  """Case-insensitive `endsWith`."""
+  iEndsWith: String
+
+  """Case-insensitive `contains`."""
+  iContains: String
+
+  """
+  When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own.
+  """
+  insensitive: Boolean
+
+  """Matches any one of these values (SQL `IN`)"""
+  inArray: [Boolean!]
+
+  """Matches none of these values (SQL `NOT IN`)"""
+  notInArray: [Boolean!]
+
+  """When true, matches rows where the column is NULL"""
+  isNull: Boolean
+
+  """When true, matches rows where the column is not NULL"""
+  isNotNull: Boolean
+
+  """At least one branch matches; ANDed with any sibling operators"""
+  OR: [BooleanFilter!]
+
+  """Every branch matches"""
+  AND: [BooleanFilter!]
+
+  """Negates the nested operators"""
+  NOT: BooleanFilter
+}
+
 input SettingOrderBy {
   id: InnerOrder
   baseUrl: InnerOrder
@@ -980,6 +1091,11 @@ input SettingOrderBy {
   toolDiscovery: InnerOrder
   taskModels: InnerOrder
   pricing: InnerOrder
+  voiceBaseUrl: InnerOrder
+  sttModel: InnerOrder
+  ttsModel: InnerOrder
+  ttsVoice: InnerOrder
+  speakReplies: InnerOrder
 }
 
 input InnerOrder {
@@ -1081,6 +1197,11 @@ input SettingCountNonNullHaving {
   toolDiscovery: AggregateNumberFilter
   taskModels: AggregateNumberFilter
   pricing: AggregateNumberFilter
+  voiceBaseUrl: AggregateNumberFilter
+  sttModel: AggregateNumberFilter
+  ttsModel: AggregateNumberFilter
+  ttsVoice: AggregateNumberFilter
+  speakReplies: AggregateNumberFilter
 }
 
 input SettingCountDistinctHaving {
@@ -1093,6 +1214,10 @@ input SettingCountDistinctHaving {
   systemPrompt: AggregateNumberFilter
   contextLimit: AggregateNumberFilter
   toolDiscovery: AggregateNumberFilter
+  voiceBaseUrl: AggregateNumberFilter
+  sttModel: AggregateNumberFilter
+  ttsModel: AggregateNumberFilter
+  ttsVoice: AggregateNumberFilter
 }
 
 input McpServerFilters {
@@ -1115,80 +1240,6 @@ input McpServerFilters {
 
   """Negates the nested filters"""
   NOT: McpServerFilters
-}
-
-input BooleanFilter {
-  """Equal to"""
-  eq: Boolean
-
-  """Not equal to"""
-  ne: Boolean
-
-  """Less than"""
-  lt: Boolean
-
-  """Less than or equal to"""
-  lte: Boolean
-
-  """Greater than"""
-  gt: Boolean
-
-  """Greater than or equal to"""
-  gte: Boolean
-  like: String
-  notLike: String
-  ilike: String
-  notIlike: String
-
-  """
-  Matches values starting with the given string. `%`, `_` and `\` are matched literally.
-  """
-  startsWith: String
-
-  """
-  Matches values ending with the given string. `%`, `_` and `\` are matched literally.
-  """
-  endsWith: String
-
-  """
-  Matches values containing the given string. `%`, `_` and `\` are matched literally.
-  """
-  contains: String
-
-  """Case-insensitive `startsWith`."""
-  iStartsWith: String
-
-  """Case-insensitive `endsWith`."""
-  iEndsWith: String
-
-  """Case-insensitive `contains`."""
-  iContains: String
-
-  """
-  When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own.
-  """
-  insensitive: Boolean
-
-  """Matches any one of these values (SQL `IN`)"""
-  inArray: [Boolean!]
-
-  """Matches none of these values (SQL `NOT IN`)"""
-  notInArray: [Boolean!]
-
-  """When true, matches rows where the column is NULL"""
-  isNull: Boolean
-
-  """When true, matches rows where the column is not NULL"""
-  isNotNull: Boolean
-
-  """At least one branch matches; ANDed with any sibling operators"""
-  OR: [BooleanFilter!]
-
-  """Every branch matches"""
-  AND: [BooleanFilter!]
-
-  """Negates the nested operators"""
-  NOT: BooleanFilter
 }
 
 input McpServersTransportEnumFilter {
@@ -2008,6 +2059,11 @@ enum SettingDistinctColumn {
   toolDiscovery
   taskModels
   pricing
+  voiceBaseUrl
+  sttModel
+  ttsModel
+  ttsVoice
+  speakReplies
 }
 
 """Columns of Setting that a query can group by"""
@@ -2021,6 +2077,11 @@ enum SettingGroupByColumn {
   systemPrompt
   contextLimit
   toolDiscovery
+  voiceBaseUrl
+  sttModel
+  ttsModel
+  ttsVoice
+  speakReplies
 }
 
 """Columns of McpServer that a query can be made distinct on"""
