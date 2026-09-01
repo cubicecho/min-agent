@@ -506,6 +506,18 @@ Each line is its own row rather than the whole block being one string, because t
 `white-space: pre` here: a long line can only scroll sideways if the row it sits in is a thing
 that scrolls.
 
+### Copying
+
+A fence carries a copy button in its top corner, and a reply carries one under it — the raw
+markdown as the model wrote it, not as it is drawn, because what you want out of a reply is
+usually what you are about to paste somewhere that renders it. There is no text selection to
+fall back on: the transcript is `<Text>` in a scroll view on Android, and dragging in it scrolls.
+
+`mobile/lib/copy.ts` is the whole of it. There is nowhere to put a toast in this app and nothing
+that owns one, so the button is its own confirmation — it turns into a tick for a moment and
+goes back to offering. The tick waits on `setStringAsync` actually resolving true: a browser can
+refuse the clipboard, and a button that lies about it is worse than one that does nothing.
+
 ## The session list
 
 A chat is renamed in place — the title becomes a field, Enter or moving away commits, Escape
