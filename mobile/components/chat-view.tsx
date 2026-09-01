@@ -1,5 +1,6 @@
 import { Feather } from "@react-native-vector-icons/feather";
 import { type LivePart, liveCharCount } from "@shared/client/live.ts";
+import { messageText, turnStart } from "@shared/client/transcript.ts";
 import {
   contextFill,
   formatDuration,
@@ -193,11 +194,54 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     }
   }
 
+  /**
+   * Forgets the transcript from `index` on, and reads back what is left.
+   *
+   * Both of the things below are this move plus one more: what makes retrying and editing
+   * different is only what happens after the cut.
+   */
+  async function rewind(index: number) {
+    if (!activeId) return;
+    await api.truncateSession(activeId, index);
+    await queryClient.invalidateQueries({ queryKey: ["session", activeId] });
+    await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+  }
+
+  /**
+   * Answers again. The cut goes back to the question, not to the reply: a turn is the
+   * question plus everything the model did about it, and the server re-sends the prompt
+   * itself, so leaving the old copy in place would ask it twice.
+   */
+  async function retry(index: number) {
+    const messages = session.data?.messages ?? [];
+    const start = turnStart(messages, index);
+    if (start < 0 || pending) return;
+    const prompt = messageText(messages[start]);
+    await rewind(start);
+    await send(prompt);
+  }
+
+  /** Puts a question back in the composer, with everything it led to forgotten. */
+  async function edit(index: number) {
+    const messages = session.data?.messages ?? [];
+    const message = messages[index];
+    if (!message || pending) return;
+    await rewind(index);
+    setDraft(messageText(message));
+  }
+
   // A chip must not change identity every render, or the memoised transcript re-renders on
   // every token. The ref keeps the callback stable while still calling the current `send`.
   const sendRef = useRef(send);
   sendRef.current = send;
   const followup = useCallback((text: string) => void sendRef.current(text), []);
+  // Same for the two transcript buttons, which hang off every stored message.
+  const retryRef = useRef(retry);
+  retryRef.current = retry;
+  const onRetry = useCallback((index: number) => void retryRef.current(index), []);
+  const editRef = useRef(edit);
+  editRef.current = edit;
+  const onEdit = useCallback((index: number) => void editRef.current(index), []);
 
   return (
     <KeyboardAvoidingView
@@ -243,6 +287,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
                 live={live}
                 pricing={config.data?.pricing}
                 onFollowup={pending ? undefined : followup}
+                onRetry={pending ? undefined : onRetry}
+                onEdit={pending ? undefined : onEdit}
               />
             ) : (
               <Nothing configured={Boolean(activeModel)} />

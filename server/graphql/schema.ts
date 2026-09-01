@@ -26,6 +26,7 @@ import {
 import { db } from "../db/client.ts";
 import { settings } from "../db/schema.ts";
 import { mcp } from "../mcp.ts";
+import { truncateSession } from "../store.ts";
 import { runTurnEvents, type TurnArgs } from "../turns.ts";
 
 /**
@@ -293,6 +294,20 @@ export const schema = new GraphQLSchema({
           await mcp.reconnect(args.id, await loadMcpServers());
           return mcp.state();
         },
+      },
+      truncateSession: {
+        type: new GraphQLNonNull(GraphQLInt),
+        description:
+          "Forgets every message from `fromIdx` on, and answers with how many are left. The " +
+          "only write that removes a message: retrying a reply and editing a question both " +
+          "mean going again from a point, and what follows that point is an answer to " +
+          "something no longer being asked. A suffix only, so `idx` stays dense.",
+        args: {
+          id: { type: new GraphQLNonNull(GraphQLString) },
+          fromIdx: { type: new GraphQLNonNull(GraphQLInt) },
+        },
+        resolve: (_source, args: { id: string; fromIdx: number }) =>
+          truncateSession(args.id, args.fromIdx),
       },
       saveEmbeds: {
         type: embedList,

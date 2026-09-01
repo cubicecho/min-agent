@@ -1,4 +1,5 @@
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
+import { usageOf } from "../shared/client/transcript.ts";
 import { fromStored, toStored } from "../shared/messages.ts";
 import type { Session, SessionSummary, StoredMessage } from "../shared/types.ts";
 import { db } from "./db/client.ts";
@@ -9,7 +10,11 @@ import { messages, type NewMessageRow, type SessionRow, sessions } from "./db/sc
  *
  * A turn only ever appends, so this exposes the append rather than a save: `addMessage` writes
  * the one row a step produced, and `patchMessage` fills in the stats and follow-ups that are
- * only known once the turn is over. Nothing here rewrites a transcript.
+ * only known once the turn is over. Nothing here edits a message.
+ *
+ * `truncateSession` is the one thing that removes any, and it removes a suffix: retrying a
+ * reply and editing a question both mean "forget from here", and what follows the cut is
+ * an answer to something that is no longer being asked.
  */
 
 const summarize = (row: SessionRow): SessionSummary => ({
@@ -94,4 +99,40 @@ export async function patchMessage(
   patch: Pick<StoredMessage, "stats" | "followups">,
 ): Promise<void> {
   await db.update(messages).set(patch).where(eq(messages.id, id));
+}
+
+/**
+ * Drops every message from `fromIdx` on, and puts the session's own columns back in step.
+ *
+ * The counters are derived rather than adjusted: `messageCount` is where the transcript now
+ * ends, and the banked usage is what the turns that are left still add up to — a decrement
+ * would have to trust that the rows and the totals never drifted, and this does not have to.
+ * A compaction is dropped if it summarised anything past the cut: it is a description of
+ * messages that no longer exist, and the next turn would send it as if they did.
+ *
+ * `idx` stays dense because only a suffix ever goes, which is what lets the client keep
+ * treating a message's position in the array as its index.
+ */
+export async function truncateSession(id: string, fromIdx: number): Promise<number> {
+  const session = await getSession(id);
+  if (!session) throw new Error("session not found");
+
+  const from = Math.max(0, Math.floor(fromIdx));
+  if (from >= session.messages.length) return session.messages.length;
+
+  await db.delete(messages).where(and(eq(messages.sessionId, id), gte(messages.idx, from)));
+
+  const kept = session.messages.slice(0, from);
+  await db
+    .update(sessions)
+    .set({
+      messageCount: from,
+      updatedAt: new Date(),
+      usage: usageOf(kept),
+      compaction:
+        session.compaction && session.compaction.through <= from ? session.compaction : null,
+    })
+    .where(eq(sessions.id, id));
+
+  return from;
 }

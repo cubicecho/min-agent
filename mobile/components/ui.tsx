@@ -323,12 +323,37 @@ export const Switch = ({
 /* ------------------------------------------------------------------------- copy */
 
 /**
- * Puts something on the clipboard and confirms it in place.
+ * The quiet little button that lives inside a message.
  *
- * Deliberately not a `Button`: it sits over a code fence and under a reply, where a control
- * the size of the ones on a form would be the loudest thing in the message. It is icon-only
- * for the same reason, and names itself to a screen reader instead.
+ * Deliberately not a `Button`: these sit over a code fence and under a reply, where a control
+ * the size of the ones on a form would be the loudest thing in the transcript. Icon-only for
+ * the same reason, and it names itself to a screen reader instead.
  */
+export function IconAction({
+  icon,
+  label,
+  onPress,
+  className,
+}: {
+  icon: IconName;
+  /** What it does, for the screen reader. "Copy reply", "Retry this reply". */
+  label: string;
+  onPress: () => void;
+  className?: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      className={cn("h-7 w-7 items-center justify-center rounded-md active:bg-accent", className)}
+    >
+      <Feather name={icon} size={13} color={colors.mutedForeground} />
+    </Pressable>
+  );
+}
+
+/** Puts something on the clipboard and confirms it in place, by becoming a tick for a moment. */
 export function CopyButton({
   text,
   label,
