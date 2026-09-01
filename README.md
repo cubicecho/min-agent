@@ -225,6 +225,20 @@ Both transports are supported. A stdio server is a command and its arguments —
 
 Tools are exposed to the model as `<server id>__<tool name>`, so ids must be unique and short.
 
+The panel is a list, and editing happens in a dialog over it — the same shape as
+[Apps](#other-apps-in-the-sidebar), for the same reason. What you come here to read is which
+servers answered and what they are offering; a row says that in one line (where it points, its
+status, how many tools), and a broken one gives its second line over to the error instead of
+repeating an address you already typed. The eight fields behind it are for the once you write
+them.
+
+There is no Save button. The mutation replaces the whole set, so the dialog is the unit of
+work: closing it has already saved, or has told you why it could not. The switch on a row is
+the exception that saves in place, because turning a server off is the one edit worth making
+without opening anything. A server that falls over while you are on another tab puts a dot on
+the MCP tab — the settings shell polls `mcpStatus` slowly on its own for that, which is all the
+dot costs.
+
 ### On-demand tool loading
 
 A tool definition is mostly JSON Schema, and eagerly sending every one of them on every request is

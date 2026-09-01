@@ -358,6 +358,22 @@ export const ErrorNote = ({ error }: { error: unknown }) =>
 export type Tab = { key: string; label: string; icon: IconName };
 
 /**
+ * A dot on a tab, for the two things a panel needs to say while you are not looking at it:
+ * something in there is broken, or something in there is typed and unsaved.
+ */
+export type TabMark = "attention" | "unsaved";
+
+const MARK_STYLE: Record<TabMark, string> = {
+  attention: "bg-destructive",
+  unsaved: "bg-muted-foreground",
+};
+
+const MARK_LABEL: Record<TabMark, string> = {
+  attention: "needs attention",
+  unsaved: "unsaved changes",
+};
+
+/**
  * A row of pills that switches which panel is under it.
  *
  * It scrolls sideways rather than wrapping or shrinking, because the set is short and a
@@ -369,10 +385,13 @@ export function Tabs({
   tabs,
   value,
   onChange,
+  marks,
 }: {
   tabs: readonly Tab[];
   value: string;
   onChange: (key: string) => void;
+  /** Keyed by tab: a dot beside the label, and a word about it for a screen reader. */
+  marks?: Partial<Record<string, TabMark>>;
 }) {
   return (
     <View className="border-b border-border bg-background">
@@ -383,12 +402,14 @@ export function Tabs({
       >
         {tabs.map((tab) => {
           const active = tab.key === value;
+          const mark = marks?.[tab.key];
           return (
             <Pressable
               key={tab.key}
               onPress={() => onChange(tab.key)}
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
+              accessibilityLabel={mark ? `${tab.label}, ${MARK_LABEL[mark]}` : tab.label}
               className={cn(
                 "h-9 flex-row items-center gap-2 rounded-lg px-3",
                 active ? "bg-muted" : "active:bg-muted",
@@ -407,6 +428,7 @@ export function Tabs({
               >
                 {tab.label}
               </Text>
+              {mark ? <View className={cn("h-1.5 w-1.5 rounded-full", MARK_STYLE[mark])} /> : null}
             </Pressable>
           );
         })}
