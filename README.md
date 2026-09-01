@@ -13,7 +13,7 @@ Everything below the quick start is reference — read it when you want that pie
 - [Layout](#layout) · [The database](#the-database) · [The API](#the-api) · [Scripts](#scripts) — finding your way around
 - [MCP servers](#mcp-servers) — wiring up tools, and how they are loaded without blowing the prompt budget
 - [Task models](#task-models) — pointing a small fast model at titling, compaction, tool preselection and follow-ups
-- [Turn statistics](#turn-statistics) — what the numbers under each reply mean
+- [Turn statistics](#turn-statistics) — what the numbers under each reply mean, and what the tokens went on
 - [Keyboard shortcuts](#keyboard-shortcuts) — what the desktop and browser builds bind
 - [The session list](#the-session-list) — grouping, renaming, deleting and finding a chat
 - [Other apps in the sidebar](#other-apps-in-the-sidebar) — framing a kanban board or a task server beside the chat
@@ -451,6 +451,35 @@ reject `stream_options` are detected once and the token-derived stats are quietl
 Cost is off by default, because a local model has none. Fill in **Settings → Agent → Pricing** (dollars per
 million input and output tokens) and the header total grows a `· $0.04`, with a finer per-turn
 figure (`$0.0055`) in the footnote.
+
+### What the tokens went on
+
+Press the readout and it opens: the totals with room around them, the window fill, and a bar
+showing what the last request was made of.
+
+    System prompt   1.2k   9%
+    Tool schemas    3.4k  26%
+    History         7.8k  59%
+    This turn         800   6%
+
+How full the window is turns out to be the less interesting half of the question — what is
+filling it is a system prompt that grew, a tool catalogue nobody calls, or the conversation
+itself, and those have very different answers. The split is of the *last* request, which is
+also the shape of the next one, so it is the number to look at before deciding to start a
+fresh chat or turn on on-demand tool loading.
+
+Nothing on the way back reports this: a completion says how many prompt tokens it read and not
+a word about where they came from. So it is measured on the way out, in characters, at the
+moment the final round trip is assembled — `splitContext` in `shared/client/usage.ts` — and
+those characters are scaled to the prompt tokens the server *did* report, with the largest
+share absorbing the rounding so the parts add up to the measured total exactly rather than to
+within a few of it. The proportions are an estimate and the total is not, which is the way
+round that matters here. When the server reports no usage at all there is nothing to be a share
+of, and the panel simply leaves the split out.
+
+*This turn* is the message you sent plus whatever the model has done about it since — the tool
+calls and their results land after it — so a turn that went off and read six files shows it
+there rather than in *History*.
 
 ### What a turn does not make you wait for
 
