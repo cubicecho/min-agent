@@ -20,7 +20,8 @@
       "mobile/*.mjs",
       "*.ts",
       "*.json",
-      "!shared/gql"
+      "!shared/gql",
+      "!.claude"
     ]
   },
   "formatter": {
