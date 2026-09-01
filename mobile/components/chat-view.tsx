@@ -2,7 +2,9 @@ import { Feather } from "@react-native-vector-icons/feather";
 import { type LivePart, liveCharCount } from "@shared/client/live.ts";
 import { messageText, turnStart } from "@shared/client/transcript.ts";
 import {
+  breakdownRows,
   contextFill,
+  costOf,
   formatDuration,
   formatRate,
   formatTokens,
@@ -11,7 +13,7 @@ import {
   usageDetail,
 } from "@shared/client/usage.ts";
 import { useLiveParts } from "@shared/client/use-live-parts.ts";
-import type { TurnStats } from "@shared/types.ts";
+import type { ContextBreakdown, LlmConfig, TokenUsage, TurnStats } from "@shared/types.ts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -28,7 +30,16 @@ import {
 import { MessageView } from "@/components/message-view.tsx";
 import { SessionsPanel, SessionsScreen } from "@/components/session-list.tsx";
 import { SettingsLink } from "@/components/settings/link.tsx";
-import { Button, Empty, ErrorNote, Muted, Select, Textarea } from "@/components/ui.tsx";
+import {
+  Button,
+  Dialog,
+  Empty,
+  ErrorNote,
+  Muted,
+  Select,
+  Separator,
+  Textarea,
+} from "@/components/ui.tsx";
 import { api, streamTurn } from "@/lib/client.ts";
 import { useWide } from "@/lib/layout.ts";
 import { colors } from "@/lib/theme.ts";
@@ -90,6 +101,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   // Scrolling follows the turn only while the reader is already at the bottom. Reading back
   // through the transcript mid-turn used to be impossible: every delta yanked the view down.
   const [pinned, setPinned] = useState(true);
+  const [tokensOpen, setTokensOpen] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const settled = useRef(false);
   const scroller = useRef<ScrollView>(null);
@@ -119,7 +131,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const shownUsage = pending ? turnStats : (session.data?.usage ?? null);
   // The window is only measured at the end of a turn, so during one we keep showing the
   // last known fill rather than blanking the meter out.
-  const fill = contextFill(turnStats ?? latestStats(session.data?.messages ?? []));
+  const recent = turnStats ?? latestStats(session.data?.messages ?? []);
+  const fill = contextFill(recent);
 
   // The drawer owns the header, so the session title is pushed up to it. The empty pane
   // leaves it alone: that screen is still "Chats".
@@ -290,12 +303,33 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View className="flex-row flex-wrap items-center justify-end gap-3 border-b border-border px-4 py-2">
-        {fill ? <ContextMeter fill={fill} /> : null}
-        {shownUsage ? (
-          <Muted>
-            {formatUsage(shownUsage, config.data?.pricing)} · {usageDetail(shownUsage)}
-          </Muted>
+        {/*
+          The readout is the way in to the breakdown: it is already the thing you look at when
+          you wonder where the window went, and a second control beside it saying the same
+          numbers would only be one more thing in a header that is mostly the model picker.
+        */}
+        {fill || shownUsage ? (
+          <Pressable
+            onPress={() => setTokensOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="What the tokens went on"
+            className="flex-row flex-wrap items-center gap-3 rounded-md px-1 py-0.5 active:bg-accent"
+          >
+            {fill ? <ContextMeter fill={fill} /> : null}
+            {shownUsage ? (
+              <Muted>
+                {formatUsage(shownUsage, config.data?.pricing)} · {usageDetail(shownUsage)}
+              </Muted>
+            ) : null}
+          </Pressable>
         ) : null}
+        <TokensDialog
+          visible={tokensOpen}
+          onClose={() => setTokensOpen(false)}
+          usage={shownUsage}
+          stats={recent}
+          pricing={config.data?.pricing}
+        />
         <View className="w-64 max-w-full">
           <Select
             value={activeModel}
@@ -450,6 +484,115 @@ function Nothing({ configured }: { configured: boolean }) {
       </Text>
       <SettingsLink tab="agent">Set up a model</SettingsLink>
     </View>
+  );
+}
+
+/**
+ * A colour per part, so the bar and the rows under it are the same thing said twice rather
+ * than a legend you have to hold in your head.
+ */
+const PART_COLOR: Record<keyof ContextBreakdown, string> = {
+  system: "bg-sky-500",
+  tools: "bg-violet-500",
+  history: "bg-primary",
+  input: "bg-emerald-500",
+};
+
+const Figure = ({ label, value }: { label: string; value: string }) => (
+  <View className="flex-row items-center justify-between">
+    <Muted>{label}</Muted>
+    <Text className="text-sm text-foreground">{value}</Text>
+  </View>
+);
+
+/**
+ * Where the tokens went.
+ *
+ * The header can only ever be one line, and the interesting question when a window is filling
+ * up is not how full it is but what is filling it — a system prompt that grew, a tool
+ * catalogue nobody calls, or the conversation itself. So the totals that used to have to fit
+ * in that line are in here with room around them, and the split is under them.
+ *
+ * The split is only ever of the last request: it is measured on the way out and scaled to the
+ * prompt tokens the server reported, so it describes the shape of what the *next* turn will
+ * send too, which is the thing worth knowing before you send it.
+ */
+function TokensDialog({
+  visible,
+  onClose,
+  usage,
+  stats,
+  pricing,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  usage: TokenUsage | null;
+  stats: TurnStats | null;
+  pricing?: LlmConfig["pricing"];
+}) {
+  const rows = stats?.breakdown ? breakdownRows(stats.breakdown) : [];
+  const fill = contextFill(stats);
+  const cost = usage ? costOf(usage, pricing) : null;
+
+  return (
+    <Dialog visible={visible} title="Tokens" onClose={onClose}>
+      {usage ? (
+        <View className="gap-1.5">
+          <Figure label="Total" value={usage.totalTokens.toLocaleString()} />
+          <Figure label="Sent" value={usage.promptTokens.toLocaleString()} />
+          <Figure label="Received" value={usage.completionTokens.toLocaleString()} />
+          {cost !== null ? <Figure label="Cost" value={`$${cost.toFixed(4)}`} /> : null}
+        </View>
+      ) : null}
+
+      {fill ? (
+        <>
+          <Separator />
+          <Figure label="Context window" value={`${fill.label} · ${fill.percent}`} />
+        </>
+      ) : null}
+
+      {rows.length ? (
+        <>
+          <Separator />
+          <View className="gap-2">
+            <Muted>What the last request was made of</Muted>
+            <View className="h-2 flex-row overflow-hidden rounded-full bg-muted">
+              {rows.map((row) => (
+                <View
+                  key={row.key}
+                  className={PART_COLOR[row.key]}
+                  style={{ width: `${row.ratio * 100}%` }}
+                />
+              ))}
+            </View>
+            {rows.map((row) => (
+              <View key={row.key} className="flex-row items-center gap-2">
+                <View className={cn("h-2 w-2 rounded-full", PART_COLOR[row.key])} />
+                <Muted className="flex-1">{row.label}</Muted>
+                <Text className="text-sm text-foreground">
+                  {formatTokens(row.tokens)}
+                  <Text className="text-muted-foreground">
+                    {"  "}
+                    {Math.round(row.ratio * 100)}%
+                  </Text>
+                </Text>
+              </View>
+            ))}
+            {/*
+              Said plainly rather than with a "~" nobody would decode: a completion reports how
+              many prompt tokens it read and nothing about where they came from, so the shares
+              are measured from the request we sent and only the total is the server's.
+            */}
+            <Muted>
+              The total is the server's; the split is measured from the request and is approximate.
+            </Muted>
+          </View>
+        </>
+      ) : null}
+
+      {!usage && !rows.length ? <Empty>Nothing measured yet — send a message.</Empty> : null}
+    </Dialog>
   );
 }
 

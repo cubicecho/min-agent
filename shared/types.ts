@@ -209,6 +209,26 @@ export const emptyUsage = (): TokenUsage => ({
 });
 
 /**
+ * What the prompt of the last round trip was made of.
+ *
+ * A completion reports `prompt_tokens` and nothing about its parts, so these are shares
+ * rather than counts: the characters of each piece of the request as it went out, scaled so
+ * they add up to the prompt tokens the server did report. That makes the proportions honest
+ * and the total exact, which is the way round that matters — the question this answers is
+ * "what is filling the window", not "what is this sentence worth".
+ */
+export interface ContextBreakdown {
+  /** The system prompt, plus the tool catalogue when tools are loaded on demand. */
+  system: number;
+  /** The tool schemas declared on the request. */
+  tools: number;
+  /** Everything already in the transcript, the compaction summary included. */
+  history: number;
+  /** The message that started this turn, and the tool traffic it has produced since. */
+  input: number;
+}
+
+/**
  * Everything measured about one user turn — a turn being the whole round trip, including any
  * tool iterations. Timings are the server's; token counts come from the model server, so any of
  * them can be missing when it does not report usage.
@@ -229,6 +249,8 @@ export interface TurnStats extends TokenUsage {
   contextTokens?: number;
   /** The model's window, when the server reports one or you set it in Config. */
   contextLimit?: number;
+  /** Where `promptTokens` went, when the server reported enough for the shares to mean anything. */
+  breakdown?: ContextBreakdown;
 }
 
 export interface ModelInfo {

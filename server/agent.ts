@@ -1,5 +1,7 @@
 import OpenAI from "openai";
+import { splitContext } from "../shared/client/usage.ts";
 import {
+  type ContextBreakdown,
   emptyUsage,
   type LlmConfig,
   type ModelInfo,
@@ -314,6 +316,9 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
 
   session.model = chosenModel;
   session.messages.push({ role: "user", content: prompt });
+  // Where this turn begins, so the request can be split into what was already there and what
+  // this question added — the tool traffic it goes on to produce lands after it too.
+  const turnStart = session.messages.length - 1;
   await addMessage(session.id, session.messages.length - 1, { role: "user", content: prompt });
   for (const name of preselected) loaded.add(name);
 
@@ -346,6 +351,9 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   let toolCalls = 0;
   let iterations = 0;
   let lastRoundTrip = emptyUsage();
+  // Measured on the way out, in characters, because nothing on the way back reports it: a
+  // completion says how many prompt tokens it read and nothing about where they came from.
+  let lastRequest: ContextBreakdown | null = null;
   // Identical call -> identical result. Replaying it from here ends the repeat loops a model
   // falls into when a tool disappoints it, without spending another MCP round trip. What is
   // stored is the in-flight promise rather than the settled string, so two identical calls
@@ -367,6 +375,23 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
           : mcp.tools(),
     );
 
+    const system = routed ? config.systemPrompt : systemPromptFor();
+    // Hoisted out of `open` because a rejected request is retried below with the same
+    // transcript, and because the split measured from it has to be the one that was sent.
+    const history = forApi(session);
+
+    // The tail of the request is this turn's own messages: the question, and whatever the
+    // model has done about it so far. `forApi` only ever replaces the head with a summary,
+    // so the last n messages of the request are the last n of the session.
+    const mine = session.messages.length - turnStart;
+    const size = (value: unknown) => JSON.stringify(value)?.length ?? 0;
+    lastRequest = {
+      system: system.length,
+      tools: declared.length ? size(declared) : 0,
+      history: size(history.slice(0, history.length - mine)),
+      input: size(history.slice(history.length - mine)),
+    };
+
     const open = (withUsage: boolean, strict: boolean) => {
       const tools = strict ? declared : relaxTools(declared);
       return client.chat.completions.create(
@@ -376,10 +401,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
           temperature: config.temperature,
           stream: true,
           ...(withUsage ? { stream_options: { include_usage: true } } : {}),
-          messages: [
-            { role: "system", content: routed ? config.systemPrompt : systemPromptFor() },
-            ...forApi(session),
-          ],
+          messages: [{ role: "system", content: system }, ...history],
           ...(tools.length ? { tools } : {}),
         },
         { signal },
@@ -486,6 +508,9 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     await updateSession(session.id, { usage: session.usage });
 
     if (!roundTripCalls.length) {
+      const breakdown = lastRequest
+        ? splitContext(lastRequest, lastRoundTrip.promptTokens)
+        : undefined;
       const stats: TurnStats = {
         ...turnUsage,
         model: chosenModel,
@@ -508,6 +533,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
           ? { contextTokens: lastRoundTrip.promptTokens + lastRoundTrip.completionTokens }
           : {}),
         ...(contextLimit ? { contextLimit } : {}),
+        ...(breakdown ? { breakdown } : {}),
       };
       assistant.stats = stats;
       if (onDemand) session.loadedTools = carryOver(carried, used);
