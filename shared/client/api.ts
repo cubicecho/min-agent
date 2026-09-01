@@ -63,8 +63,6 @@ export interface TurnOptions {
   signal?: AbortSignal;
 }
 
-export type ApiClient = ReturnType<typeof createClient>["api"];
-
 const summary = (row: SessionSummaryFragment): SessionSummary => ({
   id: row.id,
   title: row.title,

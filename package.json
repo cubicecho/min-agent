@@ -4,7 +4,7 @@
   "version": "1.2.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n codegen,server,web -c gray,cyan,magenta \"npm:dev:codegen\" \"npm:dev:server\" \"npm:mobile:web\"",
+    "dev": "concurrently -n codegen,server,app -c gray,cyan,magenta \"npm:dev:codegen\" \"npm:dev:server\" \"npm:mobile:web\"",
     "dev:codegen": "tsx scripts/codegen-watch.ts --watch",
     "dev:server": "tsx watch --env-file-if-exists=.env server/index.ts",
     "mobile": "tsx --env-file-if-exists=.env scripts/expo.ts start",

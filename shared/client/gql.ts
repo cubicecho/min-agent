@@ -137,5 +137,3 @@ export function createGqlClient({ endpoint, fetch: fetchImpl }: GqlOptions) {
 
   return { request, subscribe };
 }
-
-export type GqlClient = ReturnType<typeof createGqlClient>;
