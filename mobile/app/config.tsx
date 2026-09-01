@@ -188,7 +188,10 @@ export default function ConfigScreen() {
 
         <View className="flex-row gap-3">
           <View className="flex-1">
-            <Field label="Max tokens">
+            <Field
+              label="Max reply tokens"
+              hint="The longest single reply. Not the context window."
+            >
               <Input
                 value={String(draft.maxTokens)}
                 onChangeText={(value) => set("maxTokens", num(value))}
@@ -197,7 +200,7 @@ export default function ConfigScreen() {
             </Field>
           </View>
           <View className="flex-1">
-            <Field label="Temperature">
+            <Field label="Temperature" hint="Higher is more random. 0 is deterministic.">
               <Input
                 value={String(draft.temperature)}
                 onChangeText={(value) => set("temperature", num(value))}
@@ -209,7 +212,7 @@ export default function ConfigScreen() {
 
         <View className="flex-row gap-3">
           <View className="flex-1">
-            <Field label="Max tool loops">
+            <Field label="Max tool loops" hint="How many tool calls one turn may make.">
               <Input
                 value={String(draft.maxToolIterations)}
                 onChangeText={(value) => set("maxToolIterations", num(value))}
@@ -218,7 +221,7 @@ export default function ConfigScreen() {
             </Field>
           </View>
           <View className="flex-1">
-            <Field label="Context window" hint="0 asks the server.">
+            <Field label="Context window" hint="The whole conversation. 0 asks the server.">
               <Input
                 value={String(draft.contextLimit)}
                 onChangeText={(value) => set("contextLimit", num(value))}

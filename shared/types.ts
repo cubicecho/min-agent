@@ -16,6 +16,15 @@ export const llmConfigSchema = z.object({
   apiKey: z.string().default(""),
   /** Default model for chat. Picked from the models the server reports. */
   model: z.string().default(""),
+  /**
+   * The longest single reply, passed straight through as `max_tokens` on the completion. Not
+   * the context window — that is `contextLimit` below, and the two are easy to confuse.
+   *
+   * The ceiling is a sanity guard rather than a real limit: no model accepts an output this
+   * long, so the only thing it rejects is a context-sized number typed into the wrong box.
+   * It has to be enforced on the way in as well as out — see `assertLlmConfigPatch`, which
+   * exists because it once was not, and a value stored past it stopped the server booting.
+   */
   maxTokens: z.number().int().min(1).max(200000).default(4096),
   temperature: z.number().min(0).max(2).default(0.7),
   /** Hard stop on runaway tool loops. */
