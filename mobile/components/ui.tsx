@@ -426,3 +426,58 @@ export function Select({
     </>
   );
 }
+
+/* ----------------------------------------------------------------------- dialog */
+
+/**
+ * A modal panel with a title, a scrolling body and a row of buttons under it.
+ *
+ * The same shape as `Select`'s sheet — a scrim over the screen, a rounded panel centred on it
+ * — because there is no portal layer in React Native and a `Modal` is the only way a thing on
+ * top of everything else exists here. The panel is a `Pressable` that does nothing: a press
+ * inside it has to be swallowed, or it reaches the scrim behind and closes the dialog on every
+ * tap into a text field.
+ */
+export function Dialog({
+  visible,
+  title,
+  onClose,
+  children,
+  footer,
+}: {
+  visible: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable className="flex-1 justify-center bg-black/50 p-4" onPress={onClose}>
+        <Pressable
+          onPress={() => {}}
+          className="max-h-[88%] w-full max-w-xl self-center overflow-hidden rounded-xl border border-border bg-popover"
+        >
+          <View className="flex-row items-center gap-2 border-b border-border px-4 py-3">
+            <Text className="flex-1 text-base font-semibold text-popover-foreground">{title}</Text>
+            <Button
+              variant="ghost"
+              size="icon"
+              icon="x"
+              accessibilityLabel="Close"
+              onPress={onClose}
+            />
+          </View>
+          <ScrollView contentContainerClassName="gap-4 p-4" keyboardShouldPersistTaps="handled">
+            {children}
+          </ScrollView>
+          {footer ? (
+            <View className="flex-row items-center gap-2 border-t border-border px-4 py-3">
+              {footer}
+            </View>
+          ) : null}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
