@@ -489,6 +489,57 @@ export function Select({
   );
 }
 
+/* ------------------------------------------------------------------ icon picker */
+
+/**
+ * A short, fixed set of glyphs, laid out as the glyphs themselves.
+ *
+ * A `Select` would work — the values are a dozen strings — but it would ask you to pick an
+ * icon by reading the word "check-square" in a sheet that hides the rest of them, and then
+ * show you the word again in the closed trigger. You are choosing a picture, so the choice
+ * is the pictures: every one on screen at once, one tap, and the one you are on is the one
+ * with the outline. It wraps, so a phone gets more rows rather than a narrower grid.
+ *
+ * Each cell still carries its name as its accessibility label, which is the one place the
+ * word is the more useful of the two.
+ */
+export function IconPicker({
+  icons,
+  value,
+  onChange,
+}: {
+  icons: readonly IconName[];
+  value: string;
+  onChange: (icon: IconName) => void;
+}) {
+  return (
+    <View className="flex-row flex-wrap gap-2">
+      {icons.map((name) => {
+        const active = name === value;
+        return (
+          <Pressable
+            key={name}
+            onPress={() => onChange(name)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={name}
+            className={cn(
+              "h-11 w-11 items-center justify-center rounded-lg border",
+              active ? "border-ring bg-muted" : "border-input bg-background active:bg-muted",
+            )}
+          >
+            <Feather
+              name={name}
+              size={18}
+              color={active ? colors.foreground : colors.mutedForeground}
+            />
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 /* ----------------------------------------------------------------------- dialog */
 
 /**

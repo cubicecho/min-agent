@@ -517,7 +517,7 @@ sidebar item, and opening it puts that server's own UI in an iframe filling the 
 ```
 Label    what the sidebar row says
 URL      an absolute http/https address
-Icon     a Feather glyph, from a fixed list
+Icon     a Feather glyph, picked from a grid of the dozen on offer
 Opens    "In a frame", or "In the browser"
 ```
 
