@@ -1,12 +1,14 @@
 import { asc, eq } from "drizzle-orm";
 import {
+  type EmbedConfig,
+  embedSchema,
   type LlmConfig,
   llmConfigSchema,
   type McpServerConfig,
   mcpServerSchema,
 } from "../shared/types.ts";
 import { db } from "./db/client.ts";
-import { mcpServers, settings } from "./db/schema.ts";
+import { embeds, mcpServers, settings } from "./db/schema.ts";
 
 /** The singleton settings row. There is exactly one, created by `ensureSchema`. */
 const DEFAULT_ID = "default";
@@ -116,6 +118,40 @@ export async function saveMcpServers(list: McpServerConfig[]): Promise<McpServer
       await tx
         .insert(mcpServers)
         .values(parsed.map((server, position) => ({ ...server, position })));
+    }
+  });
+  return parsed;
+}
+
+export async function loadEmbeds(): Promise<EmbedConfig[]> {
+  const rows = await db.select().from(embeds).orderBy(asc(embeds.position));
+  return rows.map((row) => embedSchema.parse(row));
+}
+
+/**
+ * Replaces the whole set, the same way `saveMcpServers` does and for the same reason: an
+ * embed's id is the route its view lives at, so renaming one is a different destination
+ * rather than an edited row, and the screen edits the list as a list.
+ */
+export async function saveEmbeds(list: EmbedConfig[]): Promise<EmbedConfig[]> {
+  const parsed: EmbedConfig[] = [];
+  for (const embed of list) {
+    // `reasons` rather than letting the ZodError out: this one is read by whoever typed the
+    // row, in the note under the Save button, and a raw issue array is not a sentence. The
+    // row is named because the screen saves the whole list at once and the message has to
+    // say which of them the complaint is about.
+    const result = embedSchema.safeParse(embed);
+    if (!result.success) throw new Error(`${embed.id || "app"} — ${reasons(result.error.issues)}`);
+    parsed.push(result.data);
+  }
+  if (new Set(parsed.map((embed) => embed.id)).size !== parsed.length) {
+    throw new Error("duplicate embed id");
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.delete(embeds);
+    if (parsed.length) {
+      await tx.insert(embeds).values(parsed.map((embed, position) => ({ ...embed, position })));
     }
   });
   return parsed;

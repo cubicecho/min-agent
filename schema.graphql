@@ -238,6 +238,108 @@ type McpServerGroupKeys {
   enabled: Boolean
 }
 
+type Embed {
+  id: String!
+  label: String!
+  url: String!
+  icon: String!
+  mode: EmbedsModeEnum!
+  enabled: Boolean!
+  position: Int!
+
+  """
+  Opaque cursor of this row's position in the query's ordering. Pass it as `after` to resume from here. Only set on rows returned by a list query.
+  """
+  cursor: String
+}
+
+enum EmbedsModeEnum {
+  """Value: iframe"""
+  iframe
+
+  """Value: external"""
+  external
+}
+
+type EmbedAggregate {
+  count: Int!
+  avg: EmbedAvgAggregate
+  sum: EmbedSumAggregate
+  min: EmbedMinAggregate
+  max: EmbedMaxAggregate
+  countNonNull: EmbedCountNonNullAggregate
+  countDistinct: EmbedCountDistinctAggregate
+}
+
+type EmbedAvgAggregate {
+  position: Float
+}
+
+type EmbedSumAggregate {
+  position: Float
+}
+
+type EmbedMinAggregate {
+  id: String
+  label: String
+  url: String
+  icon: String
+  mode: EmbedsModeEnum
+  position: Int
+}
+
+type EmbedMaxAggregate {
+  id: String
+  label: String
+  url: String
+  icon: String
+  mode: EmbedsModeEnum
+  position: Int
+}
+
+type EmbedCountNonNullAggregate {
+  id: Int!
+  label: Int!
+  url: Int!
+  icon: Int!
+  mode: Int!
+  enabled: Int!
+  position: Int!
+}
+
+type EmbedCountDistinctAggregate {
+  id: Int!
+  label: Int!
+  url: Int!
+  icon: Int!
+  mode: Int!
+  position: Int!
+}
+
+type EmbedGroupBy {
+  group: EmbedGroupKeys!
+  count: Int!
+  avg: EmbedAvgAggregate
+  sum: EmbedSumAggregate
+  min: EmbedMinAggregate
+  max: EmbedMaxAggregate
+  countNonNull: EmbedCountNonNullAggregate
+  countDistinct: EmbedCountDistinctAggregate
+}
+
+"""
+The grouped column values of one Embed group. A column the query did not group by is null.
+"""
+type EmbedGroupKeys {
+  id: String
+  label: String
+  url: String
+  icon: String
+  mode: EmbedsModeEnum
+  position: Int
+  enabled: Boolean
+}
+
 type Session {
   id: String!
   title: String!
@@ -1226,6 +1328,156 @@ input McpServerCountDistinctHaving {
   position: AggregateNumberFilter
 }
 
+input EmbedFilters {
+  id: StringFilter
+  label: StringFilter
+  url: StringFilter
+  icon: StringFilter
+  mode: EmbedsModeEnumFilter
+  enabled: BooleanFilter
+  position: IntFilter
+
+  """At least one branch matches; ANDed with any sibling fields"""
+  OR: [EmbedFilters!]
+
+  """Every branch matches"""
+  AND: [EmbedFilters!]
+
+  """Negates the nested filters"""
+  NOT: EmbedFilters
+}
+
+input EmbedsModeEnumFilter {
+  """Equal to"""
+  eq: EmbedsModeEnum
+
+  """Not equal to"""
+  ne: EmbedsModeEnum
+
+  """Less than"""
+  lt: EmbedsModeEnum
+
+  """Less than or equal to"""
+  lte: EmbedsModeEnum
+
+  """Greater than"""
+  gt: EmbedsModeEnum
+
+  """Greater than or equal to"""
+  gte: EmbedsModeEnum
+  like: String
+  notLike: String
+  ilike: String
+  notIlike: String
+
+  """
+  Matches values starting with the given string. `%`, `_` and `\` are matched literally.
+  """
+  startsWith: String
+
+  """
+  Matches values ending with the given string. `%`, `_` and `\` are matched literally.
+  """
+  endsWith: String
+
+  """
+  Matches values containing the given string. `%`, `_` and `\` are matched literally.
+  """
+  contains: String
+
+  """Case-insensitive `startsWith`."""
+  iStartsWith: String
+
+  """Case-insensitive `endsWith`."""
+  iEndsWith: String
+
+  """Case-insensitive `contains`."""
+  iContains: String
+
+  """
+  When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own.
+  """
+  insensitive: Boolean
+
+  """Matches any one of these values (SQL `IN`)"""
+  inArray: [EmbedsModeEnum!]
+
+  """Matches none of these values (SQL `NOT IN`)"""
+  notInArray: [EmbedsModeEnum!]
+
+  """When true, matches rows where the column is NULL"""
+  isNull: Boolean
+
+  """When true, matches rows where the column is not NULL"""
+  isNotNull: Boolean
+
+  """At least one branch matches; ANDed with any sibling operators"""
+  OR: [EmbedsModeEnumFilter!]
+
+  """Every branch matches"""
+  AND: [EmbedsModeEnumFilter!]
+
+  """Negates the nested operators"""
+  NOT: EmbedsModeEnumFilter
+}
+
+input EmbedOrderBy {
+  id: InnerOrder
+  label: InnerOrder
+  url: InnerOrder
+  icon: InnerOrder
+  mode: InnerOrder
+  enabled: InnerOrder
+  position: InnerOrder
+}
+
+"""Filters Embed groups by their aggregated values"""
+input EmbedHaving {
+  """Filters groups by how many rows they contain"""
+  count: AggregateNumberFilter
+  avg: EmbedAvgHaving
+  sum: EmbedSumHaving
+  min: EmbedMinHaving
+  max: EmbedMaxHaving
+  countNonNull: EmbedCountNonNullHaving
+  countDistinct: EmbedCountDistinctHaving
+}
+
+input EmbedAvgHaving {
+  position: AggregateNumberFilter
+}
+
+input EmbedSumHaving {
+  position: AggregateNumberFilter
+}
+
+input EmbedMinHaving {
+  position: AggregateNumberFilter
+}
+
+input EmbedMaxHaving {
+  position: AggregateNumberFilter
+}
+
+input EmbedCountNonNullHaving {
+  id: AggregateNumberFilter
+  label: AggregateNumberFilter
+  url: AggregateNumberFilter
+  icon: AggregateNumberFilter
+  mode: AggregateNumberFilter
+  enabled: AggregateNumberFilter
+  position: AggregateNumberFilter
+}
+
+input EmbedCountDistinctHaving {
+  id: AggregateNumberFilter
+  label: AggregateNumberFilter
+  url: AggregateNumberFilter
+  icon: AggregateNumberFilter
+  mode: AggregateNumberFilter
+  position: AggregateNumberFilter
+}
+
 input CreateSessionInput {
   id: String
   title: String
@@ -1649,6 +1901,32 @@ type Query {
     """Filters the groups after they are aggregated."""
     having: McpServerHaving
   ): [McpServerGroupBy!]!
+  embeds(
+    offset: Int
+    limit: Int
+    orderBy: EmbedOrderBy
+    where: EmbedFilters
+
+    """
+    Keyset pagination: only return rows strictly after this cursor (a row's `cursor` field from a previous page, under the same orderBy).
+    """
+    after: String
+    distinct: [EmbedDistinctColumn!]
+  ): [Embed!]!
+  embed(offset: Int, orderBy: EmbedOrderBy, where: EmbedFilters): Embed
+  embedsAggregate(where: EmbedFilters): EmbedAggregate!
+  embedsGroupBy(
+    """
+    Columns to group by. One result row per distinct combination of their values.
+    """
+    groupBy: [EmbedGroupByColumn!]!
+
+    """Filters the rows before they are grouped."""
+    where: EmbedFilters
+
+    """Filters the groups after they are aggregated."""
+    having: EmbedHaving
+  ): [EmbedGroupBy!]!
   sessions(
     offset: Int
     limit: Int
@@ -1770,6 +2048,28 @@ enum McpServerGroupByColumn {
   position
 }
 
+"""Columns of Embed that a query can be made distinct on"""
+enum EmbedDistinctColumn {
+  id
+  label
+  url
+  icon
+  mode
+  enabled
+  position
+}
+
+"""Columns of Embed that a query can group by"""
+enum EmbedGroupByColumn {
+  id
+  label
+  url
+  icon
+  mode
+  enabled
+  position
+}
+
 """Columns of Session that a query can be made distinct on"""
 enum SessionDistinctColumn {
   id
@@ -1887,6 +2187,11 @@ type Mutation {
 
   """Tears down one server's connection and dials it again."""
   reconnectMcpServer(id: String!): [McpServerState!]!
+
+  """
+  Replaces the configured embeds. Saved whole rather than row by row: an embed's id is the route its view lives at, so a rename is a new destination and the screen edits the list as a list.
+  """
+  saveEmbeds(embeds: [EmbedInput!]!): [Embed!]!
 }
 
 input McpServerInput {
@@ -1899,6 +2204,23 @@ input McpServerInput {
   env: JSON
   url: String
   headers: JSON
+}
+
+"""
+One row of the embed list. Reads come from the generated `embeds` query.
+"""
+input EmbedInput {
+  id: String!
+  label: String
+  url: String
+  icon: String
+  mode: EmbedMode
+  enabled: Boolean
+}
+
+enum EmbedMode {
+  iframe
+  external
 }
 
 type Subscription {

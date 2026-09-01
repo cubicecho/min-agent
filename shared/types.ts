@@ -86,6 +86,86 @@ export const mcpServerSchema = z
   });
 export type McpServerConfig = z.infer<typeof mcpServerSchema>;
 
+/**
+ * The Feather glyphs an embed may pick for its sidebar row.
+ *
+ * A closed list rather than the whole icon set: the name is stored, and a name Feather does
+ * not know draws nothing at all — a nav item that is a blank space. Every one of these is a
+ * name `@react-native-vector-icons/feather` ships, checked by `IconName` where the sidebar
+ * renders them.
+ */
+export const EMBED_ICONS = [
+  "grid",
+  "columns",
+  "trello",
+  "check-square",
+  "list",
+  "calendar",
+  "clipboard",
+  "book-open",
+  "database",
+  "activity",
+  "box",
+  "globe",
+] as const;
+
+export type EmbedIcon = (typeof EMBED_ICONS)[number];
+
+/**
+ * Another web app, given a row in the sidebar.
+ *
+ * It is deliberately not *part* of min-agent: `iframe` mode frames the other server's own UI
+ * inside the app frame, and `external` hands the URL to the browser. Nothing here proxies,
+ * re-skins or talks to it — the only thing min-agent knows about a kanban board is where it
+ * lives and what to call it.
+ */
+export const embedSchema = z
+  .object({
+    /** Chosen by hand, and the route: the view lives at `/embed/<id>`. */
+    id: z
+      .string()
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,31}$/, "id must be 1-32 chars: letters, digits, _ or -"),
+    /** What the sidebar row says. Falls back to the id when empty. */
+    label: z.string().default(""),
+    url: z.string().default(""),
+    /** Falls back rather than throwing: a row written by a build with a longer list still loads. */
+    icon: z.enum(EMBED_ICONS).catch("grid").default("grid"),
+    /**
+     * `iframe` renders it inside the app, which only the web and desktop builds can do.
+     * `external` always opens it in the browser — the setting for a server that refuses to be
+     * framed, and what Android does with either mode.
+     */
+    mode: z.enum(["iframe", "external"]).default("iframe"),
+    enabled: z.boolean().default(true),
+  })
+  .superRefine((embed, ctx) => {
+    if (!embed.url) {
+      ctx.addIssue({ code: "custom", path: ["url"], message: "url is required" });
+      return;
+    }
+    // An iframe `src` and `Linking.openURL` are both places the browser is told to go, and
+    // `javascript:` in either runs in min-agent's own origin. The scheme is checked here, on
+    // the way into the database, rather than trusted at the point it is used.
+    let scheme: string;
+    try {
+      scheme = new URL(embed.url).protocol;
+    } catch {
+      ctx.addIssue({
+        code: "custom",
+        path: ["url"],
+        message: "url must be absolute, with a scheme",
+      });
+      return;
+    }
+    if (scheme !== "http:" && scheme !== "https:") {
+      ctx.addIssue({ code: "custom", path: ["url"], message: "url must be http or https" });
+    }
+  });
+export type EmbedConfig = z.infer<typeof embedSchema>;
+
+/** The row the sidebar draws: the label the user sees, resolved. */
+export const embedTitle = (embed: EmbedConfig) => embed.label.trim() || embed.id;
+
 /** One function call the model asked for, as the chat-completions API spells it. */
 export interface ToolCall {
   id: string;

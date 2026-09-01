@@ -1,18 +1,23 @@
 import { Feather } from "@react-native-vector-icons/feather";
 import { SETTINGS_STALE_TIME } from "@shared/client/queries.ts";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { DarkTheme, ThemeProvider } from "expo-router";
+import { embedTitle } from "@shared/types.ts";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { DarkTheme, ThemeProvider, useRouter } from "expo-router";
 import {
   Drawer,
   type DrawerContentComponentProps,
   DrawerContentScrollView,
+  DrawerItem,
   DrawerItemList,
 } from "expo-router/drawer";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { type ColorValue, Platform, Pressable, View } from "react-native";
+import { type ColorValue, Linking, Platform, Pressable, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "../global.css";
+import { Separator } from "@/components/ui.tsx";
+import { api } from "@/lib/client.ts";
+import { EMBEDS_STALE_TIME, visibleEmbeds } from "@/lib/embeds.ts";
 import { useWide } from "@/lib/layout.ts";
 import { loadServerUrl } from "@/lib/server-url.ts";
 import { colors } from "@/lib/theme.ts";
@@ -54,32 +59,79 @@ const SIDEBAR_WIDE = 232;
 const SIDEBAR_RAIL = 64;
 
 /**
- * The web sidebar. It differs from the stock drawer content only in the button at the top,
- * which opens the rail out to the full list and folds it back; the items themselves are
- * still react-navigation's, so the active row and the routing behave as they always did.
+ * The nav. It differs from the stock drawer content in two things: the button at the top,
+ * which opens the web rail out to the full list and folds it back, and the configured apps
+ * under the separator. The screens themselves are still react-navigation's `DrawerItemList`,
+ * so the active row and the routing behave as they always did.
+ *
+ * The apps cannot be `Drawer.Screen`s — there is no route per app, only `embed/[id]` and a
+ * list of rows in the database — so they are `DrawerItem`s driven by the query. A row in
+ * `external` mode is not a destination in this app at all and hands its URL straight to the
+ * browser rather than routing anywhere.
  */
 function Sidebar({
   expanded,
   onToggle,
   ...props
-}: DrawerContentComponentProps & { expanded: boolean; onToggle: () => void }) {
+}: DrawerContentComponentProps & { expanded: boolean; onToggle?: () => void }) {
+  const router = useRouter();
+  const embeds = useQuery({
+    queryKey: ["embeds"],
+    queryFn: api.embeds,
+    staleTime: EMBEDS_STALE_TIME,
+  });
+  const apps = visibleEmbeds(embeds.data);
+
+  // Which app the frame is currently showing, so its row is the highlighted one. The drawer
+  // has a single `embed/[id]` route, so the id has to come out of that route's params rather
+  // than from the route name the way every other item's does.
+  const route = props.state.routes[props.state.index];
+  const activeId =
+    route?.name === "embed/[id]" ? (route.params as { id?: string } | undefined)?.id : undefined;
+
+  // The rail keeps labels in the tree and only takes them out of the layout, matching what
+  // `drawerLabelStyle` does for the screens above.
+  const railed = Platform.OS === "web" && !expanded;
+
   return (
     <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 0 }}>
-      <View style={{ alignItems: expanded ? "flex-end" : "center", paddingHorizontal: 8 }}>
-        <Pressable
-          onPress={onToggle}
-          accessibilityRole="button"
-          accessibilityLabel={expanded ? "Collapse the sidebar" : "Expand the sidebar"}
-          style={{ alignItems: "center", height: 40, justifyContent: "center", width: 40 }}
-        >
-          <Feather
-            name={expanded ? "chevrons-left" : "chevrons-right"}
-            size={18}
-            color={colors.mutedForeground}
-          />
-        </Pressable>
-      </View>
+      {onToggle && (
+        <View style={{ alignItems: expanded ? "flex-end" : "center", paddingHorizontal: 8 }}>
+          <Pressable
+            onPress={onToggle}
+            accessibilityRole="button"
+            accessibilityLabel={expanded ? "Collapse the sidebar" : "Expand the sidebar"}
+            style={{ alignItems: "center", height: 40, justifyContent: "center", width: 40 }}
+          >
+            <Feather
+              name={expanded ? "chevrons-left" : "chevrons-right"}
+              size={18}
+              color={colors.mutedForeground}
+            />
+          </Pressable>
+        </View>
+      )}
       <DrawerItemList {...props} />
+      {apps.length > 0 && (
+        <>
+          <Separator className="my-2" />
+          {apps.map((embed) => (
+            <DrawerItem
+              key={embed.id}
+              label={embedTitle(embed)}
+              icon={({ color, size }) => <Feather name={embed.icon} color={color} size={size} />}
+              focused={embed.id === activeId}
+              labelStyle={railed ? { display: "none" } : undefined}
+              style={railed ? { paddingRight: 0 } : undefined}
+              onPress={() =>
+                embed.mode === "external"
+                  ? Linking.openURL(embed.url)
+                  : router.navigate(`/embed/${embed.id}`)
+              }
+            />
+          ))}
+        </>
+      )}
     </DrawerContentScrollView>
   );
 }
@@ -113,17 +165,15 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <StatusBar style="light" />
           <Drawer
-            drawerContent={
-              onWeb
-                ? (props) => (
-                    <Sidebar
-                      {...props}
-                      expanded={expanded}
-                      onToggle={() => setExpanded((open) => !open)}
-                    />
-                  )
-                : undefined
-            }
+            drawerContent={(props) => (
+              <Sidebar
+                {...props}
+                expanded={expanded}
+                // A drawer that slides over the content is never a rail, so it has nothing
+                // to fold: the button is the web sidebar's alone.
+                onToggle={onWeb ? () => setExpanded((open) => !open) : undefined}
+              />
+            )}
             screenOptions={{
               drawerType: onWeb ? "permanent" : "slide",
               // A permanent drawer cannot be opened or closed, so the header's toggle is a
@@ -145,10 +195,20 @@ export default function RootLayout() {
               name="chat/[id]"
               options={{ title: "Chat", drawerItemStyle: { display: "none" } }}
             />
+            {/*
+              One route behind every configured app. It is hidden for the same reason
+              `chat/[id]` is — the rows the sidebar draws for it are the destinations, and
+              they are built from the database rather than from the file tree.
+            */}
+            <Drawer.Screen
+              name="embed/[id]"
+              options={{ title: "App", drawerItemStyle: { display: "none" } }}
+            />
             <Drawer.Screen
               name="mcp"
               options={{ title: "MCP Servers", drawerIcon: icon("server") }}
             />
+            <Drawer.Screen name="apps" options={{ title: "Apps", drawerIcon: icon("layout") }} />
             <Drawer.Screen
               name="config"
               options={{ title: "Config", drawerIcon: icon("sliders") }}

@@ -93,6 +93,26 @@ export const mcpServers = table("mcp_servers", {
   position: integer().notNull().default(0),
 });
 
+/**
+ * Another web app with a place in the sidebar — a task board, a kanban server. min-agent does
+ * not host or proxy it; it stores where the thing lives and renders it in a frame.
+ */
+export const embeds = table("embeds", {
+  /** Chosen by hand, and the route the view lives at: `/embed/<id>`. */
+  id: text().primaryKey(),
+  label: text().notNull().default(""),
+  url: text().notNull().default(""),
+  /** A Feather glyph name from `EMBED_ICONS`. Anything else falls back to `grid` on read. */
+  icon: text().notNull().default("grid"),
+  /** `iframe` renders it inside the app; `external` always hands it to the browser. */
+  mode: text({ enum: ["iframe", "external"] })
+    .notNull()
+    .default("iframe"),
+  enabled: boolean().notNull().default(true),
+  /** The order the sidebar lists them in, which is the order they were added. */
+  position: integer().notNull().default(0),
+});
+
 export const sessions = table("sessions", {
   id: id(),
   title: text().notNull().default("New chat"),
@@ -144,7 +164,7 @@ export const messages = table(
   (table) => [index("messages_session_idx").on(table.sessionId, table.idx)],
 );
 
-export const schema = { settings, mcpServers, sessions, messages };
+export const schema = { settings, mcpServers, embeds, sessions, messages };
 
 export const relations = defineRelations(schema, (r) => ({
   sessions: {
@@ -157,6 +177,7 @@ export const relations = defineRelations(schema, (r) => ({
 
 export type SettingsRow = typeof settings.$inferSelect;
 export type McpServerRow = typeof mcpServers.$inferSelect;
+export type EmbedRow = typeof embeds.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
 export type MessageRow = typeof messages.$inferSelect;
 export type NewMessageRow = typeof messages.$inferInsert;
