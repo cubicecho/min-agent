@@ -13,14 +13,27 @@ const styles = {
   heading1: { fontSize: 18, fontWeight: "600" as const, marginBottom: 6 },
   heading2: { fontSize: 16, fontWeight: "600" as const, marginBottom: 6 },
   heading3: { fontSize: 15, fontWeight: "600" as const, marginBottom: 6 },
-  link: { color: colors.foreground, textDecorationLine: "underline" as const },
+  // `marginBottom` is zeroed for the same reason the padding below is: the library's own
+  // `link` default carries `marginBottom: -4`, which rides a link a few pixels out of its line.
+  link: {
+    color: colors.foreground,
+    textDecorationLine: "underline" as const,
+    marginBottom: 0,
+  },
   bullet_list: { marginBottom: 8 },
   ordered_list: { marginBottom: 8 },
   code_inline: {
     backgroundColor: colors.muted,
     color: colors.foreground,
     borderRadius: 4,
+    // The library merges its own defaults under these, and its `code_inline` carries
+    // `padding: 10` and a light `borderWidth: 1`. Vertical padding on a span inside a
+    // line of text makes its background taller than the line, so chips on neighbouring
+    // lines overlap; both defaults have to be turned off by name, not just written over
+    // with `paddingHorizontal`.
+    padding: 0,
     paddingHorizontal: 4,
+    borderWidth: 0,
     fontFamily: "monospace" as const,
     fontSize: 13,
   },
