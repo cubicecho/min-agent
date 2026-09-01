@@ -1,4 +1,10 @@
-import type { LlmConfig, StoredMessage, TokenUsage, TurnStats } from "../types.ts";
+import type {
+  ContextBreakdown,
+  LlmConfig,
+  StoredMessage,
+  TokenUsage,
+  TurnStats,
+} from "../types.ts";
 
 type Pricing = LlmConfig["pricing"];
 
@@ -79,4 +85,69 @@ export function latestStats(messages: StoredMessage[]): TurnStats | null {
     if (stats) return stats;
   }
   return null;
+}
+
+/* --------------------------------------------------------------- context split */
+
+/** Fixed, so the bar and the rows do not reorder themselves as a conversation grows. */
+const PARTS = ["system", "tools", "history", "input"] as const;
+
+export const BREAKDOWN_LABEL: Record<keyof ContextBreakdown, string> = {
+  system: "System prompt",
+  tools: "Tool schemas",
+  history: "History",
+  input: "This turn",
+};
+
+/**
+ * Turns the measured size of each part of a request into token shares of `promptTokens`.
+ *
+ * The parts are counted in characters, because nothing in the round trip reports anything
+ * finer: a completion says how many prompt tokens it read and not a word about where they
+ * came from. So the proportions are an estimate and the total is not — the shares are scaled
+ * to the number the server actually gave us, and the largest of them absorbs the rounding so
+ * they add up to it exactly rather than to within a few tokens of it.
+ *
+ * Undefined when there is nothing to be a share of: no measured total, or no request.
+ */
+export function splitContext(
+  chars: ContextBreakdown,
+  promptTokens: number,
+): ContextBreakdown | undefined {
+  const size = (part: keyof ContextBreakdown) => Math.max(0, chars[part]);
+  const total = PARTS.reduce((sum, part) => sum + size(part), 0);
+  if (!total || promptTokens <= 0) return undefined;
+
+  const absorber = PARTS.reduce((a, b) => (size(b) > size(a) ? b : a));
+  const out: ContextBreakdown = { system: 0, tools: 0, history: 0, input: 0 };
+  let assigned = 0;
+  for (const part of PARTS) {
+    if (part === absorber) continue;
+    out[part] = Math.round((size(part) / total) * promptTokens);
+    assigned += out[part];
+  }
+  out[absorber] = Math.max(0, promptTokens - assigned);
+  return out;
+}
+
+export type BreakdownRow = {
+  key: keyof ContextBreakdown;
+  label: string;
+  tokens: number;
+  ratio: number;
+};
+
+/**
+ * The split as rows to draw, in one order and with the empty ones left out — a session with
+ * no tools wired up has nothing to say about tool schemas.
+ */
+export function breakdownRows(breakdown: ContextBreakdown): BreakdownRow[] {
+  const total = PARTS.reduce((sum, part) => sum + Math.max(0, breakdown[part]), 0);
+  if (!total) return [];
+  return PARTS.filter((part) => breakdown[part] > 0).map((part) => ({
+    key: part,
+    label: BREAKDOWN_LABEL[part],
+    tokens: breakdown[part],
+    ratio: breakdown[part] / total,
+  }));
 }
