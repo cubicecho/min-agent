@@ -1643,10 +1643,15 @@ export type Setting = {
   maxToolIterations: Scalars['Int']['output'];
   model: Scalars['String']['output'];
   pricing: Scalars['JSON']['output'];
+  speakReplies: Scalars['Boolean']['output'];
+  sttModel: Scalars['String']['output'];
   systemPrompt: Scalars['String']['output'];
   taskModels: Scalars['JSON']['output'];
   temperature: Scalars['Float']['output'];
   toolDiscovery: SettingsToolDiscoveryEnum;
+  ttsModel: Scalars['String']['output'];
+  ttsVoice: Scalars['String']['output'];
+  voiceBaseUrl: Scalars['String']['output'];
 };
 
 export type SettingAggregate = {
@@ -1680,9 +1685,13 @@ export type SettingCountDistinctAggregate = {
   maxTokens: Scalars['Int']['output'];
   maxToolIterations: Scalars['Int']['output'];
   model: Scalars['Int']['output'];
+  sttModel: Scalars['Int']['output'];
   systemPrompt: Scalars['Int']['output'];
   temperature: Scalars['Int']['output'];
   toolDiscovery: Scalars['Int']['output'];
+  ttsModel: Scalars['Int']['output'];
+  ttsVoice: Scalars['Int']['output'];
+  voiceBaseUrl: Scalars['Int']['output'];
 };
 
 export type SettingCountDistinctHaving = {
@@ -1692,9 +1701,13 @@ export type SettingCountDistinctHaving = {
   maxTokens?: InputMaybe<AggregateNumberFilter>;
   maxToolIterations?: InputMaybe<AggregateNumberFilter>;
   model?: InputMaybe<AggregateNumberFilter>;
+  sttModel?: InputMaybe<AggregateNumberFilter>;
   systemPrompt?: InputMaybe<AggregateNumberFilter>;
   temperature?: InputMaybe<AggregateNumberFilter>;
   toolDiscovery?: InputMaybe<AggregateNumberFilter>;
+  ttsModel?: InputMaybe<AggregateNumberFilter>;
+  ttsVoice?: InputMaybe<AggregateNumberFilter>;
+  voiceBaseUrl?: InputMaybe<AggregateNumberFilter>;
 };
 
 export type SettingCountNonNullAggregate = {
@@ -1705,10 +1718,15 @@ export type SettingCountNonNullAggregate = {
   maxToolIterations: Scalars['Int']['output'];
   model: Scalars['Int']['output'];
   pricing: Scalars['Int']['output'];
+  speakReplies: Scalars['Int']['output'];
+  sttModel: Scalars['Int']['output'];
   systemPrompt: Scalars['Int']['output'];
   taskModels: Scalars['Int']['output'];
   temperature: Scalars['Int']['output'];
   toolDiscovery: Scalars['Int']['output'];
+  ttsModel: Scalars['Int']['output'];
+  ttsVoice: Scalars['Int']['output'];
+  voiceBaseUrl: Scalars['Int']['output'];
 };
 
 export type SettingCountNonNullHaving = {
@@ -1719,10 +1737,15 @@ export type SettingCountNonNullHaving = {
   maxToolIterations?: InputMaybe<AggregateNumberFilter>;
   model?: InputMaybe<AggregateNumberFilter>;
   pricing?: InputMaybe<AggregateNumberFilter>;
+  speakReplies?: InputMaybe<AggregateNumberFilter>;
+  sttModel?: InputMaybe<AggregateNumberFilter>;
   systemPrompt?: InputMaybe<AggregateNumberFilter>;
   taskModels?: InputMaybe<AggregateNumberFilter>;
   temperature?: InputMaybe<AggregateNumberFilter>;
   toolDiscovery?: InputMaybe<AggregateNumberFilter>;
+  ttsModel?: InputMaybe<AggregateNumberFilter>;
+  ttsVoice?: InputMaybe<AggregateNumberFilter>;
+  voiceBaseUrl?: InputMaybe<AggregateNumberFilter>;
 };
 
 /** Columns of Setting that a query can be made distinct on */
@@ -1734,10 +1757,15 @@ export enum SettingDistinctColumn {
   MaxToolIterations = 'maxToolIterations',
   Model = 'model',
   Pricing = 'pricing',
+  SpeakReplies = 'speakReplies',
+  SttModel = 'sttModel',
   SystemPrompt = 'systemPrompt',
   TaskModels = 'taskModels',
   Temperature = 'temperature',
-  ToolDiscovery = 'toolDiscovery'
+  ToolDiscovery = 'toolDiscovery',
+  TtsModel = 'ttsModel',
+  TtsVoice = 'ttsVoice',
+  VoiceBaseUrl = 'voiceBaseUrl'
 }
 
 export type SettingFilters = {
@@ -1754,10 +1782,15 @@ export type SettingFilters = {
   maxToolIterations?: InputMaybe<IntFilter>;
   model?: InputMaybe<StringFilter>;
   pricing?: InputMaybe<JsonFilter>;
+  speakReplies?: InputMaybe<BooleanFilter>;
+  sttModel?: InputMaybe<StringFilter>;
   systemPrompt?: InputMaybe<StringFilter>;
   taskModels?: InputMaybe<JsonFilter>;
   temperature?: InputMaybe<FloatFilter>;
   toolDiscovery?: InputMaybe<SettingsToolDiscoveryEnumFilter>;
+  ttsModel?: InputMaybe<StringFilter>;
+  ttsVoice?: InputMaybe<StringFilter>;
+  voiceBaseUrl?: InputMaybe<StringFilter>;
 };
 
 export type SettingGroupBy = {
@@ -1779,9 +1812,14 @@ export enum SettingGroupByColumn {
   MaxTokens = 'maxTokens',
   MaxToolIterations = 'maxToolIterations',
   Model = 'model',
+  SpeakReplies = 'speakReplies',
+  SttModel = 'sttModel',
   SystemPrompt = 'systemPrompt',
   Temperature = 'temperature',
-  ToolDiscovery = 'toolDiscovery'
+  ToolDiscovery = 'toolDiscovery',
+  TtsModel = 'ttsModel',
+  TtsVoice = 'ttsVoice',
+  VoiceBaseUrl = 'voiceBaseUrl'
 }
 
 /** The grouped column values of one Setting group. A column the query did not group by is null. */
@@ -1792,9 +1830,14 @@ export type SettingGroupKeys = {
   maxTokens?: Maybe<Scalars['Int']['output']>;
   maxToolIterations?: Maybe<Scalars['Int']['output']>;
   model?: Maybe<Scalars['String']['output']>;
+  speakReplies?: Maybe<Scalars['Boolean']['output']>;
+  sttModel?: Maybe<Scalars['String']['output']>;
   systemPrompt?: Maybe<Scalars['String']['output']>;
   temperature?: Maybe<Scalars['Float']['output']>;
   toolDiscovery?: Maybe<SettingsToolDiscoveryEnum>;
+  ttsModel?: Maybe<Scalars['String']['output']>;
+  ttsVoice?: Maybe<Scalars['String']['output']>;
+  voiceBaseUrl?: Maybe<Scalars['String']['output']>;
 };
 
 /** Filters Setting groups by their aggregated values */
@@ -1816,9 +1859,13 @@ export type SettingMaxAggregate = {
   maxTokens?: Maybe<Scalars['Int']['output']>;
   maxToolIterations?: Maybe<Scalars['Int']['output']>;
   model?: Maybe<Scalars['String']['output']>;
+  sttModel?: Maybe<Scalars['String']['output']>;
   systemPrompt?: Maybe<Scalars['String']['output']>;
   temperature?: Maybe<Scalars['Float']['output']>;
   toolDiscovery?: Maybe<SettingsToolDiscoveryEnum>;
+  ttsModel?: Maybe<Scalars['String']['output']>;
+  ttsVoice?: Maybe<Scalars['String']['output']>;
+  voiceBaseUrl?: Maybe<Scalars['String']['output']>;
 };
 
 export type SettingMaxHaving = {
@@ -1835,9 +1882,13 @@ export type SettingMinAggregate = {
   maxTokens?: Maybe<Scalars['Int']['output']>;
   maxToolIterations?: Maybe<Scalars['Int']['output']>;
   model?: Maybe<Scalars['String']['output']>;
+  sttModel?: Maybe<Scalars['String']['output']>;
   systemPrompt?: Maybe<Scalars['String']['output']>;
   temperature?: Maybe<Scalars['Float']['output']>;
   toolDiscovery?: Maybe<SettingsToolDiscoveryEnum>;
+  ttsModel?: Maybe<Scalars['String']['output']>;
+  ttsVoice?: Maybe<Scalars['String']['output']>;
+  voiceBaseUrl?: Maybe<Scalars['String']['output']>;
 };
 
 export type SettingMinHaving = {
@@ -1855,10 +1906,15 @@ export type SettingOrderBy = {
   maxToolIterations?: InputMaybe<InnerOrder>;
   model?: InputMaybe<InnerOrder>;
   pricing?: InputMaybe<InnerOrder>;
+  speakReplies?: InputMaybe<InnerOrder>;
+  sttModel?: InputMaybe<InnerOrder>;
   systemPrompt?: InputMaybe<InnerOrder>;
   taskModels?: InputMaybe<InnerOrder>;
   temperature?: InputMaybe<InnerOrder>;
   toolDiscovery?: InputMaybe<InnerOrder>;
+  ttsModel?: InputMaybe<InnerOrder>;
+  ttsVoice?: InputMaybe<InnerOrder>;
+  voiceBaseUrl?: InputMaybe<InnerOrder>;
 };
 
 export type SettingSumAggregate = {
@@ -2034,10 +2090,15 @@ export type UpdateSettingInput = {
   maxToolIterations?: InputMaybe<Scalars['Int']['input']>;
   model?: InputMaybe<Scalars['String']['input']>;
   pricing?: InputMaybe<Scalars['JSON']['input']>;
+  speakReplies?: InputMaybe<Scalars['Boolean']['input']>;
+  sttModel?: InputMaybe<Scalars['String']['input']>;
   systemPrompt?: InputMaybe<Scalars['String']['input']>;
   taskModels?: InputMaybe<Scalars['JSON']['input']>;
   temperature?: InputMaybe<Scalars['Float']['input']>;
   toolDiscovery?: InputMaybe<SettingsToolDiscoveryEnum>;
+  ttsModel?: InputMaybe<Scalars['String']['input']>;
+  ttsVoice?: InputMaybe<Scalars['String']['input']>;
+  voiceBaseUrl?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** One entry of a batch update of Setting: the rows `where` matches get this entry's `set` applied. */
@@ -2129,7 +2190,7 @@ export type TruncateSessionMutation = { truncateSession: number };
 export type ConfigQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type ConfigQuery = { hasApiKey: boolean, setting?: { baseUrl: string, model: string, maxTokens: number, temperature: number, maxToolIterations: number, systemPrompt: string, contextLimit: number, toolDiscovery: SettingsToolDiscoveryEnum, taskModels: unknown, pricing: unknown } | null };
+export type ConfigQuery = { hasApiKey: boolean, setting?: { baseUrl: string, model: string, maxTokens: number, temperature: number, maxToolIterations: number, systemPrompt: string, contextLimit: number, toolDiscovery: SettingsToolDiscoveryEnum, taskModels: unknown, pricing: unknown, voiceBaseUrl: string, sttModel: string, ttsModel: string, ttsVoice: string, speakReplies: boolean } | null };
 
 export type SaveConfigMutationVariables = Exact<{
   set: UpdateSettingInput;
@@ -2444,6 +2505,11 @@ export const ConfigDocument = new TypedDocumentString(`
     toolDiscovery
     taskModels
     pricing
+    voiceBaseUrl
+    sttModel
+    ttsModel
+    ttsVoice
+    speakReplies
   }
   hasApiKey
 }

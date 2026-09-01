@@ -50,8 +50,30 @@ export const llmConfigSchema = z.object({
       outputPer1M: z.number().min(0).default(0),
     })
     .default({ inputPer1M: 0, outputPer1M: 0 }),
+  /**
+   * Where the audio endpoints live, when they are not where the chat model lives. Blank means
+   * `baseUrl`, which is right when one server does both and wrong for the common case — Ollama
+   * serves chat and no audio at all, so whisper usually lives somewhere else.
+   */
+  voiceBaseUrl: z.string().default(""),
+  /** Transcription model. Blank leaves dictation to whatever the device already has. */
+  sttModel: z.string().default(""),
+  /** Speech model. Blank reads replies with the device's own voice. */
+  ttsModel: z.string().default(""),
+  /** The voice `ttsModel` speaks in. Blank takes the server's default. */
+  ttsVoice: z.string().default(""),
+  /** Read every reply aloud as it lands, rather than waiting to be asked. */
+  speakReplies: z.boolean().default(false),
 });
 export type LlmConfig = z.infer<typeof llmConfigSchema>;
+
+/**
+ * Where the audio endpoints are, which is `voiceBaseUrl` when one is set and `baseUrl`
+ * otherwise. Shared by both halves of the feature: the server dials it, and the settings
+ * panel shows which of the two is in use rather than leaving a blank box to be read as "off".
+ */
+export const voiceBaseUrlFor = (config: Pick<LlmConfig, "baseUrl" | "voiceBaseUrl">) =>
+  config.voiceBaseUrl.trim() || config.baseUrl;
 
 /** The model to use for a side task, or "" when it is not configured. */
 export const modelForTask = (config: LlmConfig, task: ModelTask) =>

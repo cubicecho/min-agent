@@ -74,6 +74,25 @@ export const settings = table("settings", {
     .$type<{ inputPer1M: number; outputPer1M: number }>()
     .notNull()
     .default({ inputPer1M: 0, outputPer1M: 0 }),
+  /**
+   * Where the audio endpoints live, when they are not where the chat model lives. Blank —
+   * the usual case — means `baseUrl`. A chat server rarely does audio too: Ollama does not,
+   * so `sttModel` on its own would be a model name sent somewhere that has never heard of
+   * `/audio/transcriptions`. The key is not doubled; `resolveApiKey` serves both.
+   */
+  voiceBaseUrl: text().notNull().default(""),
+  /**
+   * Transcription model, e.g. `whisper-1`. Blank leaves dictation to whatever the device
+   * already has — the browser's own speech recognition, or the microphone key on a phone
+   * keyboard.
+   */
+  sttModel: text().notNull().default(""),
+  /** Speech model, e.g. `tts-1`. Blank reads replies with the device's own voice. */
+  ttsModel: text().notNull().default(""),
+  /** Which voice `ttsModel` should use, e.g. `alloy`. Blank takes the server's default. */
+  ttsVoice: text().notNull().default(""),
+  /** Read every reply aloud as it lands, rather than waiting to be asked. */
+  speakReplies: boolean().notNull().default(false),
 });
 
 export const mcpServers = table("mcp_servers", {

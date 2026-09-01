@@ -1,5 +1,5 @@
 import { MODEL_TASKS } from "@shared/model-tasks.ts";
-import type { LlmConfigView } from "@shared/types.ts";
+import { type LlmConfigView, voiceBaseUrlFor } from "@shared/types.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
@@ -16,6 +16,7 @@ import {
   Screen,
   Select,
   Separator,
+  Switch,
   Textarea,
 } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
@@ -36,6 +37,11 @@ type Draft = {
   contextLimit: number;
   toolDiscovery: "eager" | "ondemand";
   taskModels: Record<string, string>;
+  voiceBaseUrl: string;
+  sttModel: string;
+  ttsModel: string;
+  ttsVoice: string;
+  speakReplies: boolean;
 };
 
 /**
@@ -316,6 +322,74 @@ export function AgentPanel() {
                 />
               </Field>
             </View>
+          </View>
+        </Card>
+
+        <Card>
+          <CardTitle>Voice</CardTitle>
+          <CardDescription>
+            Leave both models blank and voice runs on whatever the device already has: a browser
+            reads replies aloud and takes dictation, an Android build reads replies aloud and leaves
+            dictation to the microphone key on the keyboard. Naming a model moves that work to the
+            server, which is the only way the desktop and Android builds get a microphone button of
+            their own.
+          </CardDescription>
+
+          <Field
+            label="Audio base URL"
+            hint={`Where the transcription and speech endpoints are, when that is not where the chat model is — a local Ollama serves no audio. Blank uses ${voiceBaseUrlFor(draft) || "the base URL above"}. The same API key is sent either way.`}
+          >
+            <Input
+              value={draft.voiceBaseUrl}
+              onChangeText={(value) => set("voiceBaseUrl", value)}
+              placeholder={draft.baseUrl || "https://api.openai.com/v1"}
+              autoCapitalize="none"
+              autoCorrect={false}
+              inputMode="url"
+            />
+          </Field>
+
+          <View className="flex-row gap-3">
+            <View className="flex-1">
+              <Field label="Speech to text" hint="whisper-1. Blank uses the device.">
+                <Input
+                  value={draft.sttModel}
+                  onChangeText={(value) => set("sttModel", value)}
+                  placeholder="off"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </Field>
+            </View>
+            <View className="flex-1">
+              <Field label="Text to speech" hint="tts-1. Blank uses the device.">
+                <Input
+                  value={draft.ttsModel}
+                  onChangeText={(value) => set("ttsModel", value)}
+                  placeholder="off"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </Field>
+            </View>
+          </View>
+
+          <Field label="Voice" hint="Which voice the speech model uses. Blank takes its default.">
+            <Input
+              value={draft.ttsVoice}
+              onChangeText={(value) => set("ttsVoice", value)}
+              placeholder="alloy"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </Field>
+
+          <View className="flex-row items-center gap-3">
+            <Switch
+              value={draft.speakReplies}
+              onValueChange={(value) => set("speakReplies", value)}
+            />
+            <Text className="text-sm text-foreground">Read every reply aloud</Text>
           </View>
         </Card>
 

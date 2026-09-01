@@ -44,6 +44,7 @@ import { api, streamTurn } from "@/lib/client.ts";
 import { useWide } from "@/lib/layout.ts";
 import { colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
+import { useDictation, useSpeech } from "@/lib/voice.ts";
 
 /**
  * Chats, in the two arrangements the window has room for.
@@ -95,6 +96,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const [turnStats, setTurnStats] = useState<TurnStats | null>(null);
   const [startedAt, setStartedAt] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
+  /** Which stored reply is being read aloud, so its button can offer to stop instead. */
+  const [spoken, setSpoken] = useState<number | null>(null);
   // Scrolling follows the turn only while the reader is already at the bottom. Reading back
   // through the transcript mid-turn used to be impossible: every delta yanked the view down.
   const [pinned, setPinned] = useState(true);
@@ -102,6 +105,25 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const abort = useRef<AbortController | null>(null);
   const settled = useRef(false);
   const scroller = useRef<ScrollView>(null);
+  /**
+   * The answer as it arrives, kept only so that it can be read aloud when it is finished.
+   * Speaking the deltas as they land would stutter, and speaking the stored transcript
+   * instead would read the whole conversation back every turn.
+   */
+  const answer = useRef("");
+
+  const speech = useSpeech({ model: config.data?.ttsModel ?? "" });
+  const dictation = useDictation({
+    model: config.data?.sttModel ?? "",
+    // Dictation adds to the box rather than replacing it: what is already typed was typed
+    // on purpose, and speaking is often the second half of a half-written message.
+    onText: (text) => setDraft((current) => (current.trim() ? `${current.trim()} ${text}` : text)),
+  });
+
+  // Playback ends by itself, and the button on the message it belongs to has to notice.
+  useEffect(() => {
+    if (!speech.speaking) setSpoken(null);
+  }, [speech.speaking]);
 
   const activeModel = model || session.data?.model || config.data?.model || "";
   // While a turn streams, the server's count lands just before "done"; once the session is
@@ -171,6 +193,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     // A chip sends its own text; anything half-typed in the box is left alone.
     if (!text) setDraft("");
     setPending(prompt);
+    answer.current = "";
+    speech.stop();
     resetLive();
     setTurnStats(null);
     setFailure(null);
@@ -187,9 +211,13 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
         signal: abort.current.signal,
         onEvent: (event) => {
           pushLive(event);
+          if (event.type === "text_delta") answer.current += event.text;
           if (event.type === "stats") setTurnStats(event.stats);
           if (event.type === "error") setFailure(event.message);
-          if (event.type === "done") void settle(turnId);
+          if (event.type === "done") {
+            if (config.data?.speakReplies) speech.speak(answer.current);
+            void settle(turnId);
+          }
           // Chips are written to the session after the answer; read them back from there
           // rather than growing a second path for the same data.
           if (event.type === "followups")
@@ -255,6 +283,19 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const editRef = useRef(edit);
   editRef.current = edit;
   const onEdit = useCallback((index: number) => void editRef.current(index), []);
+
+  /** Pressing the button on whatever is already being read is how you stop it. */
+  function toggleSpeak(index: number, text: string) {
+    if (spoken === index && speech.speaking) {
+      speech.stop();
+      return;
+    }
+    speech.speak(text);
+    setSpoken(index);
+  }
+  const speakRef = useRef(toggleSpeak);
+  speakRef.current = toggleSpeak;
+  const onSpeak = useCallback((index: number, text: string) => speakRef.current(index, text), []);
 
   return (
     <KeyboardAvoidingView
@@ -323,6 +364,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
                 onFollowup={pending ? undefined : followup}
                 onRetry={pending ? undefined : onRetry}
                 onEdit={pending ? undefined : onEdit}
+                onSpeak={onSpeak}
+                speakingIndex={spoken}
               />
             ) : (
               <Nothing configured={Boolean(activeModel)} />
@@ -360,6 +403,14 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
         </View>
       ) : null}
 
+      {/* A microphone that would not open, or a reply that would not play. Its own line: it
+        has nothing to do with whether the turn itself worked. */}
+      {dictation.error || speech.error ? (
+        <View className="px-4 pb-2">
+          <ErrorNote error={new Error(dictation.error ?? speech.error ?? "")} />
+        </View>
+      ) : null}
+
       <View className="border-t border-border px-4 py-3">
         {/*
           Nothing below this can work without a model, and the composer cannot say where to
@@ -381,6 +432,21 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
             placeholder={activeModel ? "Send a message…" : "Pick a model to start"}
             className="min-h-11 max-h-40 flex-1 py-2.5"
           />
+          {/*
+            Absent rather than disabled where neither engine can run — a device build with no
+            transcription model configured, or Firefox. There is nothing to press it for, and
+            the phone keyboard already has a microphone key of its own.
+          */}
+          {dictation.supported ? (
+            <Button
+              variant={dictation.listening ? "destructive" : "secondary"}
+              size="icon-lg"
+              icon={dictation.listening ? "square" : "mic"}
+              busy={dictation.transcribing}
+              accessibilityLabel={dictation.listening ? "Stop dictating" : "Dictate a message"}
+              onPress={dictation.toggle}
+            />
+          ) : null}
           {pending ? (
             <Button
               variant="secondary"

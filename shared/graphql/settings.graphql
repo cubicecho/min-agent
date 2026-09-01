@@ -12,6 +12,11 @@ query Config {
     toolDiscovery
     taskModels
     pricing
+    voiceBaseUrl
+    sttModel
+    ttsModel
+    ttsVoice
+    speakReplies
   }
   hasApiKey
 }
