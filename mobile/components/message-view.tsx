@@ -1,25 +1,33 @@
 import { Feather } from "@react-native-vector-icons/feather";
 import type { LivePart } from "@shared/client/live.ts";
+import { messageText } from "@shared/client/transcript.ts";
 import { statsLine } from "@shared/client/usage.ts";
 import type { LlmConfig, StoredMessage, TurnStats } from "@shared/types.ts";
 import { memo, type ReactNode, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { MarkdownBody } from "@/components/markdown.tsx";
-import { CopyButton } from "@/components/ui.tsx";
+import { CopyButton, IconAction } from "@/components/ui.tsx";
 import { colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 
-function text(content: StoredMessage["content"]): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => ("text" in part && typeof part.text === "string" ? part.text : ""))
-    .join("");
-}
-
-function Bubble({ from, children }: { from: "user" | "assistant"; children: ReactNode }) {
+function Bubble({
+  from,
+  aside,
+  children,
+}: {
+  from: "user" | "assistant";
+  /** Sits outside the bubble, on the side the bubble is not: the edit button on a question. */
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <View className={cn("flex-row", from === "user" ? "justify-end" : "justify-start")}>
+    <View
+      className={cn(
+        "flex-row items-center gap-1",
+        from === "user" ? "justify-end" : "justify-start",
+      )}
+    >
+      {aside}
       <View
         className={cn(
           "max-w-[88%] rounded-lg px-3 py-2",
@@ -208,16 +216,22 @@ const StoredMessages = memo(function StoredMessages({
   messages,
   pricing,
   onFollowup,
+  onRetry,
+  onEdit,
 }: {
   messages: StoredMessage[];
   pricing?: LlmConfig["pricing"];
   onFollowup?: (text: string) => void;
+  /** Run the turn this message belongs to again. Absent while one is already running. */
+  onRetry?: (index: number) => void;
+  /** Put this question back in the composer, and forget everything after it. */
+  onEdit?: (index: number) => void;
 }) {
   const results = useMemo(() => {
     const map = new Map<string, { content: string; isError: boolean }>();
     for (const item of messages) {
       if (item.role === "tool") {
-        map.set(item.tool_call_id, { content: text(item.content), isError: false });
+        map.set(item.tool_call_id, { content: messageText(item), isError: false });
       }
     }
     return map;
@@ -231,14 +245,28 @@ const StoredMessages = memo(function StoredMessages({
 
         if (item.role === "user") {
           return (
-            <Bubble key={key} from="user">
-              {text(item.content)}
+            <Bubble
+              key={key}
+              from="user"
+              // Outside the bubble rather than under it: a row of its own beneath every
+              // question would double the space a short exchange takes up.
+              aside={
+                onEdit ? (
+                  <IconAction
+                    icon="edit-2"
+                    label="Edit this message"
+                    onPress={() => onEdit(index)}
+                  />
+                ) : null
+              }
+            >
+              {messageText(item)}
             </Bubble>
           );
         }
         if (item.role !== "assistant") return null;
 
-        const body = text(item.content);
+        const body = messageText(item);
         return (
           <View key={key} className="gap-2">
             {item.reasoning_content ? <Reasoning>{item.reasoning_content}</Reasoning> : null}
@@ -267,6 +295,13 @@ const StoredMessages = memo(function StoredMessages({
             {body || item.stats ? (
               <View className="flex-row items-center gap-1">
                 {body ? <CopyButton text={body} label="Copy reply" /> : null}
+                {onRetry ? (
+                  <IconAction
+                    icon="refresh-cw"
+                    label="Retry this reply"
+                    onPress={() => onRetry(index)}
+                  />
+                ) : null}
                 {item.stats ? <Stats stats={item.stats} pricing={pricing} /> : null}
               </View>
             ) : null}
@@ -306,15 +341,25 @@ export function MessageView({
   live,
   pricing,
   onFollowup,
+  onRetry,
+  onEdit,
 }: {
   messages: StoredMessage[];
   live: LivePart[];
   pricing?: LlmConfig["pricing"];
   onFollowup?: (text: string) => void;
+  onRetry?: (index: number) => void;
+  onEdit?: (index: number) => void;
 }) {
   return (
     <View className="gap-3">
-      <StoredMessages messages={messages} pricing={pricing} onFollowup={onFollowup} />
+      <StoredMessages
+        messages={messages}
+        pricing={pricing}
+        onFollowup={onFollowup}
+        onRetry={onRetry}
+        onEdit={onEdit}
+      />
       {live.map((part) => (
         <LiveRow key={part.key} part={part} />
       ))}

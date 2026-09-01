@@ -58,3 +58,10 @@ mutation DeleteSession($id: String!) {
     id
   }
 }
+
+# Retry and edit are the same move — forget from a point and go again — so they are one
+# mutation over `(session, idx)` rather than a delete per message. It answers with the number
+# of messages left, and the client reads the transcript back the way it always does.
+mutation TruncateSession($id: String!, $fromIdx: Int!) {
+  truncateSession(id: $id, fromIdx: $fromIdx)
+}

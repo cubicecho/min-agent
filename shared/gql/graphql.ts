@@ -1137,6 +1137,8 @@ export type Mutation = {
   saveMcpServers: Array<McpServerState>;
   /** Writes the API key. Separate from the settings update because the key is write-only: it is excluded from `Setting` so it can never be read back out. An empty string clears it and falls back to $OPENAI_API_KEY. */
   setApiKey: Scalars['Boolean']['output'];
+  /** Forgets every message from `fromIdx` on, and answers with how many are left. The only write that removes a message: retrying a reply and editing a question both mean going again from a point, and what follows that point is an answer to something no longer being asked. A suffix only, so `idx` stays dense. */
+  truncateSession: Scalars['Int']['output'];
   updateSession: Array<Session>;
   updateSessionSingle?: Maybe<Session>;
   /** Each entry's updated rows, in entry order. An entry whose `where` matched no rows contributes `null` in its slot; an entry that matched several contributes each of its rows. */
@@ -1185,6 +1187,12 @@ export type MutationSaveMcpServersArgs = {
 
 export type MutationSetApiKeyArgs = {
   apiKey: Scalars['String']['input'];
+};
+
+
+export type MutationTruncateSessionArgs = {
+  fromIdx: Scalars['Int']['input'];
+  id: Scalars['String']['input'];
 };
 
 
@@ -2110,6 +2118,14 @@ export type DeleteSessionMutationVariables = Exact<{
 
 export type DeleteSessionMutation = { deleteSessionSingle?: { id: string } | null };
 
+export type TruncateSessionMutationVariables = Exact<{
+  id: Scalars['String']['input'];
+  fromIdx: Scalars['Int']['input'];
+}>;
+
+
+export type TruncateSessionMutation = { truncateSession: number };
+
 export type ConfigQueryVariables = Exact<{ [key: string]: never; }>;
 
 
@@ -2410,6 +2426,11 @@ export const DeleteSessionDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<DeleteSessionMutation, DeleteSessionMutationVariables>;
+export const TruncateSessionDocument = new TypedDocumentString(`
+    mutation TruncateSession($id: String!, $fromIdx: Int!) {
+  truncateSession(id: $id, fromIdx: $fromIdx)
+}
+    `) as unknown as TypedDocumentString<TruncateSessionMutation, TruncateSessionMutationVariables>;
 export const ConfigDocument = new TypedDocumentString(`
     query Config {
   setting(where: {id: {eq: "default"}}) {

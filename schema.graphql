@@ -2189,6 +2189,11 @@ type Mutation {
   reconnectMcpServer(id: String!): [McpServerState!]!
 
   """
+  Forgets every message from `fromIdx` on, and answers with how many are left. The only write that removes a message: retrying a reply and editing a question both mean going again from a point, and what follows that point is an answer to something no longer being asked. A suffix only, so `idx` stays dense.
+  """
+  truncateSession(id: String!, fromIdx: Int!): Int!
+
+  """
   Replaces the configured embeds. Saved whole rather than row by row: an embed's id is the route its view lives at, so a rename is a new destination and the screen edits the list as a list.
   """
   saveEmbeds(embeds: [EmbedInput!]!): [Embed!]!

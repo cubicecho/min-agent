@@ -18,6 +18,7 @@ import {
   type SessionSummaryFragment,
   SessionsDocument,
   SetApiKeyDocument,
+  TruncateSessionDocument,
   TurnDocument,
   type UpdateSettingInput,
 } from "../gql/graphql.ts";
@@ -205,6 +206,15 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
     deleteSession: async (id: string) => {
       await request(DeleteSessionDocument, { id });
     },
+
+    /**
+     * Forgets the transcript from `idx` on, and answers with how many messages are left.
+     *
+     * Retrying a reply and editing a question are the same move, so they are one call: cut
+     * back to the question, then send it again — edited, or exactly as it was.
+     */
+    truncateSession: async (id: string, idx: number) =>
+      (await request(TruncateSessionDocument, { id, fromIdx: idx })).truncateSession,
 
     mcp: async () => (await request(McpStatusDocument)).mcpStatus.map(mcpState),
 

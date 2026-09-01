@@ -518,6 +518,30 @@ that owns one, so the button is its own confirmation — it turns into a tick fo
 goes back to offering. The tick waits on `setStringAsync` actually resolving true: a browser can
 refuse the clipboard, and a button that lies about it is worse than one that does nothing.
 
+### Retrying and editing
+
+A reply carries a retry button beside its copy button, and a question carries a pencil to its
+left. Both are the same move underneath — forget the transcript from a point, and go on from
+there — so both are the one `truncateSession(id, fromIdx)` mutation rather than a delete per
+message.
+
+Where the cut falls is what makes them different. Retry cuts back to the **question**, not to
+the reply it is on: a turn is the question plus every tool call and every thought the model had
+about it, and the server appends the prompt itself when it runs one, so leaving the old copy
+behind would ask it twice. Edit cuts to the question and puts its text in the composer, which
+is the same thing with the sending left to you.
+
+Only a suffix is ever removed, which is what keeps `idx` dense and lets the client go on
+treating a message's position in the array as its index. The session's own columns are derived
+again rather than decremented — `messageCount` is where the transcript now ends, and the banked
+usage is what the remaining turns add up to — because a decrement has to trust that the rows and
+the totals never drifted, and this does not. A compaction that summarised anything past the cut
+is dropped: it describes messages that no longer exist, and the next turn would send it as
+though they did.
+
+Neither button is offered while a turn is running. There is one stream and one composer, and
+rewinding underneath a reply that is still arriving has no sensible reading.
+
 ## The session list
 
 A chat is renamed in place — the title becomes a field, Enter or moving away commits, Escape
