@@ -1,7 +1,7 @@
 import { Feather } from "@react-native-vector-icons/feather";
 import { cva, type VariantProps } from "class-variance-authority";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -173,31 +173,79 @@ export const Textarea = ({
   className,
   onSubmit,
   onKeyPress,
+  grows,
+  rows,
+  value,
+  style,
   ...props
-}: InputProps & { onSubmit?: () => void }) => (
-  <TextInput
-    multiline
-    textAlignVertical="top"
-    placeholderTextColor={colors.mutedForeground}
-    onKeyPress={(event) => {
-      onKeyPress?.(event);
-      if (Platform.OS !== "web" || !onSubmit) return;
-      const key = event as unknown as WebKeyEvent;
-      // Shift+Enter still breaks the line, and an Enter that is closing an IME candidate
-      // list belongs to the IME rather than to us.
-      const composing = key.nativeEvent?.isComposing || key.nativeEvent?.keyCode === 229;
-      if (key.key !== "Enter" || key.shiftKey || composing) return;
-      // This also suppresses react-native-web's own Enter branch, which would blur the box.
-      key.preventDefault?.();
-      onSubmit();
-    }}
-    className={cn(
-      "min-h-24 rounded-lg border border-input bg-background p-3 text-sm text-foreground",
-      className,
-    )}
-    {...props}
-  />
-);
+}: InputProps & { onSubmit?: () => void; grows?: boolean; rows?: number }) => {
+  const box = useRef<TextInput>(null);
+  const [height, setHeight] = useState<number>();
+
+  /**
+   * Measures the content so the box can be exactly as tall as it, between the `min-h-*` and
+   * `max-h-*` the caller asks for — both of which still clamp, because they are a real
+   * min-height and max-height on the element.
+   *
+   * Web is measured here rather than through `onContentSizeChange`, which reports
+   * `scrollHeight` — never smaller than the box already is, so a box that had grown could
+   * never shrink back. Zeroing the height first is the only way to measure content that got
+   * shorter. `scrollHeight` covers the padding but not the border, and react-native-web sets
+   * `box-sizing: border-box`, so the border has to be added back or the text sits two pixels
+   * short of its own box and a scrollbar appears.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `value` is the trigger, not a read.
+  useEffect(() => {
+    if (!grows || Platform.OS !== "web") return;
+    const node = box.current as unknown as HTMLTextAreaElement | null;
+    if (!node) return;
+    const style = getComputedStyle(node);
+    const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    node.style.height = "0px";
+    const measured = node.scrollHeight + border;
+    node.style.height = "";
+    setHeight(measured);
+  }, [grows, value]);
+
+  return (
+    <TextInput
+      ref={box}
+      multiline
+      textAlignVertical="top"
+      // A browser defaults a `<textarea>` to two rows, and react-native-web passes no `rows`
+      // of its own unless told to — so a growing box stood two lines tall before it held
+      // anything, and no `min-h-*` could bring it down. The cast is because `rows` is one of
+      // the DOM props react-native-web accepts and React Native's types do not carry.
+      {...({ rows: grows ? 1 : rows } as TextInputProps)}
+      // Native reports a true content height and needs none of the web's care above.
+      onContentSizeChange={
+        grows && Platform.OS !== "web"
+          ? (event) => setHeight(event.nativeEvent.contentSize.height)
+          : undefined
+      }
+      style={[style, grows && height ? { height } : null]}
+      value={value}
+      placeholderTextColor={colors.mutedForeground}
+      onKeyPress={(event) => {
+        onKeyPress?.(event);
+        if (Platform.OS !== "web" || !onSubmit) return;
+        const key = event as unknown as WebKeyEvent;
+        // Shift+Enter still breaks the line, and an Enter that is closing an IME candidate
+        // list belongs to the IME rather than to us.
+        const composing = key.nativeEvent?.isComposing || key.nativeEvent?.keyCode === 229;
+        if (key.key !== "Enter" || key.shiftKey || composing) return;
+        // This also suppresses react-native-web's own Enter branch, which would blur the box.
+        key.preventDefault?.();
+        onSubmit();
+      }}
+      className={cn(
+        "min-h-24 rounded-lg border border-input bg-background p-3 text-sm text-foreground",
+        className,
+      )}
+      {...props}
+    />
+  );
+};
 
 /** A labelled control, with optional helper text under it. */
 export const Field = ({

@@ -282,11 +282,12 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
       <View className="border-t border-border px-4 py-3">
         <View className="w-full max-w-3xl flex-row items-end gap-2 self-center">
           <Textarea
+            grows
             value={draft}
             onChangeText={setDraft}
             onSubmit={() => void send()}
             placeholder={activeModel ? "Send a message…" : "Pick a model in Config first"}
-            className="min-h-11 max-h-40 flex-1"
+            className="min-h-11 max-h-40 flex-1 py-2.5"
           />
           {pending ? (
             <Button
