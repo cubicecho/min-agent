@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { View } from "react-native";
@@ -6,7 +7,8 @@ import { AppsPanel } from "@/components/settings/apps-panel.tsx";
 import { McpPanel } from "@/components/settings/mcp-panel.tsx";
 import { ServerPanel } from "@/components/settings/server-panel.tsx";
 import { SETTINGS_TABS } from "@/components/settings/tabs.ts";
-import { Tabs } from "@/components/ui.tsx";
+import { type TabMark, Tabs } from "@/components/ui.tsx";
+import { api } from "@/lib/client.ts";
 
 /**
  * Everything there is to set up, behind one nav row.
@@ -26,6 +28,15 @@ import { Tabs } from "@/components/ui.tsx";
  * it used to.
  */
 
+/**
+ * How often the shell asks after the MCP servers.
+ *
+ * Slower than the MCP panel's own poll, because this is only here to put a dot on the tab: a
+ * server that fell over while you were on Agent is worth noticing, and it is not worth a
+ * request every five seconds to notice it a little sooner.
+ */
+const MCP_WATCH = 30_000;
+
 const PANELS: Record<string, () => React.JSX.Element | null> = {
   agent: AgentPanel,
   mcp: McpPanel,
@@ -35,6 +46,15 @@ const PANELS: Record<string, () => React.JSX.Element | null> = {
 
 export default function SettingsScreen() {
   const router = useRouter();
+  // Same key the MCP panel reads, so opening that tab shows what is already in hand and the
+  // two polls share one cache entry rather than racing each other.
+  const mcp = useQuery({ queryKey: ["mcp"], queryFn: api.mcp, refetchInterval: MCP_WATCH });
+  const marks: Partial<Record<string, TabMark>> = mcp.data?.some(
+    (server) => server.status === "error",
+  )
+    ? { mcp: "attention" }
+    : {};
+
   // `/settings?tab=mcp` opens on that tab, so a link can point at one. The param only seeds
   // the state; the state is what the row reads. Were the param the source of truth, a tab
   // would be dead on any platform where the URL is not the address bar.
@@ -48,6 +68,7 @@ export default function SettingsScreen() {
       <Tabs
         tabs={SETTINGS_TABS}
         value={active}
+        marks={marks}
         onChange={(key) => {
           setActive(key);
           // Keeps the web URL honest about which panel is open, so a reload or a shared
