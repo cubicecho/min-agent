@@ -1,4 +1,5 @@
 import { Feather } from "@react-native-vector-icons/feather";
+import { matchTerms } from "@shared/client/search.ts";
 import { cva, type VariantProps } from "class-variance-authority";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
@@ -478,9 +479,16 @@ export function Tabs({
 
 export type Option = { label: string; value: string };
 
+/** Below this many options the box is just something in the way, so the sheet hides it. */
+const FILTER_AFTER = 8;
+
 /**
  * A modal list rather than a dropdown: there is no portal layer in React Native, and
  * a picker sheet is the platform-native shape on Android anyway.
+ *
+ * Past a handful of options it grows a filter box. The list that needs it is the models one:
+ * an Ollama box with forty tags in it is a sheet you scroll looking for a name you already
+ * know, and the terms match the way the session search does — every word, in any order.
  */
 export function Select({
   value,
@@ -496,13 +504,19 @@ export function Select({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const selected = options.find((option) => option.value === value);
+  const shown = matchTerms(options, query, (option) => option.label);
 
   return (
     <>
       <Pressable
         disabled={disabled}
-        onPress={() => setOpen(true)}
+        onPress={() => {
+          // A filter left over from last time would hide options nobody asked to hide.
+          setQuery("");
+          setOpen(true);
+        }}
         className={cn(
           "h-10 flex-row items-center justify-between rounded-lg border border-input bg-background px-3",
           disabled && "opacity-50",
@@ -520,11 +534,28 @@ export function Select({
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable className="flex-1 justify-center bg-black/50 p-6" onPress={() => setOpen(false)}>
           <View className="max-h-[70%] overflow-hidden rounded-xl border border-border bg-popover">
-            <ScrollView>
+            {options.length > FILTER_AFTER ? (
+              <View className="border-b border-border p-2">
+                <Input
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="Filter"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  // On a phone this would open the keyboard over the list you came to read.
+                  autoFocus={Platform.OS === "web"}
+                  className="h-9"
+                />
+              </View>
+            ) : null}
+            {/* Without this, the tap that dismisses the keyboard is the tap that picked. */}
+            <ScrollView keyboardShouldPersistTaps="handled">
               {options.length === 0 ? (
                 <Empty>Nothing to choose from.</Empty>
+              ) : shown.length === 0 ? (
+                <Empty>Nothing matches “{query}”.</Empty>
               ) : (
-                options.map((option) => (
+                shown.map((option) => (
                   <Pressable
                     key={option.value}
                     onPress={() => {

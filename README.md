@@ -530,9 +530,14 @@ react-native-web does not implement it, and the same code runs in a browser.
 
 A search box appears above the list once there are more than eight chats — below that, scanning
 is faster than the box is worth. It matches every whitespace-separated term against the title, in
-any order, so typing more always narrows. Filtering is done in the client (`matchSessions` in
-`shared/client/sessions.ts`): the list is already in memory, and a round trip per keystroke would
-be slower than the search it replaced.
+any order, so typing more always narrows.
+
+The rule is `matchTerms` in `shared/client/search.ts`, and it is the only one in the app: the
+same eight-item threshold and the same matching turn up inside `Select`, which grows a filter box
+when there is a long list behind it — the models one, on an Ollama box with forty tags on it,
+being the list that made the case. Filtering is done in the client in both places: what is being
+filtered is already in memory, and a round trip per keystroke would be slower than the scanning
+it replaced.
 
 ## Other apps in the sidebar
 
