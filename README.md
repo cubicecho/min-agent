@@ -642,9 +642,25 @@ The drawer is the app's nav, not its preferences pane.
 The panels are components rather than files under `app/` because every file under `app/` is a
 route, and only the tab bar is a destination now. `/settings?tab=mcp` opens on one — the param
 seeds the state, and the state is what the row reads, so a tab is never dead on a platform
-where the URL is not an address bar. Each panel still renders its own `Screen` and owns its own
-loading, error and save states, so switching tabs unmounts the one you left exactly the way
-navigating away from it used to.
+where the URL is not an address bar. Each panel renders its own `Screen` and owns its own
+loading, error and save states.
+
+A panel is mounted the first time you open its tab and kept from then on, hidden rather than
+unmounted. The panels hold drafts — a half-written system prompt, a server address typed but
+not tested — and unmounting one threw its draft away without ever saying so. What is kept is a
+live component and its queries, not a snapshot, so each panel is told whether it is the one on
+screen: the MCP poll runs at five seconds while you are looking at it and stops when you are
+not, and an open dialog is hidden along with its panel rather than left floating over the next
+one, because a `Modal` is drawn outside the tree it is written in.
+
+Nothing blocks you from leaving a draft behind. `components/settings/dirty.tsx` is how the tab
+row finds out: a panel reports whether it is holding something unsaved, and the tab gets a dot
+(`Tabs` takes `marks` — a muted dot for unsaved, a red one for the MCP servers that stopped
+answering, which outranks it). The Agent panel is three cards long, so its Save is pinned under
+the form instead of at the end of it, and shows up only when there is a change to keep or a
+save to confirm — with a Revert beside it, now that a draft can outlive the tab it was typed
+in. Dirty is measured against the stored row rather than set by a keystroke, so putting a value
+back the way it was is not a change.
 
 Settings is drawn by hand in `Sidebar` rather than by `DrawerItemList`, for its position alone:
 it is hidden from the generated list and repeated under a `flex: 1` spacer, which is what puts

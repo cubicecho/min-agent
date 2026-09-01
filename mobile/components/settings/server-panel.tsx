@@ -13,6 +13,7 @@ import {
 } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
 import { defaultServerUrl, serverUrl, setServerUrl } from "@/lib/server-url.ts";
+import { useReportDirty } from "./dirty.tsx";
 
 type Probe = { ok: boolean; detail: string } | null;
 
@@ -25,6 +26,9 @@ export function ServerPanel() {
   const [draft, setDraft] = useState(serverUrl());
   const [probe, setProbe] = useState<Probe>(null);
   const [busy, setBusy] = useState(false);
+
+  // The panel keeps the typed address when you switch tabs, so the tab says it is holding one.
+  useReportDirty("server", draft !== serverUrl());
 
   const save = async () => {
     setBusy(true);

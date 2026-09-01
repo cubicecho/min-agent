@@ -21,6 +21,7 @@ import {
 import { api } from "@/lib/client.ts";
 import { EMBEDS_STALE_TIME } from "@/lib/embeds.ts";
 import { colors } from "@/lib/theme.ts";
+import { useReportDirty } from "./dirty.tsx";
 
 /**
  * The other apps that get a row in the sidebar — a task server, a kanban board.
@@ -97,8 +98,14 @@ function Row({
  * The create/edit form. It owns its own draft so typing does not re-render the list behind
  * it, and it is seeded afresh every time the dialog opens — `key` on the caller — rather than
  * syncing an effect against the row it was opened on.
+ *
+ * `visible` is the panel's, not the dialog's: a `Modal` is drawn outside the tree it is
+ * written in, so hiding the panel behind another tab would leave this floating over whatever
+ * you switched to. It is hidden with the panel and kept mounted, so the half-typed row is
+ * still here when you come back.
  */
 function Editor({
+  visible,
   initial,
   existing,
   busy,
@@ -107,6 +114,7 @@ function Editor({
   onSave,
   onRemove,
 }: {
+  visible: boolean;
   initial: EmbedConfig;
   existing: boolean;
   busy: boolean;
@@ -117,6 +125,9 @@ function Editor({
 }) {
   const [draft, setDraft] = useState(initial);
   const [armed, setArmed] = useState(false);
+
+  // Puts a dot on the tab while there is a row typed and not yet saved behind it.
+  useReportDirty("apps", JSON.stringify(draft) !== JSON.stringify(initial));
 
   // A remove left primed and forgotten is a delete waiting to happen on the next stray tap.
   useEffect(() => {
@@ -129,7 +140,7 @@ function Editor({
 
   return (
     <Dialog
-      visible
+      visible={visible}
       title={existing ? embedTitle(draft) : "Add an app"}
       onClose={onCancel}
       footer={
@@ -230,7 +241,7 @@ function Editor({
   );
 }
 
-export function AppsPanel() {
+export function AppsPanel({ active = true }: { active?: boolean }) {
   const queryClient = useQueryClient();
   const embeds = useQuery({
     queryKey: ["embeds"],
@@ -313,6 +324,7 @@ export function AppsPanel() {
       {editing && (
         <Editor
           key={editing.index ?? "new"}
+          visible={active}
           initial={editing.value}
           existing={editing.index !== null}
           busy={save.isPending}

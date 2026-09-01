@@ -19,6 +19,7 @@ import {
 } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
 import { colors } from "@/lib/theme.ts";
+import { useReportDirty } from "./dirty.tsx";
 
 /**
  * The MCP servers the agent can call tools on.
@@ -149,8 +150,14 @@ function Row({
  * The status block at the top describes the running connection, not the draft: reconnecting
  * uses what is stored, so it is worth pressing before you have changed anything and honest
  * about what it did after.
+ *
+ * `visible` is the panel's, not the dialog's: a `Modal` is drawn outside the tree it is
+ * written in, so hiding the panel behind another tab would leave this floating over whatever
+ * you switched to. It is hidden with the panel and kept mounted, so the half-typed server is
+ * still here when you come back.
  */
 function Editor({
+  visible,
   initial,
   state,
   busy,
@@ -161,6 +168,7 @@ function Editor({
   onReconnect,
   reconnecting,
 }: {
+  visible: boolean;
   initial: McpServerConfig;
   state?: McpServerState;
   busy: boolean;
@@ -175,6 +183,9 @@ function Editor({
   const [armed, setArmed] = useState(false);
   const existing = Boolean(state);
 
+  // Puts a dot on the tab while there is a server typed and not yet saved behind it.
+  useReportDirty("mcp", JSON.stringify(draft) !== JSON.stringify(initial));
+
   // A remove left primed and forgotten is a delete waiting to happen on the next stray tap.
   useEffect(() => {
     if (!armed) return;
@@ -186,7 +197,7 @@ function Editor({
 
   return (
     <Dialog
-      visible
+      visible={visible}
       title={existing ? title(draft) : "Add a server"}
       onClose={onCancel}
       footer={
@@ -312,9 +323,18 @@ function Editor({
   );
 }
 
-export function McpPanel() {
+/** How often the panel asks after the servers while it is the one on screen. */
+const POLL = 5000;
+
+export function McpPanel({ active = true }: { active?: boolean }) {
   const queryClient = useQueryClient();
-  const servers = useQuery({ queryKey: ["mcp"], queryFn: api.mcp, refetchInterval: 5000 });
+  // The panel stays mounted behind another tab, so the poll is tied to being looked at. The
+  // settings shell keeps a slow one of its own running for the dot on the tab.
+  const servers = useQuery({
+    queryKey: ["mcp"],
+    queryFn: api.mcp,
+    refetchInterval: active ? POLL : false,
+  });
   const [editing, setEditing] = useState<Editing | null>(null);
 
   const save = useMutation({
@@ -395,6 +415,7 @@ export function McpPanel() {
       {editing && (
         <Editor
           key={editing.index ?? "new"}
+          visible={active}
           initial={editing.value}
           state={editing.index === null ? undefined : list[editing.index]}
           busy={save.isPending}
