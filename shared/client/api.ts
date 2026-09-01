@@ -45,7 +45,7 @@ import { createGqlClient } from "./gql.ts";
  */
 
 /** `fetch` is injected because React Native's built-in one cannot stream: Expo passes `expo/fetch`. */
-export interface ClientOptions {
+interface ClientOptions {
   /**
    * The GraphQL endpoint — `"/graphql"` in the browser, an absolute
    * `"http://host:8787/graphql"` on a device. A function is re-read on every call, so a
@@ -55,7 +55,7 @@ export interface ClientOptions {
   fetch?: typeof globalThis.fetch;
 }
 
-export interface TurnOptions {
+interface TurnOptions {
   sessionId: string;
   prompt: string;
   model?: string;

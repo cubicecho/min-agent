@@ -12,7 +12,7 @@ import type { TypedDocumentString } from "../gql/graphql.ts";
  */
 
 /** `fetch` is injected because React Native's built-in one cannot stream: Expo passes `expo/fetch`. */
-export interface GqlOptions {
+interface GqlOptions {
   /**
    * The GraphQL endpoint — `"/graphql"` in the browser, an absolute
    * `"http://host:8787/graphql"` on a device. A function is re-read on every call, so a
