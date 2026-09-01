@@ -23,9 +23,67 @@ const DEFAULT_ID = "default";
  */
 let cached: LlmConfig = llmConfigSchema.parse({});
 
+/** The same schema with every field optional: the shape of a patch rather than a whole row. */
+const llmConfigPatchSchema = llmConfigSchema.partial();
+
+/** `path: message`, for an error a person reads in a toast. */
+const reasons = (issues: { path: PropertyKey[]; message: string }[]) =>
+  issues.map((issue) => `${issue.path.join(".") || "settings"}: ${issue.message}`).join("; ");
+
+/**
+ * Checks a settings patch before it reaches the table. Throwing rolls the mutation back.
+ *
+ * The settings mutation is generated from the Drizzle schema, so its input type is the column
+ * types and nothing else — `maxTokens: Int`, any integer at all. Every bound that makes a
+ * value usable lives in `llmConfigSchema`, which was only ever consulted on the way *out*. So
+ * a number the schema rejects could be stored happily and then refuse to load, and because
+ * `refreshLlmConfig` runs before the server listens, the next restart died on boot and took
+ * with it the only screen that could have corrected the number.
+ */
+export function assertLlmConfigPatch(patch: unknown): void {
+  const result = llmConfigPatchSchema.safeParse(patch ?? {});
+  if (!result.success) throw new Error(reasons(result.error.issues));
+}
+
+/**
+ * Parses the stored row, dropping any field the schema will not accept back to its default.
+ *
+ * `assertLlmConfigPatch` should keep an unreadable value from being stored at all now, but a
+ * row written by an older build, edited by hand, or left behind by a bound that has since
+ * been tightened is still a row this has to be able to read. Losing one field to its default
+ * and saying so is recoverable; refusing to boot is not.
+ */
+export function coerceLlmConfig(row: unknown): LlmConfig {
+  const candidate: Record<string, unknown> = { ...(row as Record<string, unknown> | null) };
+
+  // Each pass drops the fields zod named and tries again. There are finitely many, and a pass
+  // that names none of them returns, so this terminates.
+  for (;;) {
+    const result = llmConfigSchema.safeParse(candidate);
+    if (result.success) return result.data;
+
+    const issues = result.error.issues;
+    const dropped = [
+      ...new Set(
+        issues
+          .map((issue) => issue.path[0])
+          .filter((key): key is string => typeof key === "string" && key in candidate),
+      ),
+    ];
+
+    if (!dropped.length) {
+      console.warn(`settings: stored row is unreadable (${reasons(issues)}); using defaults`);
+      return llmConfigSchema.parse({});
+    }
+
+    console.warn(`settings: ignoring stored ${dropped.join(", ")} (${reasons(issues)})`);
+    for (const key of dropped) delete candidate[key];
+  }
+}
+
 export async function refreshLlmConfig(): Promise<LlmConfig> {
   const [row] = await db.select().from(settings).where(eq(settings.id, DEFAULT_ID)).limit(1);
-  cached = llmConfigSchema.parse(row ?? {});
+  cached = coerceLlmConfig(row ?? {});
   return cached;
 }
 

@@ -15,6 +15,7 @@ import { GraphQLJSON } from "graphql-scalars";
 import type { McpServerConfig } from "../../shared/types.ts";
 import { listModels } from "../agent.ts";
 import {
+  assertLlmConfigPatch,
   loadLlmConfig,
   loadMcpServers,
   refreshLlmConfig,
@@ -60,6 +61,11 @@ const { entities } = buildSchema(db, {
     // be renewed by whatever wrote the row — including the generated mutation, which knows
     // nothing about the cache.
     settings: {
+      // The generated input carries the column types and no range at all, so this is where
+      // `llmConfigSchema`'s bounds are applied to a write. Throwing rolls the mutation back.
+      before: ({ args }) => {
+        assertLlmConfigPatch(args?.set);
+      },
       after: async () => {
         await refreshLlmConfig();
       },
