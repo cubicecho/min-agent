@@ -10,6 +10,7 @@ import {
   Empty,
   ErrorNote,
   Field,
+  IconPicker,
   Input,
   Loading,
   Muted,
@@ -32,8 +33,6 @@ import { colors } from "@/lib/theme.ts";
  * its view lives at, so the server takes the list rather than a patch — and the dialog is the
  * unit of work: closing it has already saved, or has told you why it could not.
  */
-
-const ICONS = EMBED_ICONS.map((icon) => ({ label: icon, value: icon }));
 
 const MODES = [
   { label: "In a frame", value: "iframe" },
@@ -189,33 +188,28 @@ function Editor({
         />
       </Field>
 
-      <View className="flex-row gap-3">
-        <View className="flex-1">
-          <Field label="Icon">
-            <Select
-              value={draft.icon}
-              options={ICONS}
-              onChange={(icon) => update({ icon: icon as EmbedConfig["icon"] })}
-            />
-          </Field>
-        </View>
-        <View className="flex-1">
-          <Field
-            label="Opens"
-            hint={
-              draft.mode === "iframe"
-                ? "Some servers refuse to be framed; switch to the browser if it comes up blank."
-                : undefined
-            }
-          >
-            <Select
-              value={draft.mode}
-              options={MODES}
-              onChange={(mode) => update({ mode: mode as EmbedConfig["mode"] })}
-            />
-          </Field>
-        </View>
-      </View>
+      <Field label="Icon" hint="What the sidebar row shows next to the label.">
+        <IconPicker
+          icons={EMBED_ICONS}
+          value={draft.icon}
+          onChange={(icon) => update({ icon: icon as EmbedConfig["icon"] })}
+        />
+      </Field>
+
+      <Field
+        label="Opens"
+        hint={
+          draft.mode === "iframe"
+            ? "Some servers refuse to be framed; switch to the browser if it comes up blank."
+            : undefined
+        }
+      >
+        <Select
+          value={draft.mode}
+          options={MODES}
+          onChange={(mode) => update({ mode: mode as EmbedConfig["mode"] })}
+        />
+      </Field>
 
       <Field label="Id" hint="The route its view lives at: /embed/<id>">
         <Input
