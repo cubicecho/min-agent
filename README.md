@@ -129,10 +129,17 @@ release still goes out to GHCR. A run of chores publishes nothing.
 - `plugins/` — the Vite plugin that keeps `schema.graphql` and `shared/gql/` generated.
 - `server/graphql/` — `schema.ts` builds most of the API off the Drizzle schema and adds the
   hand-written fields (`health`, `models`, `mcpStatus`, `setApiKey`, the `turn` subscription).
-- `shared/types.ts` — zod schemas shared by both sides; the domain types live here.
+- `shared/types.ts` — the domain types, plus the zod schemas the server range-checks a write
+  with on the way into the database. Both front ends import the types; the validators do not
+  leave the server.
+- `shared/model-tasks.ts` — the `MODEL_TASKS` table both Config screens render. Its own module
+  precisely so that reading one constant does not pull zod into a front end.
+- `shared/messages.ts` — the single translation between a stored row and a chat-completions
+  message, so the server and both clients spell it the same way.
 - `shared/graphql/` — the `.graphql` documents both front ends send. `shared/gql/graphql.ts` is
   generated from them and is not edited by hand.
-- `shared/client/` — everything both front ends run: `api.ts` (the typed client and the SSE
+- `shared/client/` — everything both front ends run: `gql.ts` (the transport — a query is a
+  string and a `fetch`, with no client library), `api.ts` (the typed client and the SSE
   reader), `live.ts` (streaming-event reducer), `use-live-parts.ts` (frame-batched streaming
   state), `sessions.ts` (the session-list filter), `queries.ts` (how long settings stay fresh),
   `usage.ts` (token/cost formatting).
@@ -317,8 +324,8 @@ servers disagree about which they take. On Qwen3.6-27B that is the difference be
 thinking for an empty string and 1.0s for `Python Subprocess Pipe Hang`. A server that rejects
 the unknown fields gets one retry without them, and min-agent stops sending them after that.
 
-Adding a task is a line in `MODEL_TASKS` in `shared/types.ts` and a read of `modelForTask()`;
-`taskModels` is an open record, so no config migration is needed.
+Adding a task is a line in `MODEL_TASKS` in `shared/model-tasks.ts` and a read of
+`modelForTask()`; `taskModels` is an open record, so no config migration is needed.
 
 ### Follow-up suggestions
 
@@ -450,11 +457,28 @@ Scrolling follows the turn only while you are already within 100px of the bottom
 through the transcript mid-turn used to be impossible — every delta yanked the view down; now
 leaving the bottom unpins it and a *Jump to latest* button brings it back.
 
+### Highlighting a code fence
+
+`src/components/highlight.ts` is a small rehype plugin standing in for `rehype-highlight`. It is
+the same lowlight underneath and emits the same `hljs-*` classes against the same stylesheet, so
+nothing downstream can tell the difference.
+
+The difference is what it does *not* import. `rehype-highlight` names lowlight's `common`
+registry as its default in its own module, so all 37 of those languages are in the graph whether
+or not the `languages` option overrides them — 159 kB for languages a reply here has never
+contained. Registering a dozen directly (`bash`, `css`, `go`, `json`, `markdown`, `python`,
+`rust`, `shell`, `sql`, `typescript`, `xml`, `yaml`) is 40 kB, and covers more than it lists:
+`typescript` handles JavaScript, `xml` handles HTML.
+
+A fence tagged with something outside that set is not an error — it falls through to
+auto-detection against the registered languages, and failing that comes out unhighlighted.
+Inline code is left alone; only a `<code>` directly inside a `<pre>` is touched.
+
 ## The session list
 
 Both front ends render the same rail from the same pieces. A chat is renamed in place — the
-title becomes a field, Enter or moving away commits, Escape puts it back — which is the whole
-of the `PATCH /sessions/:id` route the server has always had and nothing had ever called.
+title becomes a field, Enter or moving away commits, Escape puts it back — over the
+`updateSessionSingle` mutation the generated CRUD hands us for free.
 
 Delete asks first. The bin primes the row into a `Delete?` button rather than opening a dialog:
 one tap to arm, one to confirm, and the row disarms itself after five seconds so a forgotten
@@ -486,9 +510,16 @@ npm run mobile:android      # straight to a connected device or emulator
 
 ### What is actually shared
 
-`shared/types.ts` and `shared/client/` are used byte-identically by both clients — the zod
-contract, the API calls, the SSE stream reader, the live-event reducer and the usage/cost
-formatting. That is the part worth sharing and the part that would otherwise drift.
+`shared/client/`, `shared/types.ts`, `shared/messages.ts` and `shared/model-tasks.ts` are used
+byte-identically by both clients — the transport, the API calls, the SSE stream reader, the
+live-event reducer, the row/message translation and the usage/cost formatting. That is the part
+worth sharing and the part that would otherwise drift.
+
+What is *not* shared is the validation. `shared/types.ts` carries zod schemas as well as types,
+but only the server imports them: a client that parses the settings row on arrival is defending
+against a case GraphQL has already ruled out, and it costs 82 kB to do it. Take the types from
+there with `import type`, never a bare `import { type A }` — under `verbatimModuleSyntax` the
+latter is still a value import, and one of them puts the whole validator back in the bundle.
 
 The *widgets* are not shared, and cannot be: `src/components/ui/` is shadcn, which is Radix, which
 is the DOM. `mobile/components/ui.tsx` is a React Native re-implementation that keeps the same
@@ -498,7 +529,7 @@ either side even though nothing under them is.
 ### A sidebar, not a hamburger
 
 On the web the nav is always on screen. `drawerType: "permanent"` pins it beside the
-content and takes the toggle out of the header, so the five destinations are a sidebar the
+content and takes the toggle out of the header, so the four destinations are a sidebar the
 way they are in the Vite app rather than something you have to remember is there. Above
 768px it shows icons and labels; below, it narrows to a 64px rail of icons that the button
 at its top opens back out — a nav you can still see and click at 400px wide, which a
@@ -666,6 +697,7 @@ server address is kept — is unreliable on a file origin.
 | `npm run lint`    | `biome check .`                     |
 | `npm run format`  | `biome check --write .`             |
 | `npm test`        | `vitest run`                        |
+| `npm run test:watch` | `vitest` in watch mode           |
 | `npm run mobile`  | Expo dev server for the `mobile/` app |
 | `npm run mobile:android` | build and run on Android      |
 | `npm run mobile:web` | Expo in the browser              |
