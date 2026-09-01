@@ -4,3 +4,5 @@ dist
 .expo
 .env
 *.local
+# Claude Code's scratch space, including the git worktrees it opens inside the repo.
+.claude
