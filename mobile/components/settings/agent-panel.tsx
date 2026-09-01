@@ -50,7 +50,7 @@ const seed = ({ hasApiKey: _, ...row }: LlmConfigView): Draft => ({ ...row, apiK
 /** Keeps a partly-typed number field usable — an empty box reads as 0, not NaN. */
 const num = (value: string) => (value.trim() === "" ? 0 : (Number(value) ?? 0));
 
-export default function ConfigScreen() {
+export function AgentPanel() {
   const queryClient = useQueryClient();
   const config = useQuery({ queryKey: ["config"], queryFn: api.config });
   const models = useQuery({ queryKey: ["models"], queryFn: api.models });

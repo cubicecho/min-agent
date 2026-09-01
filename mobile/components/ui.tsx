@@ -353,6 +353,68 @@ export const ErrorNote = ({ error }: { error: unknown }) =>
     </View>
   ) : null;
 
+/* ----------------------------------------------------------------------- tabs */
+
+export type Tab = { key: string; label: string; icon: IconName };
+
+/**
+ * A row of pills that switches which panel is under it.
+ *
+ * It scrolls sideways rather than wrapping or shrinking, because the set is short and a
+ * phone is narrow: the tabs past the edge are reachable by dragging, and the ones on screen
+ * stay legible. The pressed pill carries the `muted` fill the drawer's active row does, so
+ * "where am I" reads the same whether the nav is the sidebar or this.
+ */
+export function Tabs({
+  tabs,
+  value,
+  onChange,
+}: {
+  tabs: Tab[];
+  value: string;
+  onChange: (key: string) => void;
+}) {
+  return (
+    <View className="border-b border-border bg-background">
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerClassName="gap-1 p-2"
+      >
+        {tabs.map((tab) => {
+          const active = tab.key === value;
+          return (
+            <Pressable
+              key={tab.key}
+              onPress={() => onChange(tab.key)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              className={cn(
+                "h-9 flex-row items-center gap-2 rounded-lg px-3",
+                active ? "bg-muted" : "active:bg-muted",
+              )}
+            >
+              <Feather
+                name={tab.icon}
+                size={15}
+                color={active ? colors.foreground : colors.mutedForeground}
+              />
+              <Text
+                className={cn(
+                  "text-sm font-medium",
+                  active ? "text-foreground" : "text-muted-foreground",
+                )}
+              >
+                {tab.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
 /* ----------------------------------------------------------------------- select */
 
 export type Option = { label: string; value: string };
