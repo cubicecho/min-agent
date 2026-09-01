@@ -1,0 +1,12 @@
+{
+  "job-1": [
+    {
+      "jobId": "job-1",
+      "startedAt": "2026-09-01T14:00:00.008Z",
+      "finishedAt": "2026-09-01T14:00:02.880Z",
+      "status": "error",
+      "error": "Connection error.",
+      "sessionId": "8598faf4-ae5f-4c7e-bdbf-f80962b85595"
+    }
+  ]
+}

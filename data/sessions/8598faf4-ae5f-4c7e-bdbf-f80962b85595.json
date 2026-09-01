@@ -1,0 +1,15 @@
+{
+  "id": "8598faf4-ae5f-4c7e-bdbf-f80962b85595",
+  "title": "Job 1 — 9/1/2026, 9:00:00 AM (failed)",
+  "createdAt": "2026-09-01T14:00:00.007Z",
+  "updatedAt": "2026-09-01T14:00:02.878Z",
+  "source": "cron",
+  "cronJobId": "job-1",
+  "messages": [
+    {
+      "role": "user",
+      "content": "tell me a joke"
+    }
+  ],
+  "model": "Qwen3.6-35B-A3B-MTP-GGUF"
+}

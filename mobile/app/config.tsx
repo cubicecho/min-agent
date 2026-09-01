@@ -1,4 +1,5 @@
 import { MODEL_TASKS } from "@shared/model-tasks.ts";
+import type { LlmConfigView } from "@shared/types.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
@@ -36,6 +37,16 @@ type Draft = {
   taskModels: Record<string, string>;
 };
 
+/**
+ * A form seeded from the stored row.
+ *
+ * `hasApiKey` is derived rather than a column, and a spread carries it in without TypeScript
+ * noticing — excess-property checks do not apply to one, which is how it used to reach the
+ * settings mutation and be rejected. The key box starts empty because leaving it that way is
+ * what keeps the stored key.
+ */
+const seed = ({ hasApiKey: _, ...row }: LlmConfigView): Draft => ({ ...row, apiKey: "" });
+
 /** Keeps a partly-typed number field usable — an empty box reads as 0, not NaN. */
 const num = (value: string) => (value.trim() === "" ? 0 : (Number(value) ?? 0));
 
@@ -47,21 +58,21 @@ export default function ConfigScreen() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    // `hasApiKey` is derived, not a column, and a spread carries it in without TypeScript
-    // noticing — excess-property checks do not apply to one. `saveConfig` drops it too; this
-    // is the same fence at the other end, so the draft is only ever what a save may write.
-    if (config.data && !draft) {
-      const { hasApiKey: _, ...row } = config.data;
-      setDraft({ ...row, apiKey: "" });
-    }
+    if (config.data && !draft) setDraft(seed(config.data));
   }, [config.data, draft]);
 
   const save = useMutation({
     mutationFn: (value: Draft) => api.saveConfig(value),
-    onSuccess: async () => {
+    onSuccess: async (fresh) => {
       setSaved(true);
-      setDraft(null);
-      await queryClient.invalidateQueries({ queryKey: ["config"] });
+      // Seeded from what the save read back, rather than cleared and left to a refetch.
+      // Clearing it re-runs the effect above on the very next render — while the cache still
+      // holds the pre-save row, because the refetch cannot have landed yet — so the form
+      // filled itself back in with the values that had just been replaced and never looked
+      // again. A successful save looked like one that had been ignored.
+      queryClient.setQueryData(["config"], fresh);
+      setDraft(seed(fresh));
+      // The model list belongs to the provider, so a new base URL or key means a new list.
       await queryClient.invalidateQueries({ queryKey: ["models"] });
     },
   });
@@ -74,8 +85,11 @@ export default function ConfigScreen() {
     );
   if (!draft) return <Loading />;
 
-  const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
+  const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
+    // The note below the button describes the last save, and an edit outdates it.
+    setSaved(false);
     setDraft((current) => (current ? { ...current, [key]: value } : current));
+  };
 
   const modelOptions = (models.data?.models ?? []).map((entry) => ({
     label: entry.id,

@@ -57,16 +57,23 @@ export default function McpScreen() {
 
   const save = useMutation({
     mutationFn: (value: McpServerConfig[]) => api.saveMcp(value),
-    onSuccess: async () => {
+    onSuccess: (fresh) => {
       setSaved(true);
-      setDraft(null);
-      await queryClient.invalidateQueries({ queryKey: ["mcp"] });
+      // Seeded from what the save read back, rather than cleared and left to a refetch.
+      // Clearing it re-runs the effect above on the very next render — while the cache still
+      // holds the pre-save list, because the refetch cannot have landed yet — so the form
+      // filled itself back in with the servers that had just been replaced and never looked
+      // again. A successful save looked like one that had been ignored.
+      queryClient.setQueryData(["mcp"], fresh);
+      setDraft(fresh.map((state) => state.config));
     },
   });
 
   const reconnect = useMutation({
     mutationFn: api.reconnectMcp,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["mcp"] }),
+    // The mutation answers with the same states the query reads, so there is nothing to go
+    // and fetch. Only the statuses can have moved; the draft is the configs and stays put.
+    onSuccess: (fresh) => queryClient.setQueryData(["mcp"], fresh),
   });
 
   if (servers.isError)
@@ -77,12 +84,14 @@ export default function McpScreen() {
     );
   if (!draft) return <Loading />;
 
+  // The note below the button describes the last save, and any edit outdates it.
+  const edit = (next: McpServerConfig[]) => {
+    setSaved(false);
+    setDraft(next);
+  };
+
   const update = (index: number, patch: Partial<McpServerConfig>) =>
-    setDraft((current) =>
-      current
-        ? current.map((server, i) => (i === index ? { ...server, ...patch } : server))
-        : current,
-    );
+    edit(draft.map((server, i) => (i === index ? { ...server, ...patch } : server)));
 
   return (
     <Screen>
@@ -123,7 +132,7 @@ export default function McpScreen() {
                 variant="ghost"
                 size="icon"
                 icon="trash-2"
-                onPress={() => setDraft(draft.filter((_, i) => i !== index))}
+                onPress={() => edit(draft.filter((_, i) => i !== index))}
               />
             </View>
 
@@ -212,7 +221,7 @@ export default function McpScreen() {
         <Button
           variant="outline"
           icon="plus"
-          onPress={() => setDraft([...draft, blank(draft.length + 1)])}
+          onPress={() => edit([...draft, blank(draft.length + 1)])}
         >
           Add server
         </Button>

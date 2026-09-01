@@ -1,0 +1,40 @@
+# Connection to any OpenAI-compatible server.
+# Ollama: http://localhost:11434/v1   LM Studio: http://localhost:1234/v1
+# OpenAI: https://api.openai.com/v1   OpenRouter: https://openrouter.ai/api/v1
+baseUrl: http://localhost:11434/v1
+# Leave empty to fall back to $OPENAI_API_KEY.
+apiKey: ""
+# Chosen from the models the server reports. Set it in the Config tab.
+model: ""
+maxTokens: 4096
+temperature: 0.7
+maxToolIterations: 20
+# Context window used for the "used / total" meter. 0 asks the server, which not
+# every OpenAI-compatible server answers — set it by hand if the meter stays hidden.
+contextLimit: 0
+# eager    — send every MCP tool definition on every request (simple, costly)
+# ondemand — send a name-only catalogue and let the model load the schemas it needs
+toolDiscovery: ondemand
+# Side jobs that need not run on the chat model — set a small fast one instead.
+# title      — names a new chat from its opening message. Empty truncates the first line.
+# compaction — folds the oldest messages into a summary once a session fills 75% of
+#              the context window. Empty lets long sessions eventually overflow.
+# toolSelect — picks the tools a request needs before the turn starts, so on-demand
+#              loading costs no round trip. Only used when toolDiscovery is ondemand.
+# runSummary — condenses each cron run's answer to one line for the run history.
+# followups  — proposes the next few questions under a reply, as clickable chips.
+taskModels:
+  title: ""
+  compaction: ""
+  toolSelect: ""
+  runSummary: ""
+  followups: ""
+systemPrompt: |
+  You are min-agent, a concise and careful assistant.
+  You have access to tools from the user's connected MCP servers.
+  Prefer doing the work over describing it. Say plainly when something failed.
+# Only used for the cost readout next to the token count. Leave at 0 for local
+# models and min-agent shows tokens alone.
+pricing:
+  inputPer1M: 0
+  outputPer1M: 0
