@@ -370,7 +370,7 @@ export function Tabs({
   value,
   onChange,
 }: {
-  tabs: Tab[];
+  tabs: readonly Tab[];
   value: string;
   onChange: (key: string) => void;
 }) {

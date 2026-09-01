@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import { useEffect } from "react";
 import { Linking, Platform, View } from "react-native";
+import { SettingsLink } from "@/components/settings/link.tsx";
 import {
   Button,
   Card,
@@ -74,7 +75,10 @@ export default function EmbedScreen() {
   if (!embed)
     return (
       <Screen>
-        <Empty>No app is configured under “{id}”. Add one on the Apps screen.</Empty>
+        <Empty>No app is configured under “{id}”.</Empty>
+        <View className="flex-row justify-center">
+          <SettingsLink tab="apps">Add one</SettingsLink>
+        </View>
       </Screen>
     );
 

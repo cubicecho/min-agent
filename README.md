@@ -636,6 +636,12 @@ Settings is drawn by hand in `Sidebar` rather than by `DrawerItemList`, for its 
 it is hidden from the generated list and repeated under a `flex: 1` spacer, which is what puts
 it at the bottom of a drawer whose content container grows to fill the height.
 
+The tab table is `mobile/components/settings/tabs.ts`, and `SettingsLink` reads it too. Every
+place that reports something unconfigured — no model picked, the server not answering, an
+`/embed/<id>` with no row behind it — carries a button to the panel that fixes it rather than
+naming a screen and leaving you to find it. That is also the guard against the copy going
+stale: a link names its panel the way the tab does, from the one table.
+
 ### One chats view, two widths
 
 A wide screen has room for the conversation on the left and the session list in a panel on the

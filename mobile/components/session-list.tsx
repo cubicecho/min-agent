@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
+import { SettingsLink } from "@/components/settings/link.tsx";
 import { Button, Empty, ErrorNote, Input, Loading, Muted, Screen } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
 import { cn } from "@/lib/utils.ts";
@@ -213,7 +214,10 @@ export function SessionsPanel({ activeId }: { activeId?: string }) {
         {sessions.isError ? (
           <View className="gap-2 px-1">
             <ErrorNote error={sessions.error} />
-            <Muted>Check the server address under Settings.</Muted>
+            <Muted>The server did not answer. Check the address it is being asked for.</Muted>
+            <View className="flex-row">
+              <SettingsLink tab="server" />
+            </View>
           </View>
         ) : null}
 
@@ -265,10 +269,14 @@ export function SessionsScreen() {
 
       <ErrorNote error={sessions.error} />
       {sessions.isError && (
-        <Muted>
-          Check the server address under Settings — nothing else on this screen will work until it
-          resolves.
-        </Muted>
+        <>
+          <Muted>
+            The server did not answer, and nothing else on this screen will work until it does.
+          </Muted>
+          <View className="flex-row">
+            <SettingsLink tab="server" />
+          </View>
+        </>
       )}
 
       <Search list={list} />
