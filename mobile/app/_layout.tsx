@@ -215,7 +215,7 @@ export default function RootLayout() {
             />
             <Drawer.Screen
               name="settings"
-              options={{ title: "Settings", drawerIcon: icon("wifi") }}
+              options={{ title: "Settings", drawerIcon: icon("settings") }}
             />
           </Drawer>
         </QueryClientProvider>
