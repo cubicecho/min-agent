@@ -218,14 +218,28 @@ export const emptyUsage = (): TokenUsage => ({
  * "what is filling the window", not "what is this sentence worth".
  */
 export interface ContextBreakdown {
-  /** The system prompt, plus the tool catalogue when tools are loaded on demand. */
+  /** The configured system prompt on its own. */
   system: number;
   /** The tool schemas declared on the request. */
   tools: number;
-  /** Everything already in the transcript, the compaction summary included. */
+  /** Earlier turns: what was said, tool traffic excluded. */
   history: number;
-  /** The message that started this turn, and the tool traffic it has produced since. */
+  /** This turn's question and the model's own words about it. */
   input: number;
+  /*
+   * The four above are the split as it was first measured, and turns from before this
+   * comment carry only those; the rest are optional because a stored `stats` cannot grow a
+   * field after the fact. A reader treats a missing one as nothing, which is what it was
+   * when the whole of it was counted under `system`, `history` or `input`.
+   */
+  /** The name-only tool list appended to the system prompt when tools load on demand. */
+  catalogue?: number;
+  /** The folded head of a long transcript, as the summary that replaced it. */
+  summary?: number;
+  /** Earlier turns' tool calls and their results — usually the largest thing in a transcript. */
+  historyTools?: number;
+  /** What this turn's own tool calls asked for and got back. */
+  inputTools?: number;
 }
 
 /**

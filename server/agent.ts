@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { splitContext } from "../shared/client/usage.ts";
+import { measureRequest, splitContext } from "../shared/client/usage.ts";
 import {
   type ContextBreakdown,
   emptyUsage,
@@ -383,14 +383,14 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     // The tail of the request is this turn's own messages: the question, and whatever the
     // model has done about it so far. `forApi` only ever replaces the head with a summary,
     // so the last n messages of the request are the last n of the session.
-    const mine = session.messages.length - turnStart;
-    const size = (value: unknown) => JSON.stringify(value)?.length ?? 0;
-    lastRequest = {
-      system: system.length,
-      tools: declared.length ? size(declared) : 0,
-      history: size(history.slice(0, history.length - mine)),
-      input: size(history.slice(history.length - mine)),
-    };
+    lastRequest = measureRequest({
+      system,
+      systemPrompt: config.systemPrompt,
+      tools: declared,
+      history,
+      turnLength: session.messages.length - turnStart,
+      compacted: Boolean(session.compaction),
+    });
 
     const open = (withUsage: boolean, strict: boolean) => {
       const tools = strict ? declared : relaxTools(declared);

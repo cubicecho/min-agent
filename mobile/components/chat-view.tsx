@@ -557,10 +557,17 @@ function Nothing({ configured }: { configured: boolean }) {
  * than a legend you have to hold in your head.
  */
 const PART_COLOR: Record<keyof ContextBreakdown, string> = {
+  // The standing overhead is the blue end, the conversation the warm one, this turn green,
+  // and a part's tool traffic is the lighter shade of whatever it belongs to — so the bar
+  // reads as three things before it reads as eight.
   system: "bg-sky-500",
+  catalogue: "bg-sky-300",
   tools: "bg-violet-500",
+  summary: "bg-amber-500",
   history: "bg-primary",
+  historyTools: "bg-amber-300",
   input: "bg-emerald-500",
+  inputTools: "bg-emerald-300",
 };
 
 const Figure = ({ label, value }: { label: string; value: string }) => (

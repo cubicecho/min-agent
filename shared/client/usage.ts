@@ -89,15 +89,103 @@ export function latestStats(messages: StoredMessage[]): TurnStats | null {
 
 /* --------------------------------------------------------------- context split */
 
-/** Fixed, so the bar and the rows do not reorder themselves as a conversation grows. */
-const PARTS = ["system", "tools", "history", "input"] as const;
+/**
+ * Fixed, so the bar and the rows do not reorder themselves as a conversation grows, and in
+ * the order the request is built: the standing overhead first, then what the conversation has
+ * put on top of it, then this turn.
+ */
+const PARTS = [
+  "system",
+  "catalogue",
+  "tools",
+  "summary",
+  "history",
+  "historyTools",
+  "input",
+  "inputTools",
+] as const;
 
 export const BREAKDOWN_LABEL: Record<keyof ContextBreakdown, string> = {
   system: "System prompt",
+  catalogue: "Tool catalogue",
   tools: "Tool schemas",
-  history: "History",
+  summary: "Compacted summary",
+  history: "Earlier messages",
+  historyTools: "Earlier tool traffic",
   input: "This turn",
+  inputTools: "This turn's tools",
 };
+
+/** A missing part is nothing: turns measured before a part existed simply have no share of it. */
+const partSize = (breakdown: ContextBreakdown, part: keyof ContextBreakdown) =>
+  Math.max(0, breakdown[part] ?? 0);
+
+/**
+ * Just enough of a message to size it: what it is, and what part of it is tool traffic.
+ * Structural rather than the API's own union, so the server can hand its outgoing messages
+ * here and a test can hand it two object literals.
+ */
+export interface SizableMessage {
+  role: string;
+  tool_calls?: unknown;
+}
+
+const size = (value: unknown) => JSON.stringify(value)?.length ?? 0;
+
+/**
+ * How much of one message is tool traffic.
+ *
+ * A result is tool traffic entire — it is what a tool returned and nothing else. An assistant
+ * message that asks for tools is not: it usually says something first, so only the calls it
+ * made are counted here and the words it said stay with the conversation.
+ */
+const toolSize = (message: SizableMessage): number => {
+  if (message.role === "tool") return size(message);
+  const calls = message.tool_calls;
+  return Array.isArray(calls) && calls.length ? size(calls) : 0;
+};
+
+/**
+ * What a request was made of, in characters.
+ *
+ * Characters because nothing on the way back reports anything finer, and measured on the way
+ * out because by the time a completion answers, the request is a single number. The parts are
+ * cut the way the questions are asked: a system prompt that grew, a catalogue of tools nobody
+ * calls, schemas for tools that are loaded, a summary standing in for the folded head of the
+ * transcript, what has been said, and — usually the answer — what the tools handed back.
+ *
+ * `system` is what was actually sent and `systemPrompt` the configured part of it, so the
+ * catalogue is the difference rather than a second thing to keep in step. `turnLength` is how
+ * many of the trailing messages belong to this turn; `compacted` says whether the first is a
+ * summary standing in for the messages it replaced.
+ */
+export function measureRequest(request: {
+  system: string;
+  systemPrompt: string;
+  tools: unknown[];
+  history: SizableMessage[];
+  turnLength: number;
+  compacted?: boolean;
+}): ContextBreakdown {
+  const { history, turnLength } = request;
+  const cut = Math.max(0, history.length - Math.max(0, turnLength));
+  const earlier = history.slice(request.compacted ? 1 : 0, cut);
+  const mine = history.slice(cut);
+  const sum = (messages: SizableMessage[], of: (message: SizableMessage) => number) =>
+    messages.reduce((total, message) => total + of(message), 0);
+  const said = (message: SizableMessage) => Math.max(0, size(message) - toolSize(message));
+
+  return {
+    system: request.systemPrompt.length,
+    catalogue: Math.max(0, request.system.length - request.systemPrompt.length),
+    tools: request.tools.length ? size(request.tools) : 0,
+    summary: request.compacted && history.length ? size(history[0]) : 0,
+    history: sum(earlier, said),
+    historyTools: sum(earlier, toolSize),
+    input: sum(mine, said),
+    inputTools: sum(mine, toolSize),
+  };
+}
 
 /**
  * Turns the measured size of each part of a request into token shares of `promptTokens`.
@@ -114,11 +202,13 @@ export function splitContext(
   chars: ContextBreakdown,
   promptTokens: number,
 ): ContextBreakdown | undefined {
-  const size = (part: keyof ContextBreakdown) => Math.max(0, chars[part]);
+  const size = (part: keyof ContextBreakdown) => partSize(chars, part);
   const total = PARTS.reduce((sum, part) => sum + size(part), 0);
   if (!total || promptTokens <= 0) return undefined;
 
   const absorber = PARTS.reduce((a, b) => (size(b) > size(a) ? b : a));
+  // Only the four the type insists on are named here; the loop below writes every part,
+  // the absorber included, so none is left as the zero this starts them at.
   const out: ContextBreakdown = { system: 0, tools: 0, history: 0, input: 0 };
   let assigned = 0;
   for (const part of PARTS) {
@@ -142,12 +232,12 @@ export type BreakdownRow = {
  * no tools wired up has nothing to say about tool schemas.
  */
 export function breakdownRows(breakdown: ContextBreakdown): BreakdownRow[] {
-  const total = PARTS.reduce((sum, part) => sum + Math.max(0, breakdown[part]), 0);
+  const total = PARTS.reduce((sum, part) => sum + partSize(breakdown, part), 0);
   if (!total) return [];
-  return PARTS.filter((part) => breakdown[part] > 0).map((part) => ({
+  return PARTS.filter((part) => partSize(breakdown, part) > 0).map((part) => ({
     key: part,
     label: BREAKDOWN_LABEL[part],
-    tokens: breakdown[part],
-    ratio: breakdown[part] / total,
+    tokens: partSize(breakdown, part),
+    ratio: partSize(breakdown, part) / total,
   }));
 }
