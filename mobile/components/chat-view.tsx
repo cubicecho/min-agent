@@ -15,7 +15,7 @@ import {
 import { useLiveParts } from "@shared/client/use-live-parts.ts";
 import type { ContextBreakdown, LlmConfig, TokenUsage, TurnStats } from "@shared/types.ts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigation, useRouter } from "expo-router";
+import { useFocusEffect, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -103,14 +103,13 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const [pinned, setPinned] = useState(true);
   const [tokensOpen, setTokensOpen] = useState(false);
   const abort = useRef<AbortController | null>(null);
-  const settled = useRef(false);
   const scroller = useRef<ScrollView>(null);
   /**
-   * The answer as it arrives, kept only so that it can be read aloud when it is finished.
-   * Speaking the deltas as they land would stutter, and speaking the stored transcript
-   * instead would read the whole conversation back every turn.
+   * Which chat is on screen, readable from a stream's callbacks — they outlive the render
+   * that started them, and a turn must only paint the conversation it belongs to.
    */
-  const answer = useRef("");
+  const showing = useRef(activeId);
+  showing.current = activeId;
 
   const speech = useSpeech({ model: config.data?.ttsModel ?? "" });
   const dictation = useDictation({
@@ -133,6 +132,45 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   // last known fill rather than blanking the meter out.
   const recent = turnStats ?? latestStats(session.data?.messages ?? []);
   const fill = contextFill(recent);
+
+  /**
+   * Everything in this pane belongs to one conversation, and the pane outlives them: the
+   * drawer keeps `/chat/[id]` mounted and swaps its parameter, so without this the last
+   * chat's turn — its live parts, its unsent question, its stats, its half-typed reply —
+   * would still be on screen under the next one. A turn already streaming is left alone to
+   * finish into the session that asked for it; `send` below drops what arrives for a chat
+   * that is no longer the one being looked at.
+   *
+   * The route rather than `activeId` is the trigger, because the empty pane holds its own
+   * new chat before the address bar knows about it, and that is not a switch.
+   */
+  const route = useRef(sessionId);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: changing chat is the trigger.
+  useEffect(() => {
+    if (route.current === sessionId) return;
+    route.current = sessionId;
+    setCreated(null);
+    setPending(null);
+    setDraft("");
+    setModel("");
+    setTurnStats(null);
+    setStartedAt(0);
+    setFailure(null);
+    setSpoken(null);
+    setPinned(true);
+    resetLive();
+    speech.stop();
+  }, [sessionId]);
+
+  /**
+   * The empty pane keeps the chat it started until the reader leaves it — the turn is
+   * streaming into this component, and the route only catches up when it ends. Leaving is
+   * what makes it somebody else's: coming back here is asking for an empty pane, not for
+   * the conversation that was started from it last time.
+   */
+  useFocusEffect(
+    useCallback(() => () => setCreated((held) => (sessionId ? held : null)), [sessionId]),
+  );
 
   // The drawer owns the header, so the session title is pushed up to it. The empty pane
   // leaves it alone: that screen is still "Chats".
@@ -164,13 +202,15 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
    *
    * This runs on `done` rather than on the end of the stream: a turn that writes follow-up
    * chips holds its stream open for the second they take, and the composer has no business
-   * waiting on that. Whichever arrives first settles the turn; the other is a no-op.
+   * waiting on that. Whichever arrives first settles the turn; `finish` makes the other a
+   * no-op, and a turn whose chat has since been left off screen only refreshes what it wrote.
    */
   async function settle(id: string) {
-    if (settled.current) return;
-    settled.current = true;
     await queryClient.invalidateQueries({ queryKey: ["session", id] });
     await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    // Tidying up after a turn the reader has already walked away from would take the
+    // composer and the transcript of whatever they walked to with it.
+    if (showing.current !== id) return;
     setPending(null);
     resetLive();
     setTurnStats(null);
@@ -189,46 +229,71 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     }
     // Narrowed once, for the callbacks below: `id` is a `let` and they outlive this line.
     const turnId = id;
+    // A chat started from the empty pane is adopted here rather than a render later: the
+    // first tokens can land before `created` has been through React, and they belong on
+    // screen, not to the chat this pane was showing a moment ago.
+    showing.current = turnId;
 
     // A chip sends its own text; anything half-typed in the box is left alone.
     if (!text) setDraft("");
     setPending(prompt);
-    answer.current = "";
     speech.stop();
     resetLive();
     setTurnStats(null);
     setFailure(null);
     setStartedAt(Date.now());
     setPinned(true);
-    settled.current = false;
-    abort.current = new AbortController();
+    /**
+     * The answer as it arrives, kept only so that it can be read aloud when it is finished.
+     * Speaking the deltas as they land would stutter, and speaking the stored transcript
+     * instead would read the whole conversation back every turn.
+     */
+    let answer = "";
+    // Both ends of the stream settle it and either may be first; per turn, so a turn left
+    // running in another chat cannot settle this one on its behalf.
+    let settled = false;
+    const finish = async () => {
+      if (settled) return;
+      settled = true;
+      await settle(turnId);
+    };
+    // Held rather than read back off the ref: sending in another chat replaces what `abort`
+    // points at, and this turn still has to know whether it was this one that was stopped.
+    const controller = new AbortController();
+    abort.current = controller;
 
     try {
       await streamTurn({
         sessionId: turnId,
         prompt,
         model: activeModel,
-        signal: abort.current.signal,
+        signal: controller.signal,
         onEvent: (event) => {
-          pushLive(event);
-          if (event.type === "text_delta") answer.current += event.text;
-          if (event.type === "stats") setTurnStats(event.stats);
-          if (event.type === "error") setFailure(event.message);
-          if (event.type === "done") {
-            if (config.data?.speakReplies) speech.speak(answer.current);
-            void settle(turnId);
-          }
           // Chips are written to the session after the answer; read them back from there
-          // rather than growing a second path for the same data.
+          // rather than growing a second path for the same data. This one holds whether or
+          // not the chat is still on screen: it is the stored transcript being refreshed.
           if (event.type === "followups")
             void queryClient.invalidateQueries({ queryKey: ["session", turnId] });
+          if (event.type === "done") {
+            if (config.data?.speakReplies && showing.current === turnId) speech.speak(answer);
+            void finish();
+          }
+          if (event.type === "text_delta") answer += event.text;
+          // The rest is this turn showing itself, and it only has somewhere to show while
+          // the chat it belongs to is the one being looked at. Switch away and the turn
+          // runs on into its own session; the transcript has it when you come back.
+          if (showing.current !== turnId) return;
+          pushLive(event);
+          if (event.type === "stats") setTurnStats(event.stats);
+          if (event.type === "error") setFailure(event.message);
         },
       });
     } catch (error) {
-      if (!abort.current.signal.aborted) setFailure((error as Error).message);
+      if (!controller.signal.aborted && showing.current === turnId)
+        setFailure((error as Error).message);
     } finally {
-      abort.current = null;
-      await settle(turnId);
+      if (abort.current === controller) abort.current = null;
+      await finish();
       // The address bar catches up once the stream is really over, not on `done`: moving the
       // route mid-stream would remount this pane and drop what is still arriving on it.
       if (!sessionId) router.replace(`/chat/${turnId}`);
