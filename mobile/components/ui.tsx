@@ -1,7 +1,7 @@
 import { Feather } from "@react-native-vector-icons/feather";
 import { matchTerms } from "@shared/client/search.ts";
 import { cva, type VariantProps } from "class-variance-authority";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -141,7 +141,12 @@ export const CardDescription = ({ children }: { children: ReactNode }) => (
 
 /* ------------------------------------------------------------------------ input */
 
-export type InputProps = TextInputProps & { className?: string };
+export type InputProps = TextInputProps & {
+  className?: string;
+  // React 19 passes `ref` through as an ordinary prop; React Native's types predate that,
+  // so the one caller that needs the node — ⌘K, focusing the session search — needs it named.
+  ref?: Ref<TextInput>;
+};
 
 export const Input = ({ className, ...props }: InputProps) => (
   <TextInput

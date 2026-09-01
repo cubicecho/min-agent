@@ -2,10 +2,11 @@ import { matchSessions, SEARCH_AFTER } from "@shared/client/sessions.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, type TextInput, View } from "react-native";
 import { SettingsLink } from "@/components/settings/link.tsx";
 import { Button, Empty, ErrorNote, Input, Loading, Muted, Screen } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
+import { useShortcut } from "@/lib/keys.ts";
 import { cn } from "@/lib/utils.ts";
 
 const when = (iso: string) =>
@@ -15,6 +16,24 @@ const when = (iso: string) =>
     hour: "2-digit",
     minute: "2-digit",
   });
+
+/**
+ * Starting a chat and landing in it.
+ *
+ * Split out of the list because the sidebar starts one too — it is what ⌘N is bound to, and
+ * the sidebar is the one thing on screen on every route — and both want the list behind them
+ * to be right by the time the new chat is open.
+ */
+export function useNewChat(go: (id: string) => void) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: api.createSession,
+    onSuccess: async (created) => {
+      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      go(created.id);
+    },
+  });
+}
 
 /** How long a primed delete stays primed before it forgets it was ever asked. */
 const ARMED_FOR = 5000;
@@ -46,13 +65,7 @@ function useSessions(activeId?: string) {
   const go = (id: string) =>
     activeId ? router.replace(`/chat/${id}`) : router.push(`/chat/${id}`);
 
-  const newChat = useMutation({
-    mutationFn: api.createSession,
-    onSuccess: async (created) => {
-      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      go(created.id);
-    },
-  });
+  const newChat = useNewChat(go);
 
   const rename = useMutation({
     mutationFn: ({ id, title }: { id: string; title: string }) => api.renameSession(id, title),
@@ -121,6 +134,15 @@ function RenameField({
     onCommit(value);
   };
 
+  // Escape puts the old title back. `commit` ignores a title it was already holding, so
+  // giving up is finishing with what we started with rather than a path of its own.
+  useShortcut("escape", () => {
+    setValue(initial);
+    if (done.current) return;
+    done.current = true;
+    onCommit(initial);
+  });
+
   return (
     <Input
       autoFocus
@@ -136,9 +158,15 @@ function RenameField({
 
 /** Search box, shown only once there are enough chats for scanning to be the slower way. */
 function Search({ list, className }: { list: List; className?: string }) {
+  const box = useRef<TextInput>(null);
+  // Bound only while the box is on screen: a key that does nothing is worse than one that
+  // was never taken, because the browser's own ⌘K would have done something.
+  useShortcut("mod+k", list.all.length > SEARCH_AFTER ? () => box.current?.focus() : undefined);
+
   if (list.all.length <= SEARCH_AFTER) return null;
   return (
     <Input
+      ref={box}
       value={list.query}
       onChangeText={list.setQuery}
       placeholder="Search sessions"
