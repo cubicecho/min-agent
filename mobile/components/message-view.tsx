@@ -5,6 +5,7 @@ import type { LlmConfig, StoredMessage, TurnStats } from "@shared/types.ts";
 import { memo, type ReactNode, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { MarkdownBody } from "@/components/markdown.tsx";
+import { CopyButton } from "@/components/ui.tsx";
 import { colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 
@@ -259,7 +260,16 @@ const StoredMessages = memo(function StoredMessages({
                 />
               );
             })}
-            {item.stats ? <Stats stats={item.stats} pricing={pricing} /> : null}
+            {/*
+              The markdown as the model wrote it, not as it is drawn: what you want out of a
+              reply is usually the thing you are about to paste somewhere that renders it.
+            */}
+            {body || item.stats ? (
+              <View className="flex-row items-center gap-1">
+                {body ? <CopyButton text={body} label="Copy reply" /> : null}
+                {item.stats ? <Stats stats={item.stats} pricing={pricing} /> : null}
+              </View>
+            ) : null}
             {item.followups?.length && onFollowup && index === messages.length - 1 ? (
               <Followups items={item.followups} onPick={onFollowup} />
             ) : null}

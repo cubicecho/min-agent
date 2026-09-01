@@ -15,6 +15,7 @@ import {
   type TextInputProps,
   View,
 } from "react-native";
+import { useCopy } from "@/lib/copy.ts";
 import { type Colors, colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 
@@ -317,6 +318,42 @@ export const Switch = ({
   value: boolean;
   onValueChange: (next: boolean) => void;
 }) => <RNSwitch value={value} onValueChange={onValueChange} />;
+
+/* ------------------------------------------------------------------------- copy */
+
+/**
+ * Puts something on the clipboard and confirms it in place.
+ *
+ * Deliberately not a `Button`: it sits over a code fence and under a reply, where a control
+ * the size of the ones on a form would be the loudest thing in the message. It is icon-only
+ * for the same reason, and names itself to a screen reader instead.
+ */
+export function CopyButton({
+  text,
+  label,
+  className,
+}: {
+  text: string;
+  /** What is being copied, for the screen reader. "Copy code", "Copy reply". */
+  label: string;
+  className?: string;
+}) {
+  const { copied, copy } = useCopy();
+  return (
+    <Pressable
+      onPress={() => void copy(text)}
+      accessibilityRole="button"
+      accessibilityLabel={copied ? "Copied" : label}
+      className={cn("h-7 w-7 items-center justify-center rounded-md active:bg-accent", className)}
+    >
+      <Feather
+        name={copied ? "check" : "copy"}
+        size={13}
+        color={copied ? colors.foreground : colors.mutedForeground}
+      />
+    </Pressable>
+  );
+}
 
 /* ----------------------------------------------------------------------- screens */
 

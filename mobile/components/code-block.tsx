@@ -1,5 +1,6 @@
 import { tokenizeLines } from "@shared/highlight.ts";
 import { ScrollView, Text, View } from "react-native";
+import { CopyButton } from "@/components/ui.tsx";
 import { colors, syntax } from "@/lib/theme.ts";
 
 /**
@@ -57,6 +58,16 @@ export function CodeBlock({ code, language }: { code: string; language?: string 
           ))}
         </View>
       </ScrollView>
+
+      {/*
+        Over the code rather than beside it: the fence is as wide as the message and the rows
+        inside it scroll sideways, so there is no column to put this in that a long line will
+        not run under. It sits outside the scroller so it stays put, and carries the block's
+        own background so it masks the line it covers instead of tangling with it.
+      */}
+      <View style={{ position: "absolute", right: 4, top: 4 }}>
+        <CopyButton text={code} label="Copy code" className="bg-muted" />
+      </View>
     </View>
   );
 }
