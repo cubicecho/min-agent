@@ -1,4 +1,9 @@
-import { matchSessions, SEARCH_AFTER } from "@shared/client/sessions.ts";
+import {
+  type Bucket,
+  groupSessions,
+  matchSessions,
+  SEARCH_AFTER,
+} from "@shared/client/sessions.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -9,13 +14,22 @@ import { api } from "@/lib/client.ts";
 import { useShortcut } from "@/lib/keys.ts";
 import { cn } from "@/lib/utils.ts";
 
-const when = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+/**
+ * How much of a timestamp a row still has to say, given the heading it is already under.
+ *
+ * Under Today the date is the heading, so the row only needs a clock; a week back the
+ * weekday is what you actually remember; older than that the time of day means nothing and
+ * the date is the whole of it.
+ */
+const when = (iso: string, bucket: Bucket) =>
+  new Date(iso).toLocaleString(
+    undefined,
+    bucket === "earlier"
+      ? { month: "short", day: "numeric" }
+      : bucket === "week"
+        ? { weekday: "short", hour: "2-digit", minute: "2-digit" }
+        : { hour: "2-digit", minute: "2-digit" },
+  );
 
 /**
  * Starting a chat and landing in it.
@@ -87,6 +101,7 @@ function useSessions(activeId?: string) {
   });
 
   const all = sessions.data ?? [];
+  const shown = matchSessions(all, query);
 
   function commit(id: string, title: string) {
     setEditing(null);
@@ -98,7 +113,8 @@ function useSessions(activeId?: string) {
   return {
     sessions,
     all,
-    shown: matchSessions(all, query),
+    shown,
+    groups: groupSessions(shown),
     query,
     setQuery,
     editing,
@@ -207,6 +223,16 @@ function RowActions({ list, id, title }: { list: List; id: string; title: string
   );
 }
 
+/**
+ * The heading over a group. Quiet on purpose: it is a divider you read past, not a row you
+ * can open, and it is repeating what the rows under it already imply.
+ */
+const GroupHeading = ({ children }: { children: string }) => (
+  <Text className="px-3 pb-1 pt-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    {children}
+  </Text>
+);
+
 function NoMatch({ list }: { list: List }) {
   if (!list.all.length || list.shown.length) return null;
   return <Muted className="px-3 py-2">No session matches “{list.query}”.</Muted>;
@@ -215,7 +241,7 @@ function NoMatch({ list }: { list: List }) {
 /** The right-hand panel on a wide screen: the chat keeps the room, this keeps 18rem. */
 export function SessionsPanel({ activeId }: { activeId?: string }) {
   const list = useSessions(activeId);
-  const { sessions, shown, newChat, open } = list;
+  const { sessions, newChat, open } = list;
 
   return (
     <View className="w-72 shrink-0 border-l border-border bg-sidebar">
@@ -252,31 +278,39 @@ export function SessionsPanel({ activeId }: { activeId?: string }) {
         {sessions.data?.length === 0 ? <Muted className="px-3 py-2">No sessions yet.</Muted> : null}
         <NoMatch list={list} />
 
-        {shown.map((item) =>
-          list.editing === item.id ? (
-            <View key={item.id} className="px-1 py-1">
-              <RenameField initial={item.title} onCommit={(title) => list.commit(item.id, title)} />
-            </View>
-          ) : (
-            <View key={item.id} className="relative">
-              <Pressable
-                onPress={() => open(item.id)}
-                className={cn(
-                  "rounded-md py-2 pl-3 pr-20 active:bg-accent",
-                  item.id === activeId && "bg-accent",
-                )}
-              >
-                <Text className="text-sm text-foreground" numberOfLines={1}>
-                  {item.title}
-                </Text>
-                <Muted>{when(item.updatedAt)}</Muted>
-              </Pressable>
-              <View className="absolute right-1 top-1.5">
-                <RowActions list={list} id={item.id} title={item.title} />
-              </View>
-            </View>
-          ),
-        )}
+        {list.groups.map((group) => (
+          <View key={group.bucket} className="gap-0.5">
+            <GroupHeading>{group.label}</GroupHeading>
+            {group.sessions.map((item) =>
+              list.editing === item.id ? (
+                <View key={item.id} className="px-1 py-1">
+                  <RenameField
+                    initial={item.title}
+                    onCommit={(title) => list.commit(item.id, title)}
+                  />
+                </View>
+              ) : (
+                <View key={item.id} className="relative">
+                  <Pressable
+                    onPress={() => open(item.id)}
+                    className={cn(
+                      "rounded-md py-2 pl-3 pr-20 active:bg-accent",
+                      item.id === activeId && "bg-accent",
+                    )}
+                  >
+                    <Text className="text-sm text-foreground" numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                    <Muted>{when(item.updatedAt, group.bucket)}</Muted>
+                  </Pressable>
+                  <View className="absolute right-1 top-1.5">
+                    <RowActions list={list} id={item.id} title={item.title} />
+                  </View>
+                </View>
+              ),
+            )}
+          </View>
+        ))}
       </ScrollView>
     </View>
   );
@@ -285,7 +319,7 @@ export function SessionsPanel({ activeId }: { activeId?: string }) {
 /** The whole of the Chats screen on a narrow one, where there is no room to sit beside. */
 export function SessionsScreen() {
   const list = useSessions();
-  const { sessions, shown, newChat, open } = list;
+  const { sessions, newChat, open } = list;
 
   if (sessions.isLoading) return <Loading />;
 
@@ -312,38 +346,45 @@ export function SessionsScreen() {
       {sessions.data?.length === 0 && <Empty>No sessions yet.</Empty>}
       <NoMatch list={list} />
 
-      <View className="overflow-hidden rounded-xl border border-border">
-        {shown.map((item, index) => (
-          <View
-            key={item.id}
-            className={`flex-row items-center ${index > 0 ? "border-t border-border" : ""}`}
-          >
-            {list.editing === item.id ? (
-              <View className="flex-1 px-3 py-2">
-                <RenameField
-                  initial={item.title}
-                  onCommit={(title) => list.commit(item.id, title)}
-                />
+      {list.groups.map((group) => (
+        // A card per group rather than one card with headings inside it: the heading belongs
+        // to the rows under it, and a border drawn around both says so.
+        <View key={group.bucket}>
+          <GroupHeading>{group.label}</GroupHeading>
+          <View className="overflow-hidden rounded-xl border border-border">
+            {group.sessions.map((item, index) => (
+              <View
+                key={item.id}
+                className={`flex-row items-center ${index > 0 ? "border-t border-border" : ""}`}
+              >
+                {list.editing === item.id ? (
+                  <View className="flex-1 px-3 py-2">
+                    <RenameField
+                      initial={item.title}
+                      onCommit={(title) => list.commit(item.id, title)}
+                    />
+                  </View>
+                ) : (
+                  <>
+                    <Pressable
+                      onPress={() => open(item.id)}
+                      className="flex-1 px-4 py-3 active:bg-accent"
+                    >
+                      <Text className="text-sm text-foreground" numberOfLines={1}>
+                        {item.title}
+                      </Text>
+                      <Muted>{when(item.updatedAt, group.bucket)}</Muted>
+                    </Pressable>
+                    <View className="pr-2">
+                      <RowActions list={list} id={item.id} title={item.title} />
+                    </View>
+                  </>
+                )}
               </View>
-            ) : (
-              <>
-                <Pressable
-                  onPress={() => open(item.id)}
-                  className="flex-1 px-4 py-3 active:bg-accent"
-                >
-                  <Text className="text-sm text-foreground" numberOfLines={1}>
-                    {item.title}
-                  </Text>
-                  <Muted>{when(item.updatedAt)}</Muted>
-                </Pressable>
-                <View className="pr-2">
-                  <RowActions list={list} id={item.id} title={item.title} />
-                </View>
-              </>
-            )}
+            ))}
           </View>
-        ))}
-      </View>
+        </View>
+      ))}
     </Screen>
   );
 }
