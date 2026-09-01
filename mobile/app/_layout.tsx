@@ -59,15 +59,20 @@ const SIDEBAR_WIDE = 232;
 const SIDEBAR_RAIL = 64;
 
 /**
- * The nav. It differs from the stock drawer content in two things: the button at the top,
- * which opens the web rail out to the full list and folds it back, and the configured apps
- * under the separator. The screens themselves are still react-navigation's `DrawerItemList`,
- * so the active row and the routing behave as they always did.
+ * The nav. It differs from the stock drawer content in three things: the button at the top,
+ * which opens the web rail out to the full list and folds it back, the configured apps under
+ * the separator, and Settings pinned to the bottom. The screens above are still
+ * react-navigation's `DrawerItemList`, so the active row and the routing behave as they
+ * always did.
  *
  * The apps cannot be `Drawer.Screen`s — there is no route per app, only `embed/[id]` and a
  * list of rows in the database — so they are `DrawerItem`s driven by the query. A row in
  * `external` mode is not a destination in this app at all and hands its URL straight to the
  * browser rather than routing anywhere.
+ *
+ * Settings is a route like any other, but it is drawn by hand for its position: it sits
+ * under a spacer at the foot of the list, away from the things you came here to open, so it
+ * is hidden from `DrawerItemList` above and repeated here.
  */
 function Sidebar({
   expanded,
@@ -94,7 +99,7 @@ function Sidebar({
   const railed = Platform.OS === "web" && !expanded;
 
   return (
-    <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 0 }}>
+    <DrawerContentScrollView {...props} contentContainerStyle={{ flexGrow: 1, paddingTop: 0 }}>
       {onToggle && (
         <View style={{ alignItems: expanded ? "flex-end" : "center", paddingHorizontal: 8 }}>
           <Pressable
@@ -132,6 +137,16 @@ function Sidebar({
           ))}
         </>
       )}
+      <View style={{ flex: 1, minHeight: 8 }} />
+      <Separator className="mb-2" />
+      <DrawerItem
+        label="Settings"
+        icon={({ color, size }) => <Feather name="settings" color={color} size={size} />}
+        focused={route?.name === "settings"}
+        labelStyle={railed ? { display: "none" } : undefined}
+        style={railed ? { paddingRight: 0 } : undefined}
+        onPress={() => router.navigate("/settings")}
+      />
     </DrawerContentScrollView>
   );
 }
@@ -204,18 +219,14 @@ export default function RootLayout() {
               name="embed/[id]"
               options={{ title: "App", drawerItemStyle: { display: "none" } }}
             />
-            <Drawer.Screen
-              name="mcp"
-              options={{ title: "MCP Servers", drawerIcon: icon("server") }}
-            />
-            <Drawer.Screen name="apps" options={{ title: "Apps", drawerIcon: icon("layout") }} />
-            <Drawer.Screen
-              name="config"
-              options={{ title: "Config", drawerIcon: icon("sliders") }}
-            />
+            {/*
+              The agent, the MCP servers, the apps and the server address were four screens
+              here; they are tabs within this one now. It is hidden from the generated list
+              because the sidebar draws its own row for it, at the bottom.
+            */}
             <Drawer.Screen
               name="settings"
-              options={{ title: "Settings", drawerIcon: icon("settings") }}
+              options={{ title: "Settings", drawerItemStyle: { display: "none" } }}
             />
           </Drawer>
         </QueryClientProvider>

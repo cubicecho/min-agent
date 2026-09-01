@@ -24,7 +24,7 @@ import { colors } from "@/lib/theme.ts";
 /**
  * The other apps that get a row in the sidebar — a task server, a kanban board.
  *
- * The screen is a list and the editing happens in a dialog over it, because the list is the
+ * The panel is a list and the editing happens in a dialog over it, because the list is the
  * thing you come here to read: which apps exist, which are on, where they point. Six form
  * fields per row said none of that until you had scrolled past them.
  *
@@ -236,7 +236,7 @@ function Editor({
   );
 }
 
-export default function AppsScreen() {
+export function AppsPanel() {
   const queryClient = useQueryClient();
   const embeds = useQuery({
     queryKey: ["embeds"],

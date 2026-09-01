@@ -42,7 +42,7 @@ The server applies its migrations at boot and seeds the settings row, so an empt
 the right starting point and there is nothing to run by hand. `npm run db:studio` opens Drizzle
 Studio against the same URL if you want to look inside.
 
-Open http://localhost:8081, go to **Config**, point it at an OpenAI-compatible server, hit
+Open http://localhost:8081, go to **Settings → Agent**, point it at an OpenAI-compatible server, hit
 **Refresh** to list models, pick one, **Save**.
 
 Known-good base URLs:
@@ -55,7 +55,7 @@ Known-good base URLs:
 | OpenRouter| `https://openrouter.ai/api/v1` | `sk-or-…`          |
 
 The key can also come from `OPENAI_API_KEY` in the environment (see `.env.example`); the value
-saved from the Config view wins if both are set.
+saved under **Settings → Agent** wins if both are set.
 
 ### Where it listens
 
@@ -125,7 +125,8 @@ release still goes out to GHCR. A run of chores publishes nothing.
 ## Layout
 
 - `mobile/` — the front end. `app/` is one file per route, `components/ui.tsx` is the widget set,
-  `electron/` is the desktop shell. Its web export is what the server serves.
+  `components/settings/` the panels behind the settings tabs, `electron/` is the desktop shell.
+  Its web export is what the server serves.
 - `server/` — express + graphql-yoga. `agent.ts` is the tool-calling loop, `mcp.ts` the MCP
   client pool, `store.ts` session persistence, `config.ts` the settings and MCP rows.
 - `server/db/` — `schema.ts` is the Drizzle table definitions, `client.ts` the pool and the
@@ -138,7 +139,7 @@ release still goes out to GHCR. A run of chores publishes nothing.
 - `shared/types.ts` — the domain types, plus the zod schemas the server range-checks a write
   with on the way into the database. The client imports the types; the validators do not leave
   the server.
-- `shared/model-tasks.ts` — the `MODEL_TASKS` table the Config screen renders. Its own module
+- `shared/model-tasks.ts` — the `MODEL_TASKS` table the **Agent** settings panel renders. Its own module
   precisely so that reading one constant does not pull zod into the app.
 - `shared/messages.ts` — the single translation between a stored row and a chat-completions
   message, so the server and the client spell it the same way.
@@ -158,9 +159,9 @@ release still goes out to GHCR. A run of chores publishes nothing.
 Five tables, created by the migrations in `drizzle/`, which `runMigrations()` applies on boot:
 
 ```
-settings      one row, id 'default' — the Config view
-mcp_servers   one row per server, ordered by position — the MCP Servers view
-embeds        one row per app in the sidebar, ordered by position — the Apps view
+settings      one row, id 'default' — Settings → Agent
+mcp_servers   one row per server, ordered by position — Settings → MCP
+embeds        one row per app in the sidebar, ordered by position — Settings → Apps
 sessions      one per chat: title, dates, token totals, compaction state
 messages      one per message, ordered by (session_id, idx), cascade-deleted with the session
 ```
@@ -220,7 +221,7 @@ a running server, which a reload settles.
 
 Both transports are supported. A stdio server is a command and its arguments —
 `npx -y @modelcontextprotocol/server-filesystem /tmp` — and an http one is a URL. Add them under
-**MCP Servers**; each row is a row in `mcp_servers`, and saving reconnects the pool.
+**Settings → MCP**; each row is a row in `mcp_servers`, and saving reconnects the pool.
 
 Tools are exposed to the model as `<server id>__<tool name>`, so ids must be unique and short.
 
@@ -230,7 +231,7 @@ A tool definition is mostly JSON Schema, and eagerly sending every one of them o
 usually the largest thing in the prompt — 34 tools cost about 11.5k tokens per request here, paid
 whether or not the model touches a single one.
 
-**Config → MCP tools** picks how they are sent:
+**Settings → Agent → MCP tools** picks how they are sent:
 
 - **On demand** (default) puts a *name-only* catalogue in the system prompt — a fortieth of the
   cost of the schemas — plus one meta-tool, `load_tools`. The model calls it with the names it
@@ -313,8 +314,8 @@ One error is deliberately *not* treated as a schema problem: Qwen templates rais
 ## Task models
 
 Not every model call is a chat turn. Some are short, frequent, and latency-sensitive — exactly
-what a small fast model is good at. Config has a **Task models** block under the default model
-with one select per task; leaving one unset keeps the cheap non-LLM behaviour.
+what a small fast model is good at. **Settings → Agent** has a **Task models** block under the
+default model with one select per task; leaving one unset keeps the cheap non-LLM behaviour.
 
 | Task | Set | Unset |
 | --- | --- | --- |
@@ -429,10 +430,10 @@ exact numbers replace it when the turn ends.
 The header carries the whole-conversation view: a **context meter** (`11.6k / 262k`, amber past
 75%, red past 90%) and the session's running token total. The window size comes from the model
 list when the server reports one — `context_length`, `max_context_window`, `max_model_len`,
-`context_window` or `n_ctx` — otherwise set **Config → Context window** by hand. Servers that
+`context_window` or `n_ctx` — otherwise set **Settings → Agent → Context window** by hand. Servers that
 reject `stream_options` are detected once and the token-derived stats are quietly skipped.
 
-Cost is off by default, because a local model has none. Fill in **Config → Pricing** (dollars per
+Cost is off by default, because a local model has none. Fill in **Settings → Agent → Pricing** (dollars per
 million input and output tokens) and the header total grows a `· $0.04`, with a finer per-turn
 figure (`$0.0055`) in the footnote.
 
@@ -510,7 +511,7 @@ be slower than the search it replaced.
 ## Other apps in the sidebar
 
 The other things you run — a kanban board, a task server — can have a row in min-agent's nav
-without being part of min-agent. The **Apps** view is a list of addresses; each one becomes a
+without being part of min-agent. **Settings → Apps** is a list of addresses; each one becomes a
 sidebar item, and opening it puts that server's own UI in an iframe filling the content area.
 
 ```
@@ -556,8 +557,8 @@ the file tree, and these come from the database.
 `mobile/` is the front end — Expo (React Native) with expo-router and NativeWind — and it ships
 to three places from one source: the browser through react-native-web, Android, and Windows or
 Linux through Electron. The browser build is the one `npm start` and the Docker image serve at
-`/`; the other two are the same code with a different bundler target and one extra view,
-**Settings**, covered below.
+`/`; the other two are the same code with a different bundler target and one panel they cannot
+do without, **Settings → Server**, covered below.
 
 It installs separately. Metro pins `nodeModulesPaths` to `mobile/node_modules`, so the app has
 its own `package.json` and its own lockfile rather than being a workspace of the root — which is
@@ -604,8 +605,36 @@ goes on sliding over the content, because 64px of permanent rail is a lot of a p
 
 `drawerContent` is min-agent's own `Sidebar` on every platform, not just the web: below the
 screens it draws a row per configured app (see [Other apps in the
-sidebar](#other-apps-in-the-sidebar)), and those exist on the phone too. Only the fold-out
-button is web-only, and it is passed in rather than assumed.
+sidebar](#other-apps-in-the-sidebar)), and under a spacer at the foot of the list, Settings.
+Both exist on the phone too. Only the fold-out button is web-only, and it is passed in rather
+than assumed.
+
+### One settings page
+
+There is one thing to configure and one row that opens it. `mobile/app/settings.tsx` is a tab
+bar over four panels in `mobile/components/settings/`:
+
+```
+Agent    the model, the key, the prompt, the limits, task models, pricing
+MCP      the servers, their transports and their live status
+Apps     the other apps that get a sidebar row
+Server   which min-agent server this build talks to
+```
+
+These were four sibling entries in the drawer, which put the four things you set up once at the
+same level as the one thing you use all day, and left Settings meaning only the last of them.
+The drawer is the app's nav, not its preferences pane.
+
+The panels are components rather than files under `app/` because every file under `app/` is a
+route, and only the tab bar is a destination now. `/settings?tab=mcp` opens on one — the param
+seeds the state, and the state is what the row reads, so a tab is never dead on a platform
+where the URL is not an address bar. Each panel still renders its own `Screen` and owns its own
+loading, error and save states, so switching tabs unmounts the one you left exactly the way
+navigating away from it used to.
+
+Settings is drawn by hand in `Sidebar` rather than by `DrawerItemList`, for its position alone:
+it is hidden from the generated list and repeated under a `flex: 1` spacer, which is what puts
+it at the bottom of a drawer whose content container grows to fill the height.
 
 ### One chats view, two widths
 
@@ -696,7 +725,7 @@ and header itself. Those theming primitives are imported from `expo-router`, not
 
 Three things are tried, in order, and the first that works wins:
 
-1. **What you saved under Settings.** Always wins, on every platform.
+1. **What you saved under Settings → Server.** Always wins, on every platform.
 2. **The origin that served the page** — right for the build the server serves, and right
    whatever host you reach it at, so a phone browser opening `http://framework.lan:8787` needs
    no setup. Being on the web is not the same as having been served by the agent, though:
@@ -715,7 +744,7 @@ compiled in. The launcher remembers the last address in `mobile/.expo/agent-url`
 `--clear` when it has moved.
 
 Android and the desktop build have no origin to inherit and no useful `localhost`, so they are the
-case Settings exists for: open **Settings**, put in the address of the machine running `npm start`
+case that panel exists for: open **Settings → Server**, put in the address of the machine running `npm start`
 — `http://framework.lan:8787`, say — and press **Save and test**. It is remembered on the device,
 and the badge tells you whether the server answered.
 

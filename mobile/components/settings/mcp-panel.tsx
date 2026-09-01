@@ -45,7 +45,7 @@ const blank = (index: number): McpServerConfig => ({
   headers: {},
 });
 
-export default function McpScreen() {
+export function McpPanel() {
   const queryClient = useQueryClient();
   const servers = useQuery({ queryKey: ["mcp"], queryFn: api.mcp, refetchInterval: 5000 });
   const [draft, setDraft] = useState<McpServerConfig[] | null>(null);
