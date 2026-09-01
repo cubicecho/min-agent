@@ -6,8 +6,8 @@ import type { StoredMessage, ToolCall, TurnStats } from "./types.ts";
  * The two disagree on spelling — the API writes `tool_calls` and `tool_call_id`, a Drizzle
  * column is `toolCalls` and `toolCallId` — and on nullability, since a column that is not set
  * is `null` where an absent property is `undefined`. Both directions live here so the server
- * and the two clients translate the same way, and so the GraphQL document and the stored row
- * stay one shape rather than three.
+ * and the client translate the same way, and so the GraphQL document and the stored row stay
+ * one shape rather than three.
  */
 export interface MessageShape {
   role: string;

@@ -4,7 +4,6 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "jsx": "react-jsx",
     "strict": true,
     "noEmit": true,
     "noUnusedLocals": true,
@@ -18,10 +17,17 @@
     "allowImportingTsExtensions": true,
     "types": ["node"],
     "paths": {
-      "@/*": ["./src/*"],
       "@server/*": ["./server/*"],
       "@shared/*": ["./shared/*"]
     }
   },
-  "include": ["src", "server", "shared", "tests", "plugins", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "server",
+    "shared",
+    "scripts",
+    "tests",
+    "codegen.ts",
+    "drizzle.config.ts",
+    "vitest.config.ts"
+  ]
 }

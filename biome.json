@@ -8,12 +8,10 @@
   "files": {
     "ignoreUnknown": true,
     "includes": [
-      "src/**",
       "server/**",
       "shared/**",
       "tests/**",
       "scripts/**",
-      "plugins/**",
       "mobile/app/**",
       "mobile/components/**",
       "mobile/lib/**",
@@ -48,11 +46,6 @@
     "formatter": {
       "quoteStyle": "double",
       "trailingCommas": "all"
-    }
-  },
-  "css": {
-    "parser": {
-      "tailwindDirectives": true
     }
   },
   "assist": {

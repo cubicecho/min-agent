@@ -183,7 +183,7 @@ function NoMatch({ list }: { list: List }) {
   return <Muted className="px-3 py-2">No session matches “{list.query}”.</Muted>;
 }
 
-/** The right-hand panel, as on the web app: the chat keeps the room, this keeps 18rem. */
+/** The right-hand panel on a wide screen: the chat keeps the room, this keeps 18rem. */
 export function SessionsPanel({ activeId }: { activeId?: string }) {
   const list = useSessions(activeId);
   const { sessions, shown, newChat, open } = list;

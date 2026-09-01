@@ -1,18 +1,26 @@
 # syntax=docker/dockerfile:1
 
 # ---------------------------------------------------------------- build ----
-# Building the web client needs tsc, Vite and Tailwind, none of which the running
-# server has any use for. They stay in this stage and only `dist/` crosses over.
+# Building the UI needs React Native, Metro and Tailwind, none of which the running
+# server has any use for. They stay in this stage and only `mobile/dist` crosses over.
 FROM node:26-slim AS builder
 
 WORKDIR /app
 
-# Manifests on their own first, so the install layer is cached until a dependency
-# actually changes rather than on every source edit.
+# Manifests on their own first, so the install layers are cached until a dependency
+# actually changes rather than on every source edit. The Expo app has its own lockfile
+# and its own node_modules — Metro pins resolution to `mobile/node_modules` — so it is
+# a second install rather than a workspace.
 COPY package.json package-lock.json ./
 RUN npm ci
+COPY mobile/package.json mobile/package-lock.json ./mobile/
+RUN npm ci --prefix mobile
 
 COPY . .
+
+# Regenerates the GraphQL types, typechecks, then exports the web bundle to `mobile/dist`.
+# The address the app talks to is not baked in here: served from this image it is the origin
+# that served the page, which is right whatever host it is reached at.
 RUN npm run build
 
 # -------------------------------------------------------------- runtime ----
@@ -27,17 +35,13 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 # The server is not compiled — it runs its TypeScript through tsx — so the sources ship
-# as they are, next to the client that Vite built.
+# as they are, next to the UI that Metro built.
 COPY server ./server
 COPY shared ./shared
 # The migrations the server applies on boot. Without them a fresh database comes up empty
 # and every query fails on a missing table.
 COPY drizzle ./drizzle
-COPY --from=builder /app/dist ./dist
-
-# The Expo bundle that would be served at /app is left out on purpose: building it means
-# installing React Native and Metro to produce a second copy of the UI this image already
-# serves at /. Export it on the host and mount `mobile/dist` if you want it here too.
+COPY --from=builder /app/mobile/dist ./mobile/dist
 
 ENV NODE_ENV=production
 ENV PORT=8787

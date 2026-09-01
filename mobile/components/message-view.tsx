@@ -49,7 +49,7 @@ function preview(value: string, limit = 60) {
 }
 
 /**
- * The web app uses `<details>`; React Native has no equivalent, so open state is held
+ * A browser would use `<details>`; React Native has no equivalent, so open state is held
  * here. Everything else about the two collapsible rows is kept the same.
  */
 function Details({

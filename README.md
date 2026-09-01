@@ -15,32 +15,33 @@ Everything below the quick start is reference — read it when you want that pie
 - [Task models](#task-models) — pointing a small fast model at titling, compaction, tool preselection and follow-ups
 - [Turn statistics](#turn-statistics) — what the numbers under each reply mean
 - [The session list](#the-session-list) — renaming, deleting and finding a chat
-- [Android, Windows and web apps](#android-windows-and-web-apps) — the second front end in `mobile/`
+- [Android and Windows](#android-and-windows) — the same front end, off the browser
 
 ## Stack
 
-Vite + React 19 + TanStack Router/Query + shadcn (Tailwind v4) on the front, Express 5 and
-graphql-yoga on the back, Drizzle over Postgres underneath. TypeScript everywhere, Biome for
-lint/format, Vitest for tests.
+Expo (React Native) + expo-router + NativeWind on the front, Express 5 and graphql-yoga on the
+back, Drizzle over Postgres underneath. TypeScript everywhere, Biome for lint/format, Vitest for
+tests.
 
-There is a second front end in `mobile/` — Expo + expo-router + NativeWind — that builds the same
-views for Android, Windows (via Electron) and the web. See
-[Android, Windows and web apps](#android-windows-and-web-apps).
+There is one front end, in `mobile/`, and it builds three things: the browser UI the server
+serves at `/` (through react-native-web), an Android app, and a Windows or Linux desktop app
+through Electron. See [Android and Windows](#android-and-windows).
 
 ## Quick start
 
 ```bash
 npm install
+npm install --prefix mobile   # the app has its own lockfile — see below
 cp .env.example .env          # DATABASE_URL lives here
 docker compose up -d db       # or point DATABASE_URL at a Postgres you already run
-npm run dev                   # api on :8787, web on 0.0.0.0:3000 (proxies /graphql)
+npm run dev                   # api on :8787, app on :8081
 ```
 
 The server applies its migrations at boot and seeds the settings row, so an empty database is
 the right starting point and there is nothing to run by hand. `npm run db:studio` opens Drizzle
 Studio against the same URL if you want to look inside.
 
-Open http://localhost:3000, go to **Config**, point it at an OpenAI-compatible server, hit
+Open http://localhost:8081, go to **Config**, point it at an OpenAI-compatible server, hit
 **Refresh** to list models, pick one, **Save**.
 
 Known-good base URLs:
@@ -59,8 +60,8 @@ saved from the Config view wins if both are set.
 
 Copy `.env.example` to `.env` to change it. Both `npm run dev` and `npm start` read that file —
 Node loads it directly, through `--env-file-if-exists`, so there is no dotenv dependency and no
-import to remember — and the Vite dev server reads the same file so its `/graphql` proxy follows the
-server rather than going on knocking at 8787.
+import to remember — and `scripts/expo.ts` reads the same file to bake the address into the
+bundle, so the app follows the server rather than going on knocking at 8787.
 
 `DATABASE_URL` is the Postgres the server stores everything in; it refuses to start without one
 it can reach. `PORT` is the Express port. `HOST` is the interface it binds; the default, `0.0.0.0`, accepts
@@ -72,8 +73,8 @@ you can actually open, so a wildcard bind shows as `localhost`.
 ## Production
 
 ```bash
-npm run build    # typecheck + vite build -> dist/
-npm start        # express serves the API and dist/ on :8787
+npm run build    # codegen + typecheck + expo export -> mobile/dist
+npm start        # express serves the API and mobile/dist on :8787
 ```
 
 ## Docker
@@ -82,9 +83,10 @@ npm start        # express serves the API and dist/ on :8787
 docker compose up -d          # http://localhost:8787
 ```
 
-The image is the server and the web client, nothing else. It stays a full `node` image rather
-than something smaller because MCP stdio servers are spawned as child processes and an stdio
-server is usually `npx something`, which needs npm and a network from inside the container.
+The image is the server and the web build of the app, nothing else. It stays a full `node`
+image rather than something smaller because MCP stdio servers are spawned as child processes
+and an stdio server is usually `npx something`, which needs npm and a network from inside the
+container.
 
 `docker compose up` brings the database with it. Everything — settings, MCP servers, sessions,
 messages — is in the `min-agent-db` volume, which is what to keep and what to back up; `pg_dump`
@@ -97,9 +99,12 @@ here, not `localhost`; the compose file maps that name on Linux, where Docker do
 it. Nothing in min-agent is authenticated, so publish the port on a network you trust — or bind
 it to `127.0.0.1:8787:8787` and put something with a login in front.
 
-The Expo bundle served at `/app` is deliberately not built into the image: it would mean
-installing React Native and Metro to produce a second copy of a UI already served at `/`. Run
-`npm run mobile:export` on the host and mount `mobile/dist` if you want it there too.
+The UI is built inside the image, by a first stage that has React Native, Metro and Tailwind in
+it; only `mobile/dist` crosses into the runtime stage, so none of that ships. That is a slower
+build in exchange for an image anyone can run without having Expo installed anywhere — which is
+the point of shipping an image at all. The two installs are separate `npm ci` layers, because
+the app has its own lockfile and its own `node_modules`: Metro pins resolution to
+`mobile/node_modules`, so it is a second install rather than a workspace.
 
 ## Releases
 
@@ -118,28 +123,30 @@ release still goes out to GHCR. A run of chores publishes nothing.
 
 ## Layout
 
-- `src/` — web client. `routes/` is one file per nav item, `components/app-shell.tsx` is the frame.
-- `mobile/` — the Expo client. `app/` is one file per route, `components/ui.tsx` is the widget set,
-  `electron/` is the desktop shell.
+- `mobile/` — the front end. `app/` is one file per route, `components/ui.tsx` is the widget set,
+  `electron/` is the desktop shell. Its web export is what the server serves.
 - `server/` — express + graphql-yoga. `agent.ts` is the tool-calling loop, `mcp.ts` the MCP
   client pool, `store.ts` session persistence, `config.ts` the settings and MCP rows.
 - `server/db/` — `schema.ts` is the Drizzle table definitions, `client.ts` the pool and the
   boot-time wait for it, `migrate.ts` the migration runner.
 - `drizzle/` — generated migrations. Not written by hand; not edited after they have shipped.
-- `plugins/` — the Vite plugin that keeps `schema.graphql` and `shared/gql/` generated.
+- `scripts/` — `codegen-watch.ts` keeps `schema.graphql` and `shared/gql/` current, `expo.ts`
+  hands the app the server's address, `print-schema.ts` writes the SDL.
 - `server/graphql/` — `schema.ts` builds most of the API off the Drizzle schema and adds the
   hand-written fields (`health`, `models`, `mcpStatus`, `setApiKey`, the `turn` subscription).
 - `shared/types.ts` — the domain types, plus the zod schemas the server range-checks a write
-  with on the way into the database. Both front ends import the types; the validators do not
-  leave the server.
-- `shared/model-tasks.ts` — the `MODEL_TASKS` table both Config screens render. Its own module
-  precisely so that reading one constant does not pull zod into a front end.
+  with on the way into the database. The client imports the types; the validators do not leave
+  the server.
+- `shared/model-tasks.ts` — the `MODEL_TASKS` table the Config screen renders. Its own module
+  precisely so that reading one constant does not pull zod into the app.
 - `shared/messages.ts` — the single translation between a stored row and a chat-completions
-  message, so the server and both clients spell it the same way.
-- `shared/graphql/` — the `.graphql` documents both front ends send. `shared/gql/graphql.ts` is
+  message, so the server and the client spell it the same way.
+- `shared/graphql/` — the `.graphql` documents the app sends. `shared/gql/graphql.ts` is
   generated from them and is not edited by hand.
-- `shared/client/` — everything both front ends run: `gql.ts` (the transport — a query is a
-  string and a `fetch`, with no client library), `api.ts` (the typed client and the SSE
+- `shared/highlight.ts` — the lowlight registry and the tokeniser behind a code fence, kept out
+  of `mobile/` so it is testable without a React Native runtime.
+- `shared/client/` — everything the app runs that is not a view: `gql.ts` (the transport — a
+  query is a string and a `fetch`, with no client library), `api.ts` (the typed client and the SSE
   reader), `live.ts` (streaming-event reducer), `use-live-parts.ts` (frame-batched streaming
   state), `sessions.ts` (the session-list filter), `queries.ts` (how long settings stay fresh),
   `usage.ts` (token/cost formatting).
@@ -191,19 +198,21 @@ subscription turn        runs a turn and streams its events over SSE
 ```
 
 `schema.graphql` and `shared/gql/graphql.ts` are both committed and neither is written by hand.
-Keeping them current is not left to whoever remembers: `npm run dev` regenerates on start and
-again whenever `server/` or `shared/graphql/` changes, and `npm run build` regenerates before it
-typechecks. `npm run codegen` does it on demand. The schema is printed from the server first, so
-what the front ends are typed against is exactly what it serves.
+Keeping them current is not left to whoever remembers: `scripts/codegen-watch.ts` runs alongside
+`npm run dev`, regenerating on start and again whenever `server/` or `shared/graphql/` changes,
+and `npm run build` regenerates before it typechecks. CI then fails on a diff, so a schema
+change committed without its generated types does not merge, and `npm run codegen` does it on
+demand. The schema is printed from the server first, so what the app is typed against is
+exactly what it serves.
 
 The generated documents are plain strings, not `graphql` AST objects, which is what keeps the
-`graphql` package out of both bundles: Metro pins `nodeModulesPaths` to `mobile/node_modules`,
-and it is not installed there.
+`graphql` package out of the bundle: Metro pins `nodeModulesPaths` to `mobile/node_modules`, and
+it is not installed there.
 
 The `models` query is not a local read — it asks the configured provider to list its models — so
-both front ends hold it, and the connection settings beside it, for five minutes. Saving config
-invalidates them by hand, so the only thing this hides is the settings row edited underneath a
-running server, which a reload settles.
+the app holds it, and the connection settings beside it, for five minutes. Saving config
+invalidates them by hand, so the only thing this hides is the settings row edited underneath
+a running server, which a reload settles.
 
 ## MCP servers
 
@@ -445,8 +454,8 @@ the part that streamed is now saved before the abort is passed on.
 
 ### Watching a turn arrive
 
-A fast model sends several hundred token deltas a second — far more than a screen can show. Both
-front ends collect them in a ref and fold them in on the next animation frame (`useLiveParts` in
+A fast model sends several hundred token deltas a second — far more than a screen can show. They
+are collected in a ref and folded in on the next animation frame (`useLiveParts` in
 `shared/client/`), so a burst of thirty deltas becomes one render of the same text.
 
 That render is also made narrow. The stored transcript and each row of the in-flight turn are
@@ -459,35 +468,36 @@ leaving the bottom unpins it and a *Jump to latest* button brings it back.
 
 ### Highlighting a code fence
 
-`src/components/highlight.ts` is a small rehype plugin standing in for `rehype-highlight`. It is
-the same lowlight underneath and emits the same `hljs-*` classes against the same stylesheet, so
-nothing downstream can tell the difference.
+`shared/highlight.ts` registers a dozen languages with lowlight and flattens a fence into
+`{ text, scope }` tokens, a line at a time. `mobile/components/code-block.tsx` renders them as
+`<Text>` spans coloured from the `syntax` map in `mobile/lib/theme.ts` — github-dark's values,
+so a fence looks the way it always has. There is no stylesheet in it, because React Native has
+no `hljs-*` classes to hang one on.
 
-The difference is what it does *not* import. `rehype-highlight` names lowlight's `common`
-registry as its default in its own module, so all 37 of those languages are in the graph whether
-or not the `languages` option overrides them — 159 kB for languages a reply here has never
-contained. Registering a dozen directly (`bash`, `css`, `go`, `json`, `markdown`, `python`,
-`rust`, `shell`, `sql`, `typescript`, `xml`, `yaml`) is 40 kB, and covers more than it lists:
-`typescript` handles JavaScript, `xml` handles HTML.
+The split is what keeps the interesting half testable: `tests/highlight.test.ts` exercises the
+tokeniser under the root Vitest, which cannot load a React Native component, and the React
+Native half holds nothing worth a test.
 
-A fence tagged with something outside that set is not an error — it falls through to
-auto-detection against the registered languages, and failing that comes out unhighlighted.
-Inline code is left alone; only a `<code>` directly inside a `<pre>` is touched.
+Registering a dozen languages by hand (`bash`, `css`, `go`, `json`, `markdown`, `python`, `rust`,
+`shell`, `sql`, `typescript`, `xml`, `yaml`) rather than taking lowlight's `common` registry is
+40 kB against 159 kB, and covers more than it lists: `typescript` handles JavaScript, `xml`
+handles HTML. A fence tagged with something outside that set is not an error — it falls through
+to auto-detection against the registered languages, and failing that comes out unhighlighted.
+Inline code is left alone; the rules are hung on markdown-it's `fence` and `code_block` nodes.
+
+Each line is its own row rather than the whole block being one string, because there is no
+`white-space: pre` here: a long line can only scroll sideways if the row it sits in is a thing
+that scrolls.
 
 ## The session list
 
-Both front ends render the same rail from the same pieces. A chat is renamed in place — the
-title becomes a field, Enter or moving away commits, Escape puts it back — over the
-`updateSessionSingle` mutation the generated CRUD hands us for free.
+A chat is renamed in place — the title becomes a field, Enter or moving away commits, Escape
+puts it back — over the `updateSessionSingle` mutation the generated CRUD hands us for free.
 
 Delete asks first. The bin primes the row into a `Delete?` button rather than opening a dialog:
 one tap to arm, one to confirm, and the row disarms itself after five seconds so a forgotten
-click is not a delete waiting to happen. There is no modal on either platform, which also means
-no `Alert.alert` — react-native-web does not implement it, and the mobile app runs in a browser.
-
-The row's buttons used to be `hidden group-hover:block` on the web, so they did not exist for a
-keyboard or a touchscreen. They now fade in on hover *or* focus-within, and stay visible where
-there is no hover at all (`[@media(hover:none)]`).
+click is not a delete waiting to happen. There is no modal, which also means no `Alert.alert` —
+react-native-web does not implement it, and the same code runs in a browser.
 
 A search box appears above the list once there are more than eight chats — below that, scanning
 is faster than the box is worth. It matches every whitespace-separated term against the title, in
@@ -495,12 +505,17 @@ any order, so typing more always narrows. Filtering is done in the client (`matc
 `shared/client/sessions.ts`): the list is already in memory, and a round trip per keystroke would
 be slower than the search it replaced.
 
-## Android, Windows and web apps
+## Android and Windows
 
-`mobile/` is a second front end over the same server: Expo (React Native) with expo-router and
-NativeWind, shipping to Android, to Windows and Linux through Electron, and to the browser. It has
-the same views as the web app — Chats, MCP Servers, Config — and one extra, **Settings**,
-covered below.
+`mobile/` is the front end — Expo (React Native) with expo-router and NativeWind — and it ships
+to three places from one source: the browser through react-native-web, Android, and Windows or
+Linux through Electron. The browser build is the one `npm start` and the Docker image serve at
+`/`; the other two are the same code with a different bundler target and one extra view,
+**Settings**, covered below.
+
+It installs separately. Metro pins `nodeModulesPaths` to `mobile/node_modules`, so the app has
+its own `package.json` and its own lockfile rather than being a workspace of the root — which is
+also what keeps `graphql`, zod and the server's dependencies out of reach of the bundle.
 
 ```bash
 npm install --prefix mobile
@@ -508,12 +523,15 @@ npm run mobile              # Expo dev server: press a for Android, w for web
 npm run mobile:android      # straight to a connected device or emulator
 ```
 
-### What is actually shared
+### What `shared/` is for
 
-`shared/client/`, `shared/types.ts`, `shared/messages.ts` and `shared/model-tasks.ts` are used
-byte-identically by both clients — the transport, the API calls, the SSE stream reader, the
-live-event reducer, the row/message translation and the usage/cost formatting. That is the part
-worth sharing and the part that would otherwise drift.
+With one front end, `shared/` is no longer two clients agreeing with each other — it is the
+client and the server agreeing. `shared/types.ts`, `shared/messages.ts`, `shared/model-tasks.ts`
+and `shared/graphql/` are read from both sides, so a stored row, a chat-completions message and
+the shape of a query are each defined once. `shared/client/` is the client's half of that — the
+transport, the API calls, the SSE stream reader, the live-event reducer and the usage/cost
+formatting — and it lives at the root rather than in `mobile/` because none of it touches React
+Native, which is what lets the tests run it.
 
 What is *not* shared is the validation. `shared/types.ts` carries zod schemas as well as types,
 but only the server imports them: a client that parses the settings row on arrival is defending
@@ -521,19 +539,18 @@ against a case GraphQL has already ruled out, and it costs 82 kB to do it. Take 
 there with `import type`, never a bare `import { type A }` — under `verbatimModuleSyntax` the
 latter is still a value import, and one of them puts the whole validator back in the bundle.
 
-The *widgets* are not shared, and cannot be: `src/components/ui/` is shadcn, which is Radix, which
-is the DOM. `mobile/components/ui.tsx` is a React Native re-implementation that keeps the same
-component and variant names (`<Button variant="outline" size="sm">`), so the screens read the same
-either side even though nothing under them is.
+`mobile/components/ui.tsx` keeps shadcn's component and variant names
+(`<Button variant="outline" size="sm">`) even though there is no Radix and no DOM under them.
+That is deliberate: it is the vocabulary the screens were written in, and a React Native widget
+set that answers to the same names is one less thing to translate when a view moves.
 
 ### A sidebar, not a hamburger
 
 On the web the nav is always on screen. `drawerType: "permanent"` pins it beside the
-content and takes the toggle out of the header, so the four destinations are a sidebar the
-way they are in the Vite app rather than something you have to remember is there. Above
-768px it shows icons and labels; below, it narrows to a 64px rail of icons that the button
-at its top opens back out — a nav you can still see and click at 400px wide, which a
-closed drawer is not.
+content and takes the toggle out of the header, so the four destinations are a sidebar rather
+than something you have to remember is there. Above 768px it shows icons and labels; below, it
+narrows to a 64px rail of icons that the button at its top opens back out — a nav you can still
+see and click at 400px wide, which a closed drawer is not.
 
 The rail hides its labels with `display: none` on `drawerLabelStyle` rather than dropping
 them, so each icon is still announced by name. On a phone none of this applies: the drawer
@@ -541,8 +558,8 @@ goes on sliding over the content, because 64px of permanent rail is a lot of a p
 
 ### One chats view, two widths
 
-The web app puts the conversation on the left and the session list in a panel on the right;
-the phone has never had room for both. `mobile/components/chat-view.tsx` is both: above
+A wide screen has room for the conversation on the left and the session list in a panel on the
+right; a phone has never had room for both. `mobile/components/chat-view.tsx` is both: above
 768px (`useWide()` in `mobile/lib/layout.ts`) it renders the chat and the panel side by side,
 and below it the list and the chat go back to being separate screens at `/` and `/chat/[id]`.
 
@@ -553,8 +570,8 @@ width the app started at. Both routes render `ChatsView`, which is what lets the
 put while the route beneath it changes; switching chats from the panel `replace`s rather
 than `push`es, so an afternoon of browsing does not pile up on the back stack.
 
-Enter sends, as it does on the web, and Shift+Enter breaks the line. That is wired through
-`onKeyPress` in `Textarea` and is deliberately web-only: on a phone the return key is how
+Enter sends in the browser, and Shift+Enter breaks the line. That is wired through `onKeyPress`
+in `Textarea` and is deliberately web-only: on a phone the return key is how
 you get a new line, and the send button is an inch away. react-native-web hands `onKeyPress`
 the React synthetic keyboard event rather than the bare `{ key }` its types promise, so the
 handler reads `shiftKey` and the IME's `isComposing` through a documented cast — and calls
@@ -617,8 +634,8 @@ Preflight is left out: react-native-web has its own reset, and the app renders n
 elements for preflight to fix.
 
 The palette is dark, full stop — one `:root`, no `prefers-color-scheme` block, `userInterfaceStyle`
-pinned to `dark` in `app.json`. The web app hard-codes `class="dark"` and has no light mode, so
-following the device would have meant the two front ends disagreeing on any machine set to light.
+pinned to `dark` in `app.json`. There is no light mode to follow the device into, and adding one
+would mean a second value for every colour in three places rather than one.
 `mobile/lib/theme.ts` carries the same values as hex for the props that take a colour as a string
 rather than a class, and `app/_layout.tsx` hands them to react-navigation, which paints the drawer
 and header itself. Those theming primitives are imported from `expo-router`, not from
@@ -629,13 +646,13 @@ and header itself. Those theming primitives are imported from `expo-router`, not
 Three things are tried, in order, and the first that works wins:
 
 1. **What you saved under Settings.** Always wins, on every platform.
-2. **The origin that served the page** — right for the `/app` build, and right whatever host you
-   reach it at, so a phone browser opening `http://framework.lan:8787/app` needs no setup. Being
-   on the web is not the same as having been served by the agent, though: `expo start --web`
-   serves the app from Metro, and Metro answers every path it does not recognise with
-   `index.html`, so an origin-relative `/graphql` comes back as `<!DOCTYPE html>` and every
-   screen fails on a JSON parse. The app asks rather than assumes — it posts the `health` query
-   to `/graphql` once and moves on unless the answer is JSON.
+2. **The origin that served the page** — right for the build the server serves, and right
+   whatever host you reach it at, so a phone browser opening `http://framework.lan:8787` needs
+   no setup. Being on the web is not the same as having been served by the agent, though:
+   `expo start --web` serves the app from Metro, and Metro answers every path it does not
+   recognise with `index.html`, so an origin-relative `/graphql` comes back as `<!DOCTYPE html>`
+   and every screen fails on a JSON parse. The app asks rather than assumes — it posts the
+   `health` query to `/graphql` once and moves on unless the answer is JSON.
 3. **The address baked in at build time**, `EXPO_PUBLIC_AGENT_URL`. `scripts/expo.ts` sets it from
    the same `PORT` the server reads, so moving the server does not mean editing the app. This is
    why the Expo scripts are run from the repo root — `npm run mobile:web`, not `npm --prefix
@@ -661,11 +678,14 @@ Android additionally needs cleartext HTTP to be allowed, since a LAN server is r
 ### Web build
 
 ```bash
-npm run mobile:export       # -> mobile/dist, base URL /app
-npm start                   # express serves it at http://localhost:8787/app
+npm run mobile:export       # -> mobile/dist
+npm start                   # express serves it at http://localhost:8787
 ```
 
-Both front ends can be served at once: `/` is the Vite app, `/app` is the Expo one.
+`npm run build` is the same export with codegen and a typecheck in front of it, and is what the
+Docker image runs. Express serves `mobile/dist` at `/` and answers anything that is not
+`/graphql` with `index.html`, so a deep link like `/chat/3` survives a reload; the fingerprinted
+files under `_expo/static/` are the only ones cached immutably.
 
 ### Windows desktop
 
@@ -686,13 +706,13 @@ server address is kept — is unreliable on a file origin.
 
 | Script            | What it does                        |
 | ----------------- | ----------------------------------- |
-| `npm run dev`     | server + web with reload            |
+| `npm run dev`     | codegen, server and app, all watching |
 | `npm run db:generate` | write a migration for a schema change |
 | `npm run db:migrate` | apply pending migrations         |
 | `npm run db:studio` | browse the database              |
 | `npm run codegen` | print `schema.graphql`, regenerate `shared/gql/` |
-| `npm run build`   | typecheck, then build to `dist/`    |
-| `npm start`       | serve API + `dist/` on `:8787`      |
+| `npm run build`   | codegen, typecheck, then export to `mobile/dist` |
+| `npm start`       | serve API + `mobile/dist` on `:8787` |
 | `npm run typecheck` | `tsc --noEmit`                    |
 | `npm run lint`    | `biome check .`                     |
 | `npm run format`  | `biome check --write .`             |
@@ -701,7 +721,7 @@ server address is kept — is unreliable on a file origin.
 | `npm run mobile`  | Expo dev server for the `mobile/` app |
 | `npm run mobile:android` | build and run on Android      |
 | `npm run mobile:web` | Expo in the browser              |
-| `npm run mobile:export` | web build -> `mobile/dist`, served at `/app` |
+| `npm run mobile:export` | web build -> `mobile/dist`, served at `/` |
 | `npm run mobile:typecheck` | `tsc --noEmit` in `mobile/`  |
 | `npm run desktop` | export, then run the Electron shell |
 | `npm run desktop:build` | export, then package the desktop app |

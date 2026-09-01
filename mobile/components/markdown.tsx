@@ -1,9 +1,10 @@
-import Markdown from "@ronradtke/react-native-markdown-display";
+import Markdown, { type RenderRules } from "@ronradtke/react-native-markdown-display";
+import { CodeBlock } from "@/components/code-block.tsx";
 import { colors } from "@/lib/theme.ts";
 
 /**
  * Assistant replies render as markdown inside a chat bubble, so the styles here are
- * tuned for a narrow column — the same intent as the `.md` block in the web app's CSS.
+ * tuned for a narrow column.
  * The renderer takes a style object rather than classes, so this cannot be shared.
  */
 const styles = {
@@ -55,6 +56,27 @@ const styles = {
   tr: { borderColor: colors.border },
 };
 
+/**
+ * Fenced code is rendered by hand so it can be highlighted; everything else keeps the
+ * library's own rule. A fence's info string is `ts title="x"` at its most elaborate, so the
+ * language is the first word of it — the same reading the rule being replaced does.
+ */
+const rules: RenderRules = {
+  fence: (node) => (
+    <CodeBlock
+      key={node.key}
+      code={node.content}
+      language={typeof node.sourceInfo === "string" ? node.sourceInfo.trim().split(/\s+/)[0] : null}
+    />
+  ),
+  // An indented block has no language to declare, so it goes to auto-detection.
+  code_block: (node) => <CodeBlock key={node.key} code={node.content} />,
+};
+
 export function MarkdownBody({ children }: { children: string }) {
-  return <Markdown style={styles}>{children}</Markdown>;
+  return (
+    <Markdown style={styles} rules={rules}>
+      {children}
+    </Markdown>
+  );
 }

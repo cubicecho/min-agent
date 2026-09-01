@@ -36,7 +36,7 @@ import type {
 import { createGqlClient } from "./gql.ts";
 
 /**
- * The API the two front ends call.
+ * The API the app calls.
  *
  * Underneath it is GraphQL, but the shape is deliberately the small set of verbs the UI
  * actually has — nine reads and writes and one stream — rather than a query builder. The

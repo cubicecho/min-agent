@@ -94,8 +94,9 @@ export default function SettingsScreen() {
       <Card>
         <CardTitle>About</CardTitle>
         <CardDescription>
-          This build talks to the same server as the web app and shares its types, API client and
-          formatting. There is no authentication — keep the server on a trusted network.
+          This build talks to the same server as the browser build, and is the same code: the types,
+          the API client and the formatting are shared. There is no authentication — keep the server
+          on a trusted network.
         </CardDescription>
       </Card>
     </Screen>

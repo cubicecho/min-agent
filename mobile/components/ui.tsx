@@ -19,7 +19,7 @@ import { type Colors, colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 
 /**
- * The React Native counterparts of the web app's shadcn components. Radix is
+ * The React Native counterparts of shadcn's components. Radix is
  * DOM-only, so these are rewritten rather than shared — but the variant names and
  * Tailwind vocabulary are kept identical so screen code reads the same on both sides.
  */
@@ -156,7 +156,7 @@ type WebKeyEvent = {
 };
 
 /**
- * `onSubmit` sends on a bare Enter, as the web app does. It is deliberately web-only:
+ * `onSubmit` sends on a bare Enter, in a browser. It is deliberately web-only:
  * on a phone the return key is how you get a new line, and there is a send button
  * an inch away.
  */

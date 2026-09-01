@@ -25,6 +25,8 @@
     "expo-linking": "~57.0.8",
     "expo-router": "~57.0.17",
     "expo-status-bar": "~57.0.1",
+    "highlight.js": "^11.12.0",
+    "lowlight": "^3.3.0",
     "nativewind": "^5.0.0-preview.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",

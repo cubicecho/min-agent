@@ -73,9 +73,9 @@ export async function loadServerUrl() {
     return current;
   }
 
-  // Nothing saved. The origin is worth trying first and cheap to rule out: served from
-  // the agent's own /app, it is right even when the address baked in at build time names a
-  // host this device cannot reach. Then the build-time address, then a guess.
+  // Nothing saved. The origin is worth trying first and cheap to rule out: served by the
+  // agent itself, it is right even when the address baked in at build time names a host
+  // this device cannot reach. Then the build-time address, then a guess.
   if (onWeb && (await originServesTheApi())) {
     fallback = "";
   } else if (configured) {

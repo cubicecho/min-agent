@@ -34,8 +34,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PORT: ${PORT:-8787}
       DATABASE_URL: postgres://min_agent:min_agent@db:5432/min_agent
-    # The server creates its tables at boot, so it has to find a database that is actually
-    # accepting connections — not merely a container that has started.
+    # The server applies its migrations at boot, so it has to find a database that is
+    # actually accepting connections — not merely a container that has started.
     depends_on:
       db:
         condition: service_healthy

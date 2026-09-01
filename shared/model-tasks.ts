@@ -4,7 +4,7 @@
  *
  * This is its own module rather than part of `types.ts` because both Config screens render it
  * and nothing else there. `types.ts` is zod, and importing one constant out of it puts the
- * whole validator in a front end that has no validating to do.
+ * whole validator into a bundle that has no validating to do.
  */
 export const MODEL_TASKS = [
   {

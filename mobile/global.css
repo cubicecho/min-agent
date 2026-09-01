@@ -17,7 +17,7 @@
 @import "tailwindcss/utilities.css";
 @import "nativewind/theme";
 
-/* The same shadcn neutral palette as the web app, converted from oklch to hex —
+/* The shadcn neutral palette, converted from oklch to hex —
    React Native's style engine cannot parse oklch() at runtime. */
 @theme inline {
   --color-background: var(--background);
@@ -50,8 +50,8 @@
 }
 
 /*
- * One palette, not two. The web app hard-codes `class="dark"` on its document element
- * and has no light mode at all, so this app matches it rather than following the device.
+ * One palette, not two. There is no light mode, so this does not follow the device —
+ * `userInterfaceStyle` in `app.json` pins it to dark on every platform.
  * `lib/theme.ts` carries the same values for the props that take a colour as a string.
  */
 :root {

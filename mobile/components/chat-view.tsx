@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils.ts";
 /**
  * Chats, in the two arrangements the window has room for.
  *
- * Wide, it is the web app's: the chat takes the space and the sessions sit in a panel on
+ * Wide, it is the desktop shape: the chat takes the space and the sessions sit in a panel on
  * the right, so switching between them never leaves the conversation. Narrow, there is
  * only room for one at a time, so the list and the chat are the separate screens they
  * have always been — the list at `/`, a conversation at `/chat/[id]`.
@@ -233,7 +233,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
           onScroll={onScroll}
           scrollEventThrottle={16}
         >
-          {/* Wide, the column is centred and capped as on the web app; narrow, the cap is
+          {/* Wide, the column is centred and capped for readability; narrow, the cap is
             wider than the screen and does nothing. */}
           <View className="w-full max-w-3xl self-center">
             {activeId ? (

@@ -25,13 +25,13 @@ const TYPES = {
 
 /**
  * The bundle is served over http rather than loaded from `file://` for two reasons:
- * the export's asset URLs are absolute (`/app/...`), and `localStorage` — where the
+ * the export's asset URLs are absolute (`/_expo/...`), and `localStorage` — where the
  * server address is kept — is unreliable on a file origin.
  */
 function serve() {
   const server = http.createServer((request, response) => {
     const url = new URL(request.url, "http://127.0.0.1");
-    const relative = url.pathname.replace(/^\/app\/?/, "") || "index.html";
+    const relative = url.pathname.replace(/^\//, "") || "index.html";
     let file = path.join(WEB_ROOT, relative);
 
     // Expo exports a single-page app, so unknown paths are routes, not missing files.
@@ -68,7 +68,7 @@ async function createWindow() {
     return { action: "deny" };
   });
 
-  await window.loadURL(`http://127.0.0.1:${port}/app`);
+  await window.loadURL(`http://127.0.0.1:${port}/`);
 }
 
 app.whenReady().then(createWindow);

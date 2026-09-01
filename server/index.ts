@@ -56,13 +56,11 @@ app.use(
 app.use(yoga.graphqlEndpoint, yoga);
 
 /**
- * Both builders fingerprint what they emit — Vite into `assets/`, Expo into `_expo/static/` —
- * so those files are good forever and a changed one arrives under a different name. Everything
- * else, the HTML shell above all, keeps its name across every build and has to be revalidated
- * or a deploy never reaches the browser.
+ * Expo fingerprints what it emits into `_expo/static/`, so those files are good forever and a
+ * changed one arrives under a different name. Everything else, the HTML shell above all, keeps
+ * its name across every build and has to be revalidated or a deploy never reaches the browser.
  */
 const fingerprinted = (filePath: string) =>
-  filePath.includes(`${path.sep}assets${path.sep}`) ||
   filePath.includes(`${path.sep}_expo${path.sep}static${path.sep}`);
 
 const staticOptions: Parameters<typeof express.static>[1] = {
@@ -76,18 +74,18 @@ const staticOptions: Parameters<typeof express.static>[1] = {
 
 const shell = { headers: { "Cache-Control": "no-cache" } };
 
-// The Expo build, when one has been exported, is served alongside the web app at /app.
-const expo = path.join(ROOT, "mobile", "dist");
-if (fs.existsSync(expo)) {
-  app.use("/app", express.static(expo, staticOptions));
-  app.get(/^\/app(\/.*)?$/, (_req, res) => res.sendFile(path.join(expo, "index.html"), shell));
-}
-
-// In production the built client is served from the same origin.
-const dist = path.join(ROOT, "dist");
-if (fs.existsSync(dist)) {
-  app.use(express.static(dist, staticOptions));
-  app.get(/^(?!\/graphql).*/, (_req, res) => res.sendFile(path.join(dist, "index.html"), shell));
+/**
+ * The Expo web export is the UI, served from the same origin as the API.
+ *
+ * `output: "single"` means one HTML shell and client-side routing, so every path that is not
+ * the API has to return that shell rather than a 404 — a reload on `/config` is a real request
+ * for a route only the bundle knows about. The server runs perfectly well without the export
+ * present: that is the API-only case, and the Android and desktop apps are the clients.
+ */
+const web = path.join(ROOT, "mobile", "dist");
+if (fs.existsSync(web)) {
+  app.use(express.static(web, staticOptions));
+  app.get(/^(?!\/graphql).*/, (_req, res) => res.sendFile(path.join(web, "index.html"), shell));
 }
 
 app.use(

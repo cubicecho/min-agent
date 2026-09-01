@@ -46,9 +46,16 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://min_agent:min_agent@localhost:5432/min_agent_test
 
-      # `build` typechecks before it bundles, so this covers `npm run typecheck` too.
-      - name: Build
-        run: npm run build
+      # `npm run build` also exports the Expo bundle, which needs the mobile install and is
+      # covered by the docker job below. What is worth checking here is that the generated
+      # GraphQL types still describe the schema and that everything typechecks against them.
+      - name: Codegen and typecheck
+        run: npm run codegen && npm run typecheck
+
+      # Generated files are committed, so a schema change that was not regenerated should
+      # fail here rather than reach a front end typed against the schema before it.
+      - name: Check the generated files are current
+        run: git diff --exit-code -- schema.graphql shared/gql/
 
   # The Expo app has its own node_modules and its own tsconfig, so it is checked in a job
   # of its own rather than made a condition of the server's.
@@ -94,7 +101,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # The server creates its tables at boot and refuses to start without a database, so
+      # The server applies its migrations at boot and refuses to start without a database, so
       # booting the image is also a check that the schema it ships applies to an empty one.
       - name: Boot the image against a database
         run: |

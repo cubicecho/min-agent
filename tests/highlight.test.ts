@@ -1,98 +1,66 @@
-import type { Element, Root } from "hast";
 import { describe, expect, it } from "vitest";
-import { rehypeHighlight } from "../src/components/highlight.ts";
+import { registered, tokenize, tokenizeLines } from "../shared/highlight.ts";
 
 /**
- * The highlighter is hand-rolled over lowlight rather than `rehype-highlight`, to keep the
- * languages nothing here emits out of the bundle. These check that the swap kept the part
- * that shows: `hljs-*` classes on the right tokens, for the languages replies actually use.
+ * The highlighter is hand-rolled over lowlight rather than a rehype plugin, to keep the
+ * languages nothing here emits out of the bundle. These check the part that shows: the right
+ * scopes on the right tokens, for the languages replies actually use, and — since the renderer
+ * lays out one row per line — that no token loses text on the way through.
  */
-const fence = (language: string | null, code: string): Root => ({
-  type: "root",
-  children: [
-    {
-      type: "element",
-      tagName: "pre",
-      properties: {},
-      children: [
-        {
-          type: "element",
-          tagName: "code",
-          properties: language ? { className: [`language-${language}`] } : {},
-          children: [{ type: "text", value: code }],
-        },
-      ],
-    },
-  ],
-});
+const scopes = (tokens: { scope?: string }[]) => tokens.map((token) => token.scope);
+const text = (tokens: { text: string }[]) => tokens.map((token) => token.text).join("");
 
-function highlight(tree: Root) {
-  rehypeHighlight()(tree);
-  const pre = tree.children[0] as Element;
-  return pre.children[0] as Element;
-}
+describe("tokenize", () => {
+  it("scopes a block in a registered language", () => {
+    const tokens = tokenize("const answer = 42;", "typescript");
 
-const classesIn = (node: Element): string[] =>
-  node.children.flatMap((child) =>
-    child.type === "element"
-      ? [...((child.properties.className as string[] | undefined) ?? []), ...classesIn(child)]
-      : [],
-  );
-
-describe("rehypeHighlight", () => {
-  it("marks up a fenced block in a registered language", () => {
-    const code = highlight(fence("typescript", "const answer = 42;"));
-
-    expect(code.properties.className).toContain("hljs");
-    expect(classesIn(code)).toContain("hljs-keyword");
+    expect(scopes(tokens)).toContain("keyword");
+    expect(text(tokens)).toBe("const answer = 42;");
   });
 
-  it("keeps the language class the fence asked for", () => {
-    const code = highlight(fence("python", "def f():\n    return 1\n"));
+  it("keeps every character, whatever the language", () => {
+    const code = "def f():\n    return 1\n";
 
-    expect(code.properties.className).toEqual(["language-python", "hljs"]);
+    expect(text(tokenize(code, "python"))).toBe(code);
   });
 
   it("falls back to auto-detection when the fence names nothing", () => {
-    const code = highlight(fence(null, "SELECT * FROM sessions WHERE id = '1';"));
+    const tokens = tokenize("SELECT * FROM sessions WHERE id = '1';");
 
-    expect(code.properties.className).toContain("hljs");
-    expect(classesIn(code).length).toBeGreaterThan(0);
+    expect(text(tokens)).toBe("SELECT * FROM sessions WHERE id = '1';");
+    expect(scopes(tokens).some(Boolean)).toBe(true);
   });
 
   it("leaves an unregistered language readable rather than dropping it", () => {
-    const code = highlight(fence("brainfuck", "++++[>++++<-]>."));
+    const code = "++++[>++++<-]>.";
 
     // Auto-detection may match nothing here; what matters is the text survives intact.
-    expect(code.properties.className).toContain("hljs");
-    const text = JSON.stringify(code.children);
-    expect(text).toContain("++++");
+    expect(registered("brainfuck")).toBe(false);
+    expect(text(tokenize(code, "brainfuck"))).toBe(code);
   });
 
-  it("ignores inline code, which has no `pre` around it", () => {
-    const tree: Root = {
-      type: "root",
-      children: [
-        {
-          type: "element",
-          tagName: "p",
-          properties: {},
-          children: [
-            {
-              type: "element",
-              tagName: "code",
-              properties: { className: ["language-ts"] },
-              children: [{ type: "text", value: "const x = 1" }],
-            },
-          ],
-        },
-      ],
-    };
-    rehypeHighlight()(tree);
+  it("takes the innermost scope where highlight.js nests them", () => {
+    // `function f` puts a `title` inside a `function`, and `title` is the one CSS would paint.
+    const tokens = tokenize("function f() {}", "typescript");
 
-    const paragraph = tree.children[0] as Element;
-    const code = paragraph.children[0] as Element;
-    expect(code.properties.className).toEqual(["language-ts"]);
-    expect(code.children).toEqual([{ type: "text", value: "const x = 1" }]);
+    expect(scopes(tokens)).toContain("title");
+  });
+});
+
+describe("tokenizeLines", () => {
+  it("cuts a token that straddles a newline", () => {
+    const lines = tokenizeLines("/* one\n   two */", "typescript");
+
+    expect(lines).toHaveLength(2);
+    expect(lines.every((line) => line.every((token) => !token.text.includes("\n")))).toBe(true);
+    expect(lines.map(text)).toEqual(["/* one", "   two */"]);
+  });
+
+  it("does not leave a blank row for a trailing newline", () => {
+    expect(tokenizeLines("a = 1\n", "python")).toHaveLength(1);
+  });
+
+  it("keeps a blank line in the middle, which is real", () => {
+    expect(tokenizeLines("a = 1\n\nb = 2", "python")).toHaveLength(3);
   });
 });
