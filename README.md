@@ -15,7 +15,7 @@ Everything below the quick start is reference — read it when you want that pie
 - [Task models](#task-models) — pointing a small fast model at titling, compaction, tool preselection and follow-ups
 - [Turn statistics](#turn-statistics) — what the numbers under each reply mean
 - [Keyboard shortcuts](#keyboard-shortcuts) — what the desktop and browser builds bind
-- [The session list](#the-session-list) — renaming, deleting and finding a chat
+- [The session list](#the-session-list) — grouping, renaming, deleting and finding a chat
 - [Other apps in the sidebar](#other-apps-in-the-sidebar) — framing a kanban board or a task server beside the chat
 - [Android and Windows](#android-and-windows) — the same front end, off the browser
 
@@ -575,6 +575,18 @@ turns it into `onRequestClose`, which `Dialog` and `Select` were passing before 
 One caveat: a browser will not give up `⌘N`, so that one only reaches us in Electron.
 
 ## The session list
+
+Chats sit under **Today**, **Yesterday**, **This week** and **Earlier**. Every row used to
+carry a full `Nov 12, 03:14`, which is noise past a screenful — the dates repeat, and none of
+them is the one you are looking for. Under a heading a row only says what the heading does not:
+a clock today, a weekday earlier in the week, a date once it is older than that.
+
+The buckets are `groupSessions` in `shared/client/sessions.ts`, next to `matchSessions`, so the
+rule is testable from the root runner and the panel and the narrow screen — which render the
+same list twice — cannot drift apart. Days are counted between midnights rather than in elapsed
+hours: at nine in the morning something from eleven last night is yesterday, not fourteen hours
+ago. The difference is rounded, because the two midnights can be 23 or 25 hours apart when the
+clocks change and a chat should not slide into the wrong day over it.
 
 A chat is renamed in place — the title becomes a field, Enter or moving away commits, Escape
 puts it back — over the `updateSessionSingle` mutation the generated CRUD hands us for free.
