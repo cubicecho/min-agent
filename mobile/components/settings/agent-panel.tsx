@@ -72,7 +72,7 @@ const NumberInput = ({
   onChangeValue,
   integer,
   ...props
-}: Omit<InputProps, "value" | "onChangeText"> & {
+}: Omit<InputProps, "value" | "onChangeText" | "onBlur"> & {
   value: number;
   onChangeValue: (value: number) => void;
   integer?: boolean;
