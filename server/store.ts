@@ -73,7 +73,10 @@ export async function updateSession(id: string, patch: SessionPatch): Promise<vo
  * Appends one message and returns its row id, so a later `patchMessage` can reach it.
  *
  * `messageCount` and `updatedAt` move with it: the sidebar reads both off the session row and
- * has no business opening a transcript to draw a list of titles.
+ * has no business opening a transcript to draw a list of titles. The two writes are one
+ * transaction because the count is not derived from anything — nothing recomputes it, and
+ * `truncateSession` is the only other thing that sets it — so a row that landed without its
+ * increment would leave the sidebar under-counting that conversation for good.
  */
 export async function addMessage(
   sessionId: string,
@@ -83,14 +86,17 @@ export async function addMessage(
   // `fromStored` widens `role` to `string`, which the column's enum will not take; the row
   // itself is exactly the insert shape, so name it as one.
   const values = { sessionId, idx, ...fromStored(message) } as NewMessageRow;
-  const [row] = await db.insert(messages).values(values).returning({ id: messages.id });
 
-  await db
-    .update(sessions)
-    .set({ messageCount: sql`${sessions.messageCount} + 1`, updatedAt: new Date() })
-    .where(eq(sessions.id, sessionId));
+  return await db.transaction(async (tx) => {
+    const [row] = await tx.insert(messages).values(values).returning({ id: messages.id });
 
-  return row.id;
+    await tx
+      .update(sessions)
+      .set({ messageCount: sql`${sessions.messageCount} + 1`, updatedAt: new Date() })
+      .where(eq(sessions.id, sessionId));
+
+    return row.id;
+  });
 }
 
 /** What is only known once the turn has finished: what it cost, and what to ask next. */
