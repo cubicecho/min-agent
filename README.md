@@ -959,6 +959,33 @@ Keep it on a network you trust, or put it behind something that does authenticat
 Android additionally needs cleartext HTTP to be allowed, since a LAN server is rarely on https;
 `app.json` sets `usesCleartextTraffic` for that reason.
 
+### Android builds
+
+The Android app is an EAS project — [`@cubicecho/min-agent`](https://expo.dev/accounts/cubicecho/projects/min-agent),
+its id in `mobile/app.json` — and it ships two ways. Most commits change TypeScript and
+nothing else, and those go out as an over-the-air update: EAS Update publishes the bundle to
+a channel and the installed APK runs it on its next launch. A commit that changes the native
+runtime gets a new binary from EAS Build instead. Which one is not a judgement call —
+`runtimeVersion` is `{ "policy": "fingerprint" }`, and the fingerprint either matches a
+finished build on that channel or it doesn't.
+
+```bash
+npm --prefix mobile run apk:eas     # a preview APK, built in the cloud
+npm --prefix mobile run apk         # locally, if you have the Android toolchain
+```
+
+`.github/workflows/android.yml` does the same on every push to `main` that touches `mobile/`
+or `shared/`, and records the result as a GitHub Release — one per binary, with the updates
+published on top of it appended to the same entry, which is the standing answer to what is
+actually on a phone. It sits out until an `EXPO_TOKEN` secret exists rather than failing.
+
+An EAS build has no `EXPO_PUBLIC_AGENT_URL` — `scripts/expo.ts` only bakes that in when you
+start Expo yourself — so a downloaded APK looks for the agent at the address in **Settings →
+Server**, and that is the one to set on a new install.
+
+The profiles, the one-time keystore and token setup, what an update can and cannot carry, and
+the local Gradle path are all in [`mobile/BUILDING.md`](mobile/BUILDING.md).
+
 ### Web build
 
 ```bash
