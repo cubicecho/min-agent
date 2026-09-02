@@ -6,3 +6,6 @@ dist
 *.local
 # Claude Code's scratch space, including the git worktrees it opens inside the repo.
 .claude
+# `expo prebuild` generates the native project from app.json; app.json is the source.
+mobile/android
+mobile/ios

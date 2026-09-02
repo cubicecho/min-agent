@@ -12,6 +12,7 @@
       "shared/**",
       "tests/**",
       "scripts/**",
+      ".github/scripts/**",
       "mobile/app/**",
       "mobile/components/**",
       "mobile/lib/**",

@@ -2,16 +2,26 @@
   "expo": {
     "name": "min-agent",
     "slug": "min-agent",
+    "owner": "cubicecho",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
     "scheme": "minagent",
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "android": {
-      "package": "lan.minagent.app"
+      "package": "lan.minagent.app",
+      "versionCode": 1
     },
     "web": {
       "bundler": "metro",
       "output": "single"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/2f7fd9b7-4cc7-4ef2-86a4-f6c5019f03f5",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
     },
     "plugins": [
       "expo-router",
@@ -30,7 +40,13 @@
         {
           "microphonePermission": "Allow min-agent to use the microphone so you can speak a message instead of typing it."
         }
-      ]
-    ]
+      ],
+      "expo-asset"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2f7fd9b7-4cc7-4ef2-86a4-f6c5019f03f5"
+      }
+    }
   }
 }
