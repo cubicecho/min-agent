@@ -11,6 +11,7 @@ import {
   ErrorNote,
   Field,
   Input,
+  type InputProps,
   Loading,
   Muted,
   Screen,
@@ -54,8 +55,60 @@ type Draft = {
  */
 const seed = ({ hasApiKey: _, ...row }: LlmConfigView): Draft => ({ ...row, apiKey: "" });
 
-/** Keeps a partly-typed number field usable — an empty box reads as 0, not NaN. */
-const num = (value: string) => (value.trim() === "" ? 0 : (Number(value) ?? 0));
+/**
+ * A number box you can actually type a decimal into.
+ *
+ * The draft holds numbers, and a box that ran every keystroke back through `Number` could
+ * not hold a half-typed one: "0." parses to 0, re-renders as "0", and the dot is gone the
+ * moment it is typed. Every field here was whole-number-only for that reason. So the text
+ * being typed lives here and the draft only hears the values that parse.
+ *
+ * `integer` is for the fields the config schema keeps whole — token counts and loop limits
+ * — and rounds on the way out; the default is a float, which is what temperature and the
+ * prices need.
+ */
+const NumberInput = ({
+  value,
+  onChangeValue,
+  integer,
+  ...props
+}: Omit<InputProps, "value" | "onChangeText"> & {
+  value: number;
+  onChangeValue: (value: number) => void;
+  integer?: boolean;
+}) => {
+  const [text, setText] = useState(() => String(value));
+  const [seen, setSeen] = useState(value);
+
+  // A value that moved anywhere but in this box — a save reading the row back — replaces
+  // what is typed. Adjusting state while rendering is React's own answer to state derived
+  // from a prop; an effect would paint the stale text first.
+  if (value !== seen) {
+    setSeen(value);
+    setText(String(value));
+  }
+
+  return (
+    <Input
+      keyboardType={integer ? "number-pad" : "decimal-pad"}
+      {...props}
+      value={text}
+      onChangeText={(next) => {
+        setText(next);
+        // An empty box reads as 0; anything that is not a number yet — "1e", a lone "-" —
+        // is left as typed and the draft keeps the last value that was one.
+        const parsed = next.trim() === "" ? 0 : Number(next);
+        if (!Number.isFinite(parsed)) return;
+        const rounded = integer ? Math.round(parsed) : parsed;
+        setSeen(rounded);
+        onChangeValue(rounded);
+      }}
+      // Leaving the field settles what is in it back to the number that was stored, so a
+      // trailing dot or a rounded-away fraction stops claiming otherwise.
+      onBlur={() => setText(String(value))}
+    />
+  );
+};
 
 /**
  * A draft in the shape the stored row would be in, for comparing the two.
@@ -231,19 +284,18 @@ export function AgentPanel() {
                 label="Max reply tokens"
                 hint="The longest single reply. Not the context window."
               >
-                <Input
-                  value={String(draft.maxTokens)}
-                  onChangeText={(value) => set("maxTokens", num(value))}
-                  keyboardType="number-pad"
+                <NumberInput
+                  integer
+                  value={draft.maxTokens}
+                  onChangeValue={(value) => set("maxTokens", value)}
                 />
               </Field>
             </View>
             <View className="flex-1">
               <Field label="Temperature" hint="Higher is more random. 0 is deterministic.">
-                <Input
-                  value={String(draft.temperature)}
-                  onChangeText={(value) => set("temperature", num(value))}
-                  keyboardType="decimal-pad"
+                <NumberInput
+                  value={draft.temperature}
+                  onChangeValue={(value) => set("temperature", value)}
                 />
               </Field>
             </View>
@@ -252,19 +304,19 @@ export function AgentPanel() {
           <View className="flex-row gap-3">
             <View className="flex-1">
               <Field label="Max tool loops" hint="How many tool calls one turn may make.">
-                <Input
-                  value={String(draft.maxToolIterations)}
-                  onChangeText={(value) => set("maxToolIterations", num(value))}
-                  keyboardType="number-pad"
+                <NumberInput
+                  integer
+                  value={draft.maxToolIterations}
+                  onChangeValue={(value) => set("maxToolIterations", value)}
                 />
               </Field>
             </View>
             <View className="flex-1">
               <Field label="Context window" hint="The whole conversation. 0 asks the server.">
-                <Input
-                  value={String(draft.contextLimit)}
-                  onChangeText={(value) => set("contextLimit", num(value))}
-                  keyboardType="number-pad"
+                <NumberInput
+                  integer
+                  value={draft.contextLimit}
+                  onChangeValue={(value) => set("contextLimit", value)}
                 />
               </Field>
             </View>
@@ -302,23 +354,19 @@ export function AgentPanel() {
           <View className="flex-row gap-3">
             <View className="flex-1">
               <Field label="Input $ / 1M">
-                <Input
-                  value={String(draft.pricing.inputPer1M)}
-                  onChangeText={(value) =>
-                    set("pricing", { ...draft.pricing, inputPer1M: num(value) })
-                  }
-                  keyboardType="decimal-pad"
+                <NumberInput
+                  value={draft.pricing.inputPer1M}
+                  onChangeValue={(value) => set("pricing", { ...draft.pricing, inputPer1M: value })}
                 />
               </Field>
             </View>
             <View className="flex-1">
               <Field label="Output $ / 1M">
-                <Input
-                  value={String(draft.pricing.outputPer1M)}
-                  onChangeText={(value) =>
-                    set("pricing", { ...draft.pricing, outputPer1M: num(value) })
+                <NumberInput
+                  value={draft.pricing.outputPer1M}
+                  onChangeValue={(value) =>
+                    set("pricing", { ...draft.pricing, outputPer1M: value })
                   }
-                  keyboardType="decimal-pad"
                 />
               </Field>
             </View>
