@@ -110,6 +110,13 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
    */
   const showing = useRef(activeId);
   showing.current = activeId;
+  /**
+   * How long the stored transcript was when this turn was sent. The server writes the question
+   * down before it asks the model anything, so a transcript that has grown past this already
+   * has it — and the optimistic copy below would be the same question twice, one above the
+   * other, for as long as settling takes.
+   */
+  const asked = useRef(0);
 
   const speech = useSpeech({ model: config.data?.ttsModel ?? "" });
   const dictation = useDictation({
@@ -128,9 +135,12 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   // While a turn streams, the server's count lands just before "done"; once the session is
   // refetched the stored running total takes over.
   const shownUsage = pending ? turnStats : (session.data?.usage ?? null);
+  const stored = session.data?.messages ?? [];
+  /** The question in flight, for as long as the stored transcript is still without it. */
+  const question = pending && stored.length <= asked.current ? pending : null;
   // The window is only measured at the end of a turn, so during one we keep showing the
   // last known fill rather than blanking the meter out.
-  const recent = turnStats ?? latestStats(session.data?.messages ?? []);
+  const recent = turnStats ?? latestStats(stored);
   const fill = contextFill(recent);
 
   /**
@@ -233,6 +243,11 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     // first tokens can land before `created` has been through React, and they belong on
     // screen, not to the chat this pane was showing a moment ago.
     showing.current = turnId;
+
+    // Read out of the cache rather than off `session.data`: retrying reads the transcript back
+    // shorter first, and this render may not have caught up with that yet.
+    asked.current =
+      queryClient.getQueryData<{ messages: unknown[] }>(["session", turnId])?.messages.length ?? 0;
 
     // A chip sends its own text; anything half-typed in the box is left alone.
     if (!text) setDraft("");
@@ -423,7 +438,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
           <View className="w-full max-w-3xl self-center">
             {activeId ? (
               <MessageView
-                messages={session.data?.messages ?? []}
+                messages={stored}
+                pending={question}
                 live={live}
                 pricing={config.data?.pricing}
                 onFollowup={pending ? undefined : followup}
@@ -435,16 +451,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
             ) : (
               <Nothing configured={Boolean(activeModel)} />
             )}
-            {pending ? (
-              <>
-                <View className="mt-3 flex-row justify-end">
-                  <View className="max-w-[88%] rounded-lg bg-primary px-3 py-2 opacity-70">
-                    <Text className="text-sm leading-5 text-primary-foreground">{pending}</Text>
-                  </View>
-                </View>
-                <LiveMeter startedAt={startedAt} live={live} />
-              </>
-            ) : null}
+            {pending ? <LiveMeter startedAt={startedAt} live={live} /> : null}
           </View>
         </ScrollView>
 

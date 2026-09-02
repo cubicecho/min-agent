@@ -352,9 +352,14 @@ const LiveRow = memo(function LiveRow({ part }: { part: LivePart }) {
   );
 });
 
-/** Renders stored turns, then whatever is streaming in right now. */
+/**
+ * Renders stored turns, the question that has not been written down yet, and then whatever is
+ * streaming in right now — in that order, because that is the order they will be in once the
+ * turn is stored and read back.
+ */
 export function MessageView({
   messages,
+  pending,
   live,
   pricing,
   onFollowup,
@@ -364,6 +369,11 @@ export function MessageView({
   speakingIndex,
 }: {
   messages: StoredMessage[];
+  /**
+   * The question this turn is answering, until the stored transcript has it. Held here rather
+   * than left to the refetch so that the reply streams in under the question that asked for it.
+   */
+  pending?: string | null;
   live: LivePart[];
   pricing?: LlmConfig["pricing"];
   onFollowup?: (text: string) => void;
@@ -383,6 +393,12 @@ export function MessageView({
         onSpeak={onSpeak}
         speakingIndex={speakingIndex}
       />
+      {/* Dimmed: it is on screen before the server has said it has it. */}
+      {pending ? (
+        <View className="opacity-70">
+          <Bubble from="user">{pending}</Bubble>
+        </View>
+      ) : null}
       {live.map((part) => (
         <LiveRow key={part.key} part={part} />
       ))}
