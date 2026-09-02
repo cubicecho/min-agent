@@ -73,7 +73,11 @@ describe("breakdownRows", () => {
 
 describe("measureRequest", () => {
   const say = (role: string, content: string) => ({ role, content });
-  const asked = { role: "assistant", content: "let me look", tool_calls: [{ id: "1", fn: "read" }] };
+  const asked = {
+    role: "assistant",
+    content: "let me look",
+    tool_calls: [{ id: "1", fn: "read" }],
+  };
   const returned = { role: "tool", tool_call_id: "1", content: "x".repeat(500) };
 
   it("counts the catalogue as the part of the system message the prompt is not", () => {
