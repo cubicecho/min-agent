@@ -1,4 +1,5 @@
 import { tokenizeLines } from "@shared/highlight.ts";
+import { memo } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { CopyButton } from "@/components/ui.tsx";
 import { colors, syntax } from "@/lib/theme.ts";
@@ -14,8 +15,20 @@ import { colors, syntax } from "@/lib/theme.ts";
  * Lines are laid out one row each rather than as a single string, because there is no
  * `white-space: pre` here — a long line has to scroll sideways, and it can only do that if the
  * row it is in is a thing that scrolls.
+ *
+ * Memoised because the tokenising is the expensive part of drawing a message and almost none
+ * of it is ever needed twice: a streaming reply re-renders every frame, and without this each
+ * frame re-highlights every fence in it — including the ones the model finished writing
+ * seconds ago. Both props are strings, so a fence whose text has stopped changing costs
+ * nothing to leave on screen.
  */
-export function CodeBlock({ code, language }: { code: string; language?: string | null }) {
+export const CodeBlock = memo(function CodeBlock({
+  code,
+  language,
+}: {
+  code: string;
+  language?: string | null;
+}) {
   // A fence usually ends in a newline, which would otherwise render as a blank final row.
   const lines = tokenizeLines(code.replace(/\n$/, ""), language);
 
@@ -70,4 +83,4 @@ export function CodeBlock({ code, language }: { code: string; language?: string 
       </View>
     </View>
   );
-}
+});

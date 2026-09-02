@@ -1,4 +1,5 @@
 import Markdown, { type RenderRules } from "@ronradtke/react-native-markdown-display";
+import { memo } from "react";
 import { CodeBlock } from "@/components/code-block.tsx";
 import { colors } from "@/lib/theme.ts";
 
@@ -86,10 +87,16 @@ const rules: RenderRules = {
   code_block: (node) => <CodeBlock key={node.key} code={node.content} />,
 };
 
-export function MarkdownBody({ children }: { children: string }) {
+/**
+ * Memoised on the text, which is the whole of its input: the library re-parses the string on
+ * every render, and the transcript re-renders for reasons that have nothing to do with what
+ * any message says — a reply starting to be read aloud, a turn finishing and being read back.
+ * Every stored body was re-parsed on each of those.
+ */
+export const MarkdownBody = memo(function MarkdownBody({ children }: { children: string }) {
   return (
     <Markdown style={styles} rules={rules}>
       {children}
     </Markdown>
   );
-}
+});
