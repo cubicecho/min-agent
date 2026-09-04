@@ -12,10 +12,33 @@ import {
   Screen,
 } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
-import { defaultServerUrl, serverUrl, setServerUrl } from "@/lib/server-url.ts";
+import {
+  defaultServerUrl,
+  hasDefaultServerUrl,
+  needsServerUrl,
+  serverUrl,
+  setServerUrl,
+} from "@/lib/server-url.ts";
 import { useReportDirty } from "./dirty.tsx";
 
 type Probe = { ok: boolean; detail: string } | null;
+
+const EXAMPLE =
+  "For example http://192.168.1.20:8787 — a hostname works if your network resolves it.";
+
+/**
+ * Three situations, and only one of them is a warning. A build served by the agent may
+ * leave this blank on purpose; a build handed an address at bundle time is already
+ * working. A build with neither has nothing to fall back on, and saying so here is the
+ * only place it can be said before a query fails somewhere less helpful.
+ */
+const hint = () => {
+  if (needsServerUrl()) {
+    return `${EXAMPLE} Nothing is guessed for you, so until this is filled in the app has nowhere to ask.`;
+  }
+  if (!defaultServerUrl()) return "Leave blank to use the origin this page was served from.";
+  return EXAMPLE;
+};
 
 /**
  * Where the agent server lives. The web build served by that server needs nothing
@@ -56,19 +79,12 @@ export function ServerPanel() {
           before it is used.
         </CardDescription>
 
-        <Field
-          label="Base URL"
-          hint={
-            defaultServerUrl() === ""
-              ? "Leave blank to use the origin this page was served from."
-              : "For example http://192.168.1.20:8787 — a hostname works if your network resolves it."
-          }
-        >
+        <Field label="Base URL" hint={hint()}>
           <Input
             value={draft}
             onChangeText={setDraft}
             onSubmitEditing={save}
-            placeholder="http://localhost:8787"
+            placeholder="http://192.168.1.20:8787"
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
@@ -80,9 +96,13 @@ export function ServerPanel() {
           <Button onPress={save} busy={busy} icon="check">
             Save and test
           </Button>
-          <Button variant="outline" onPress={() => setDraft(defaultServerUrl())}>
-            Reset
-          </Button>
+          {/* Nothing to reset to on a build that was given no address; the button would
+              only ever clear the box, which is not what "Reset" says. */}
+          {hasDefaultServerUrl() ? (
+            <Button variant="outline" onPress={() => setDraft(defaultServerUrl())}>
+              Reset
+            </Button>
+          ) : null}
         </View>
 
         {probe && (
