@@ -1,0 +1,196 @@
+name: Android
+
+# Every push to main that touches the app ships it — as an over-the-air update
+# when the binary already on people's phones can run the new JavaScript, and as
+# a full EAS build when it can't. "Can it run this" is not a judgement call: it
+# is the fingerprint that `runtimeVersion: { policy: "fingerprint" }` resolves
+# to, a hash over the SDK, the native dependencies and the config plugins.
+#
+# Binaries come from EAS Build, not from this runner: the Android SDK, the JDK
+# and — the part that actually matters — the signing keystore all live on Expo's
+# side, so every APK this produces upgrades over the last one instead of being a
+# fresh debug-signed app. Setup (`eas init`, the EXPO_TOKEN secret, the one-time
+# keystore) and what an update can and cannot change are in mobile/BUILDING.md.
+#
+# Either way the result is recorded as a GitHub Release, so the Releases page —
+# not a run summary buried in the Actions tab — is where you look to see what is
+# out. One release per binary: a build creates it, and every update that ships
+# on top of that same binary appends a line to it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build profile
+        type: choice
+        options: [preview, production]
+        default: preview
+      force_build:
+        description: Build a binary even if one already matches the fingerprint
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    # Only what actually ends up in the app. The server shares a repo with it
+    # but not a binary.
+    paths:
+      - 'mobile/**'
+      # The Electron shell shares the directory with the Android app but not the
+      # binary — editing it must not queue an EAS build. Negated inside `paths`
+      # rather than as `paths-ignore`, which cannot filter the same event; order
+      # matters, so this has to follow the line it subtracts from.
+      - '!mobile/electron/**'
+      # Half the client is up here: the transport, the API calls, the stream
+      # reader and the usage formatting are all bundled into the app.
+      - 'shared/**'
+      - '.github/workflows/android.yml'
+      - '.github/scripts/android-release.mjs'
+
+# EAS builds queue and cost money; two for the same branch is one wasted. An
+# update published by a run this cancels is harmless — the next run publishes a
+# newer one to the same channel, and an update group lands whole or not at all.
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # `secrets` isn't readable from a job-level `if`, so the token check gets its
+  # own job. Without it, every push to main would fail this workflow until the
+  # secret exists — a red X that means "not set up yet", which is worse than
+  # useless.
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -n "$EXPO_TOKEN" ]; then
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            echo '::warning::EXPO_TOKEN is not set, so nothing shipped. See mobile/BUILDING.md.'
+          fi
+
+  ship:
+    needs: guard
+    if: needs.guard.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    # Creating a release, and the tag under it, is a write to `contents`. The
+    # default token is read-only.
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      # One word per lane: `preview` and `production` name the build profile,
+      # the update channel and the EAS environment, all three.
+      PROFILE: ${{ inputs.profile || 'preview' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # The app has its own lockfile and Metro pins `nodeModulesPaths` to this
+      # directory, so the root install has nothing the bundle needs. What this
+      # is for is `expo` itself: every step below evaluates the app config, and
+      # that has to resolve from here.
+      - name: Install the app's dependencies
+        run: npm ci
+
+      - name: Fingerprint the native runtime
+        id: fingerprint
+        run: |
+          eas fingerprint:generate \
+            --platform android \
+            --build-profile "$PROFILE" \
+            --json \
+            --non-interactive \
+            > fingerprint.json
+          HASH=$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync("fingerprint.json", "utf8")).hash)')
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+          echo "Fingerprint \`$HASH\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # If a finished build on this channel already carries this fingerprint,
+      # the APK people have installed can run this commit's JavaScript, and the
+      # JavaScript is all that changed — publish, don't rebuild. Filtered by
+      # --channel as well as by the hash, so a production AAB can never stand in
+      # for the preview APK the testers are actually on.
+      - name: Decide — update or build
+        id: decide
+        run: |
+          eas build:list \
+            --platform android \
+            --channel "$PROFILE" \
+            --status finished \
+            --fingerprint-hash "${{ steps.fingerprint.outputs.hash }}" \
+            --limit 1 \
+            --json \
+            --non-interactive \
+            > builds.json
+          COUNT=$(node -e 'process.stdout.write(String([].concat(JSON.parse(require("node:fs").readFileSync("builds.json", "utf8"))).length))')
+          if [ "$COUNT" -gt 0 ] && [ "${{ inputs.force_build }}" != 'true' ]; then
+            echo 'action=update' >> "$GITHUB_OUTPUT"
+          else
+            echo 'action=build' >> "$GITHUB_OUTPUT"
+          fi
+
+      # --environment is required from SDK 55 on. Nothing under mobile/ reads
+      # process.env at runtime — the server address is typed into the app and
+      # lives on the phone — so it only picks which EAS environment's variables
+      # are visible while the app config is evaluated.
+      - name: Publish an update
+        if: steps.decide.outputs.action == 'update'
+        run: |
+          eas update \
+            --platform android \
+            --channel "$PROFILE" \
+            --environment "$PROFILE" \
+            --message "${{ github.ref_name }} ${{ github.sha }}" \
+            --non-interactive \
+            --json \
+            > update.json
+
+      # --no-wait returns as soon as EAS accepts the job, so the runner isn't
+      # sitting in the build queue on the clock. The APK lands on the build page
+      # linked in the summary below.
+      - name: Build on EAS
+        if: steps.decide.outputs.action == 'build'
+        run: |
+          eas build \
+            --platform android \
+            --profile "$PROFILE" \
+            --non-interactive \
+            --no-wait \
+            --json \
+            --message "${{ github.ref_name }} ${{ github.sha }}" \
+            > build.json
+
+      # Both lanes end in the same place: a GitHub Release — one per binary
+      # (channel plus fingerprint), with every update published against that
+      # same fingerprint appended to it. That is the repo's standing answer to
+      # "what is on my phone right now?", which a per-run summary page can never
+      # be, since it describes one push and then scrolls away. The script writes
+      # this run's summary as well, so nothing is lost.
+      - name: Record the release
+        if: always() && steps.decide.outputs.action != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTION: ${{ steps.decide.outputs.action }}
+          FINGERPRINT: ${{ steps.fingerprint.outputs.hash }}
+        run: |
+          COMMIT_SUBJECT="$(git log -1 --pretty=%s)" \
+            node ../.github/scripts/android-release.mjs

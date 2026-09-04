@@ -1,0 +1,18 @@
+<!-- The app mark — a terminal prompt, `>_` — as a vector, for the README and
+     anywhere on the web that wants one. The geometry is shared with
+     scripts/gen-icons.mjs, which rasterizes the same three segments for the
+     launcher icons; a change to the mark means editing both. Only the plate
+     differs: Expo's icon is full-bleed square because Android masks it itself,
+     and this one rounds its own corners. Colours are mobile/lib/theme.ts. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>min-agent</title>
+  <rect width="64" height="64" rx="12" fill="#0a0a0a" />
+  <path
+    d="M21.68 22.48 30.81 32 21.68 41.52M34.78 41.52H43.90"
+    fill="none"
+    stroke="#fafafa"
+    stroke-width="4.56"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

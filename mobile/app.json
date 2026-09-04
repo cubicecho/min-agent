@@ -2,16 +2,31 @@
   "expo": {
     "name": "min-agent",
     "slug": "min-agent",
+    "owner": "cubicecho",
     "version": "1.0.0",
     "scheme": "minagent",
     "orientation": "default",
     "userInterfaceStyle": "dark",
+    "backgroundColor": "#0a0a0a",
+    "icon": "./assets/icon.png",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/2f7fd9b7-4cc7-4ef2-86a4-f6c5019f03f5"
+    },
     "android": {
-      "package": "lan.minagent.app"
+      "package": "lan.minagent.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0a0a0a"
+      }
     },
     "web": {
       "bundler": "metro",
-      "output": "single"
+      "output": "single",
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
@@ -24,13 +39,21 @@
         }
       ],
       "expo-font",
+      "expo-system-ui",
       "@react-native-vector-icons/feather",
       [
         "expo-audio",
         {
           "microphonePermission": "Allow min-agent to use the microphone so you can speak a message instead of typing it."
         }
-      ]
-    ]
+      ],
+      "expo-asset"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "2f7fd9b7-4cc7-4ef2-86a4-f6c5019f03f5"
+      }
+    }
   }
 }

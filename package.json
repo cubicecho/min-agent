@@ -11,6 +11,7 @@
     "mobile:web": "tsx --env-file-if-exists=.env scripts/expo.ts web",
     "mobile:android": "tsx --env-file-if-exists=.env scripts/expo.ts android",
     "mobile:export": "tsx --env-file-if-exists=.env scripts/expo.ts export:web",
+    "mobile:apk": "npm --prefix mobile run apk",
     "mobile:typecheck": "npm --prefix mobile run typecheck",
     "desktop": "npm run mobile:export && npm --prefix mobile/electron run start",
     "desktop:build": "npm run mobile:export && npm --prefix mobile/electron run dist",
