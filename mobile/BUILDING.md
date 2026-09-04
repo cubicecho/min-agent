@@ -1,7 +1,8 @@
 # Building the Android app
 
 This app cannot run in Expo Go: NativeWind's native stylesheet, the Feather icon
-package and `expo-audio` are all native modules Expo Go does not carry, so every
+package, `expo-audio` and `expo-speech-recognition` are all native modules Expo Go
+does not carry, so every
 run needs a real build. Test APKs come from **EAS Build**; a local Gradle build
 is a fallback if you have the Android toolchain, which you probably do not.
 
@@ -62,6 +63,23 @@ decision the server already makes: min-agent has no authentication at all, so it
 is only ever safe on a network you trust, and the answer to reaching it from
 outside is a VPN rather than TLS on the agent. A profile that refused cleartext
 would not be more secure, only unable to talk to the server.
+
+### The microphone
+
+Dictation on Android goes through `expo-speech-recognition`, which is a config
+plugin as well as a native module: the two permission strings under it in
+`app.json` are what Android shows when the microphone button is first pressed,
+and `RECORD_AUDIO` plus the `SPEECH_RECOGNITION` query are added to the manifest
+by the plugin at prebuild. Editing either string is a JavaScript change; adding
+or removing the plugin moves the fingerprint and needs a build.
+
+The recogniser is the system one — the same engine behind the keyboard's
+microphone key. Where the locale has an on-device model installed the app asks
+for it and no audio leaves the phone; that needs Android 13 or later and the
+language to have been downloaded already, under **Settings → System → Languages
+→ Voice input**. Everywhere else the system falls back to whatever it normally
+does, which for a Google build is Google. Point **Speech to text** at a
+`tcp://` Wyoming server instead if that is not a trade you want to make.
 
 ## One-time account setup
 

@@ -1,7 +1,10 @@
 import express from "express";
 import OpenAI, { toFile } from "openai";
-import { type LlmConfig, voiceBaseUrlFor } from "../shared/types.ts";
+import { spokenChunk } from "../shared/client/voice.ts";
+import { type LlmConfig, voiceBaseUrlFor, wyomingAddress } from "../shared/types.ts";
+import { toPcm, wav } from "./audio.ts";
 import { loadLlmConfig, resolveApiKey } from "./config.ts";
+import { synthesize, transcribe } from "./wyoming.ts";
 
 /**
  * Speaking and being spoken to, proxied.
@@ -18,6 +21,10 @@ import { loadLlmConfig, resolveApiKey } from "./config.ts";
  * Both routes are off unless a model is named under **Settings → Agent → Voice**. Left blank
  * — the default — the app never calls them: it dictates and speaks with whatever the browser
  * or the phone already has, and nothing here is reached at all.
+ *
+ * A `tcp://host:port` in place of a model name is a Wyoming server — Home Assistant's voice
+ * protocol, so a whisper or a Piper someone already runs at home answers instead of a vendor.
+ * It is the same proxy for the same reason and swaps only the wire; see `wyoming.ts`.
  */
 
 /** Whisper's own ceiling. A minute of speech is about a megabyte, so a turn is nowhere near. */
@@ -98,9 +105,17 @@ voice.post("/transcribe", express.json({ limit: MAX_AUDIO }), async (request, re
 
   try {
     const bytes = Buffer.from(audio, "base64");
-    const file = await toFile(bytes, `speech.${audioExtension(mime ?? "")}`, {
-      type: mime || "audio/webm",
-    });
+    const extension = audioExtension(mime ?? "");
+    const wyoming = wyomingAddress(config.sttModel);
+
+    // Wyoming speaks PCM and the app records AAC or Opus, so this path decodes on the way in.
+    // See `audio.ts` for why that is `ffmpeg` and not a recording setting.
+    if (wyoming) {
+      response.json({ text: await transcribe(wyoming, await toPcm(bytes, extension)) });
+      return;
+    }
+
+    const file = await toFile(bytes, `speech.${extension}`, { type: mime || "audio/webm" });
     const result = await voiceClient(config).audio.transcriptions.create({
       file,
       model: config.sttModel,
@@ -128,11 +143,28 @@ voice.post("/speak", express.json({ limit: "1mb" }), async (request, response) =
   }
 
   try {
+    const wyoming = wyomingAddress(config.ttsModel);
+
+    // Nothing to transcode in this direction: Piper hands back samples, and 44 bytes of
+    // header is the whole difference between those and a file the app can play.
+    if (wyoming) {
+      const { pcm, ...format } = await synthesize(
+        wyoming,
+        spokenChunk(text, MAX_SPEECH),
+        config.ttsVoice,
+      );
+      const file = wav(pcm, format);
+      response.setHeader("Content-Type", "audio/wav");
+      response.setHeader("Content-Length", file.byteLength);
+      response.send(file);
+      return;
+    }
+
     const spoken = await voiceClient(config).audio.speech.create({
       model: config.ttsModel,
       // The API insists on a voice; a server that has only one ignores what it is told.
       voice: config.ttsVoice.trim() || "alloy",
-      input: text.slice(0, MAX_SPEECH),
+      input: spokenChunk(text, MAX_SPEECH),
     });
     const audio = Buffer.from(await spoken.arrayBuffer());
     response.setHeader("Content-Type", spoken.headers.get("content-type") ?? "audio/mpeg");

@@ -376,11 +376,12 @@ export function AgentPanel() {
         <Card>
           <CardTitle>Voice</CardTitle>
           <CardDescription>
-            Leave both models blank and voice runs on whatever the device already has: a browser
-            reads replies aloud and takes dictation, an Android build reads replies aloud and leaves
-            dictation to the microphone key on the keyboard. Naming a model moves that work to the
-            server, which is the only way the desktop and Android builds get a microphone button of
-            their own.
+            Leave both models blank and voice runs on whatever the device already has: a browser and
+            an Android build both read replies aloud and take dictation with the recogniser they
+            ship with. Naming a model moves that work to the server, which is the only way the
+            desktop build gets a microphone button of its own. A tcp://host:port in place of a model
+            name is a Wyoming server — the voice services Home Assistant speaks to — and the audio
+            base URL and API key below are not used for it.
           </CardDescription>
 
           <Field
@@ -399,7 +400,10 @@ export function AgentPanel() {
 
           <View className="flex-row gap-3">
             <View className="flex-1">
-              <Field label="Speech to text" hint="whisper-1. Blank uses the device.">
+              <Field
+                label="Speech to text"
+                hint="whisper-1, or tcp://host:10300 for a Wyoming one. Blank uses the device."
+              >
                 <Input
                   value={draft.sttModel}
                   onChangeText={(value) => set("sttModel", value)}
@@ -410,7 +414,10 @@ export function AgentPanel() {
               </Field>
             </View>
             <View className="flex-1">
-              <Field label="Text to speech" hint="tts-1. Blank uses the device.">
+              <Field
+                label="Text to speech"
+                hint="tts-1, or tcp://host:10200 for a Wyoming one. Blank uses the device."
+              >
                 <Input
                   value={draft.ttsModel}
                   onChangeText={(value) => set("ttsModel", value)}
@@ -422,7 +429,10 @@ export function AgentPanel() {
             </View>
           </View>
 
-          <Field label="Voice" hint="Which voice the speech model uses. Blank takes its default.">
+          <Field
+            label="Voice"
+            hint="Which voice the speech model uses — a Piper voice name for Wyoming. Blank takes its default."
+          >
             <Input
               value={draft.ttsVoice}
               onChangeText={(value) => set("ttsVoice", value)}

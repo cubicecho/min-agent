@@ -1,4 +1,4 @@
-import { createVoiceClient, speakableText } from "@shared/client/voice.ts";
+import { createVoiceClient, speakableText, spokenChunk } from "@shared/client/voice.ts";
 import { describe, expect, it } from "vitest";
 import { audioExtension } from "../server/voice.ts";
 
@@ -117,5 +117,42 @@ describe("createVoiceClient", () => {
       "http://one:8787/api/voice/transcribe",
       "http://two:8787/api/voice/transcribe",
     ]);
+  });
+});
+
+describe("spokenChunk", () => {
+  it("leaves a reply that fits alone", () => {
+    expect(spokenChunk("Short enough.", 100)).toBe("Short enough.");
+  });
+
+  // The cut is where the tail is lost either way; what it decides is whether the last thing
+  // heard is a sentence or half a word.
+  it("ends on the last sentence that fits", () => {
+    const text = `${"a".repeat(80)}. Then a second one. And a third that runs past the end`;
+    expect(spokenChunk(text, 110)).toBe(`${"a".repeat(80)}. Then a second one.`);
+  });
+
+  it("keeps the quote a sentence ended inside", () => {
+    const text = `${"a".repeat(80)}. He said "no." And then more than there is room for`;
+    expect(spokenChunk(text, 110)).toBe(`${"a".repeat(80)}. He said "no."`);
+  });
+
+  // A full stop in the first line of a long reply is not a place to stop reading; cutting
+  // there would drop most of what fits for the sake of a tidier ending.
+  it("would rather break at a space than lose a fifth of the reply", () => {
+    const text = `One. ${"word ".repeat(60)}`;
+    const spoken = spokenChunk(text, 100);
+    expect(spoken).toBe(`One. ${"word ".repeat(19)}`.trim());
+    expect(spoken.endsWith("word")).toBe(true);
+  });
+
+  it("cuts a run with nothing to break on rather than saying nothing", () => {
+    const spoken = spokenChunk("x".repeat(300), 100);
+    expect(spoken).toBe("x".repeat(100));
+  });
+
+  it("does not mistake a decimal point for the end of a sentence", () => {
+    const text = `${"a".repeat(88)} 3.5 and more than fits here`;
+    expect(spokenChunk(text, 100)).toBe(`${"a".repeat(88)} 3.5 and`);
   });
 });

@@ -1,4 +1,4 @@
-import { speakableText } from "@shared/client/voice.ts";
+import { speakableText, spokenChunk } from "@shared/client/voice.ts";
 import {
   createAudioPlayer,
   RecordingPresets,
@@ -8,6 +8,7 @@ import {
 } from "expo-audio";
 import { File, Paths } from "expo-file-system";
 import * as Speech from "expo-speech";
+import { ExpoSpeechRecognitionModule, ExpoWebSpeechRecognition } from "expo-speech-recognition";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { voice } from "./client.ts";
@@ -19,11 +20,12 @@ import { voice } from "./client.ts";
  * **Settings → Agent → Voice**:
  *
  * - **Dictation.** With a transcription model, the microphone is recorded and the clip posted
- *   to the agent, which is the only way that works in the Android app and the desktop build.
- *   Without one, the browser's own speech recognition does it for free — Chrome, Edge and
- *   Safari have it; Firefox does not, and neither does a React Native runtime, so on those
- *   `supported` is false and the composer leaves the microphone off rather than offering a
- *   button that cannot work. A phone keyboard's own microphone key still does.
+ *   to the agent. Without one, the platform's own recogniser does it for free: a browser's
+ *   `SpeechRecognition` — Chrome, Edge and Safari have it, Firefox does not — and on Android
+ *   the system recogniser behind `expo-speech-recognition`, which is the same engine as the
+ *   microphone key on the keyboard. That leaves the desktop build, where neither exists, so
+ *   there `supported` is false and the composer omits the microphone rather than offering a
+ *   button that cannot work.
  * - **Speech.** With a speech model, the agent returns audio to play. Without one,
  *   `expo-speech` reads the reply in the device's own voice, which it has on every platform
  *   this ships to — `speechSynthesis` in a browser, the system voice on Android.
@@ -81,12 +83,15 @@ async function readRecording(uri: string) {
 
 /**
  * The shape of `SpeechRecognition`, which TypeScript's DOM library does not describe and
- * half the browsers spell with a `webkit` prefix. Only the handful of members used below.
+ * half the browsers spell with a `webkit` prefix. Only the handful of members used below,
+ * plus the one Android addition.
  */
 interface Recognition {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
+  /** Android only, and only honoured when the locale's model is on disk. See `onDeviceLocales`. */
+  requiresOnDeviceRecognition?: boolean;
   start(): void;
   stop(): void;
   abort(): void;
@@ -97,10 +102,48 @@ interface Recognition {
   onend: (() => void) | null;
 }
 
+/**
+ * Whoever recognises speech here.
+ *
+ * On web that is the browser's own, deliberately: it is already there, it needs no permission
+ * dance of ours, and `expo-speech-recognition` on web is a wrapper around this same object.
+ * Off web it is that package, which reaches Android's system recogniser — the one the
+ * keyboard's microphone key uses. The cast is because the polyfill is typed against the full
+ * DOM `SpeechRecognition` and this is the smaller contract the app actually depends on.
+ */
 function recognitionClass(): (new () => Recognition) | undefined {
-  if (Platform.OS !== "web" || typeof window === "undefined") return undefined;
+  if (Platform.OS !== "web") return ExpoWebSpeechRecognition as unknown as new () => Recognition;
+  if (typeof window === "undefined") return undefined;
   const scope = window as unknown as Record<string, (new () => Recognition) | undefined>;
   return scope.SpeechRecognition ?? scope.webkitSpeechRecognition;
+}
+
+/** What to ask to be recognised in, which off web has no `navigator` to read it from. */
+function currentLocale(): string {
+  if (typeof navigator !== "undefined" && navigator.language) return navigator.language;
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().locale || "en-US";
+  } catch {
+    return "en-US";
+  }
+}
+
+/**
+ * The locales Android can recognise without sending the audio anywhere.
+ *
+ * Android's recogniser is network-backed by default — the clip goes to Google — and the
+ * offline model is a per-device download the user has to have made, so whether this is
+ * possible is a fact about the phone rather than a setting. Asked once and matched exactly:
+ * a near miss falls back to the default service, which always works, rather than to a
+ * `no-speech` error from a model that is not installed for the language being spoken.
+ */
+async function onDeviceLocales(): Promise<string[]> {
+  if (Platform.OS === "web" || !ExpoSpeechRecognitionModule.supportsOnDeviceRecognition())
+    return [];
+  const { installedLocales } = await ExpoSpeechRecognitionModule.getSupportedLocales({}).catch(
+    () => ({ installedLocales: [] as string[] }),
+  );
+  return installedLocales;
 }
 
 /* ---------------------------------------------------------------------- dictation */
@@ -139,18 +182,36 @@ export function useDictation({
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recognition = useRef<Recognition | null>(null);
+  /** A press while the last one is still opening or closing the microphone would race it. */
+  const busy = useRef(false);
+  /** The locales this device can recognise offline, once the answer has come back. */
+  const offline = useRef<string[]>([]);
 
   const viaModel = Boolean(model.trim());
   const supported = viaModel || Boolean(recognitionClass());
 
-  // Leaving a screen with the microphone open would keep it open. Stop is deliberately not
-  // awaited: the component is going, and there is nobody left to hand a transcript to.
+  useEffect(() => {
+    let live = true;
+    void onDeviceLocales().then((locales) => {
+      if (live) offline.current = locales;
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // Leaving a screen with the microphone open would keep it open — the recogniser holds it,
+  // and so does a recording in progress. Neither stop is awaited: the component is going and
+  // there is nobody left to hand a transcript to.
   useEffect(() => {
     return () => {
       recognition.current?.abort();
       recognition.current = null;
+      if (!recorder.isRecording) return;
+      void recorder.stop().catch(() => {});
+      void setAudioModeAsync({ allowsRecording: false }).catch(() => {});
     };
-  }, []);
+  }, [recorder]);
 
   const record = useCallback(async () => {
     const permission = await requestRecordingPermissionsAsync();
@@ -178,15 +239,23 @@ export function useDictation({
     }
   }, [recorder]);
 
-  /** The browser engine ends on its own — at a pause, or when `stop()` is called. */
-  const listen = useCallback(() => {
+  /** The platform engine ends on its own — at a pause, or when `stop()` is called. */
+  const listen = useCallback(async () => {
     const Recogniser = recognitionClass();
-    if (!Recogniser) throw new Error("this browser has no speech recognition");
+    if (!Recogniser) throw new Error("this build has no speech recognition");
 
+    // A browser asks for the microphone itself, as part of starting. Android does not.
+    if (Platform.OS !== "web") {
+      const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!permission.granted) throw new Error("the microphone was not allowed");
+    }
+
+    const locale = currentLocale();
     const session = new Recogniser();
     session.continuous = false;
     session.interimResults = false;
-    session.lang = typeof navigator !== "undefined" ? navigator.language || "en-US" : "en-US";
+    session.lang = locale;
+    session.requiresOnDeviceRecognition = offline.current.includes(locale);
 
     session.onresult = ({ results }) => {
       let said = "";
@@ -209,37 +278,55 @@ export function useDictation({
     session.start();
   }, []);
 
+  /**
+   * Runs one microphone transition at a time.
+   *
+   * Opening and closing are both asynchronous and `listening` is set optimistically, so two
+   * quick presses used to reach `stop()` on a recorder that had not finished starting — which
+   * ends as "nothing was recorded", a true sentence about the wrong thing.
+   */
+  const only = useCallback((work: () => Promise<void>) => {
+    if (busy.current) return;
+    busy.current = true;
+    work()
+      .catch((thrown) => setError((thrown as Error).message))
+      .finally(() => {
+        busy.current = false;
+      });
+  }, []);
+
   const toggle = useCallback(() => {
     setError(null);
 
-    if (!viaModel) {
-      if (listening) {
-        recognition.current?.stop();
-        return;
-      }
-      try {
-        listen();
+    // Optimistic in both directions, so the button answers the press rather than the
+    // permission dialog. A refusal puts it back.
+    const start = (open: () => Promise<void>) =>
+      only(async () => {
         setListening(true);
-      } catch (thrown) {
-        setError((thrown as Error).message);
-      }
+        try {
+          await open();
+        } catch (thrown) {
+          setListening(false);
+          throw thrown;
+        }
+      });
+
+    if (!viaModel) {
+      if (listening) recognition.current?.stop();
+      else start(listen);
       return;
     }
 
     if (listening) {
-      setListening(false);
-      transcribe().catch((thrown) => setError((thrown as Error).message));
+      only(async () => {
+        setListening(false);
+        await transcribe();
+      });
       return;
     }
 
-    // Optimistic, so the button answers the press rather than the permission dialog. A
-    // refusal puts it back.
-    setListening(true);
-    record().catch((thrown) => {
-      setListening(false);
-      setError((thrown as Error).message);
-    });
-  }, [listen, listening, record, transcribe, viaModel]);
+    start(record);
+  }, [listen, listening, only, record, transcribe, viaModel]);
 
   return { supported, listening, transcribing, error, toggle };
 }
@@ -249,8 +336,12 @@ export function useDictation({
 export interface Speaker {
   speaking: boolean;
   error: string | null;
-  /** Reads `text` aloud, markdown and all — the markup is stripped on the way. */
-  speak: (text: string) => void;
+  /**
+   * Reads `text` aloud, markdown and all — the markup is stripped on the way. False when
+   * there was nothing left to say: a reply that is one fenced block strips to an empty
+   * string, and a caller that marked it as being read would leave a stop button on silence.
+   */
+  speak: (text: string) => boolean;
   stop: () => void;
 }
 
@@ -319,7 +410,12 @@ export function useSpeech({ model }: { model: string }): Speaker {
       if (turn.current === mine) setSpeaking(false);
     });
     playing.current = {
+      // `pause` first, and not for tidiness: on Android `remove` only drops the module's
+      // handle on the player — the teardown that actually stops the sound is on the shared
+      // object's release, which happens whenever the JS object is next collected. Removing a
+      // playing player therefore silenced nothing, and the reply talked over its successor.
       stop: () => {
+        player.pause();
         subscription.remove();
         player.remove();
       },
@@ -327,11 +423,12 @@ export function useSpeech({ model }: { model: string }): Speaker {
     player.play();
   }, []);
 
+  /** Whether anything is being read: a reply that is all code strips to nothing to say. */
   const speak = useCallback(
-    (text: string) => {
+    (text: string): boolean => {
       silence();
       const body = speakableText(text);
-      if (!body) return;
+      if (!body) return false;
 
       const mine = turn.current;
       setError(null);
@@ -342,7 +439,7 @@ export function useSpeech({ model }: { model: string }): Speaker {
         // to. `onStopped` fires for the cancel in `silence`, which is not an interruption
         // worth reporting — the state it would clear has already been claimed by the
         // utterance that replaced it, hence the guard on every one of these.
-        Speech.speak(body.slice(0, MAX_SPOKEN), {
+        Speech.speak(spokenChunk(body, MAX_SPOKEN), {
           onDone: () => {
             if (turn.current === mine) setSpeaking(false);
           },
@@ -355,7 +452,7 @@ export function useSpeech({ model }: { model: string }): Speaker {
             setSpeaking(false);
           },
         });
-        return;
+        return true;
       }
 
       voice
@@ -369,6 +466,7 @@ export function useSpeech({ model }: { model: string }): Speaker {
           setError(thrown.message);
           setSpeaking(false);
         });
+      return true;
     },
     [model, play, silence],
   );

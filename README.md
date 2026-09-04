@@ -14,7 +14,7 @@ Everything below the quick start is reference — read it when you want that pie
 - [MCP servers](#mcp-servers) — wiring up tools, and how they are loaded without blowing the prompt budget
 - [Task models](#task-models) — pointing a small fast model at titling, compaction, tool preselection and follow-ups
 - [Turn statistics](#turn-statistics) — what the numbers under each reply mean, and what the tokens went on
-- [Voice](#voice) — speaking a message and having replies read back, with or without a model for it
+- [Voice](#voice) — speaking a message and having replies read back, on the device, through a model, or through a Wyoming server
 - [Keyboard shortcuts](#keyboard-shortcuts) — what the desktop and browser builds bind
 - [The session list](#the-session-list) — grouping, renaming, deleting and finding a chat
 - [Other apps in the sidebar](#other-apps-in-the-sidebar) — framing a kanban board or a task server beside the chat
@@ -586,18 +586,22 @@ with nothing configured, and both get better if you point them at a model.
 Left alone, voice runs on whatever the device already has. A browser reads replies aloud with
 `speechSynthesis` and takes dictation with its own speech recognition, which costs nothing and
 sends no audio anywhere; Firefox has the first and not the second, so there the microphone
-button is simply absent. On Android replies are read by the system voice and dictation is the
-microphone key already on the keyboard — a React Native runtime has no Web Speech API, and the
-keyboard's key types into the same box.
+button is simply absent. Android has both too — replies are read by the system voice, and the
+microphone button drives the same recogniser the keyboard's microphone key does, through
+[`expo-speech-recognition`](https://github.com/jamsch/expo-speech-recognition), which is a Web
+Speech API for a runtime that has none. Where the locale's model is installed on the device —
+Android 13 and up, and the language has to have been downloaded — it asks for it, and the audio
+never leaves the phone. The desktop build is the one left without a microphone until a model is
+named: Electron ships Chromium without the speech service behind it.
 
 Naming a model under **Settings → Agent → Voice** moves that work to the server:
 
 | | |
 | --- | --- |
-| **Speech to text** | `whisper-1`. The recording is posted to the agent and comes back as text. This is the only way the Android and desktop builds get a microphone button of their own. |
-| **Text to speech** | `tts-1`. Replies come back as audio the app plays. |
-| **Voice** | Which voice the speech model uses — `alloy` and friends. Blank takes the provider's default. |
-| **Audio base URL** | Where those endpoints are, when that is not where the chat model is. Blank means the base URL above. |
+| **Speech to text** | `whisper-1`, or `tcp://host:10300` for a [Wyoming](#wyoming) one. The recording is posted to the agent and comes back as text. |
+| **Text to speech** | `tts-1`, or `tcp://host:10200` for a Wyoming one. Replies come back as audio the app plays. |
+| **Voice** | Which voice the speech model uses — `alloy` and friends, or a Piper voice name. Blank takes the provider's default. |
+| **Audio base URL** | Where those endpoints are, when that is not where the chat model is. Blank means the base URL above. Not used for a Wyoming address, which carries its own. |
 | **Read every reply aloud** | Speaks each answer as it finishes, rather than waiting to be asked. |
 
 The separate audio base URL is there because the usual local setup cannot serve audio at all:
@@ -624,7 +628,40 @@ pronounced.
 
 Autoplay speaks the answer accumulated from the stream, once, when the turn ends. Not the
 deltas as they land, which stutters; and not the stored transcript, which would read the whole
-conversation back every turn.
+conversation back every turn. The reply it is reading is marked as the turn settles, so the
+speaker button on that message stops it rather than starting it again.
+
+A reply longer than one utterance is cut where a listener would hear an ending — the last
+sentence in the final fifth of what fits, a word boundary if there is no sentence there, and
+only then the hard limit. Both voices have a ceiling, and a cut mid-word sounds like a fault in
+the app rather than the end of what was said.
+
+### Wyoming
+
+A `tcp://host:port` in place of a model name is a [Wyoming](https://github.com/rhasspy/wyoming)
+server — the protocol Home Assistant's voice services speak — so a Whisper or a Piper already
+running at home answers instead of a vendor. Nothing else changes: it is the same proxy through
+the agent for the same reason, and only the wire is different.
+
+There is no model name to give, because in Wyoming the server *is* the model; the address goes
+in the same box, and the rule stays the one it already was — blank is the device, filled in is
+somewhere else. The usual ports are `10300` for `wyoming-faster-whisper` and `10200` for
+`wyoming-piper`. The protocol is plain TCP with no auth and no TLS, which is the same
+assumption min-agent already makes about the network it is on.
+
+The client is `server/wyoming.ts` and has no dependencies — the format is a line of JSON, then
+optionally that many bytes of more JSON, then optionally that many bytes of audio, which is
+less code than reading a package would be.
+
+**Dictation this way needs `ffmpeg` on the agent's PATH.** Wyoming carries raw 16 kHz PCM and
+nothing else, while the app records AAC in an MP4 on Android and Opus in a WebM in a browser.
+Android's `MediaRecorder` has no PCM output at all — every format it offers is compressed — so
+something has to decode, and a system `ffmpeg` is thirty lines against a second native recorder
+in all three builds. It is needed **only** for this path: speech comes back as PCM already
+(`server/audio.ts` puts a 44-byte WAV header on it and nothing re-encodes), and an
+OpenAI-compatible model still gets the recording untouched. The Docker image installs it; on a
+host install it is `apt install ffmpeg` or the equivalent, and the route says so in its error
+rather than failing quietly.
 
 ## Keyboard shortcuts
 

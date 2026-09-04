@@ -215,7 +215,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
    * waiting on that. Whichever arrives first settles the turn; `finish` makes the other a
    * no-op, and a turn whose chat has since been left off screen only refreshes what it wrote.
    */
-  async function settle(id: string) {
+  async function settle(id: string, read = false) {
     await queryClient.invalidateQueries({ queryKey: ["session", id] });
     await queryClient.invalidateQueries({ queryKey: ["sessions"] });
     // Tidying up after a turn the reader has already walked away from would take the
@@ -224,6 +224,16 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     setPending(null);
     resetLive();
     setTurnStats(null);
+    // A reply that read itself aloud is still the one being read, and the button on it is
+    // the only way to stop it. Claimed here rather than at `done` because the index is the
+    // one in the stored transcript, which is what the refetch above has just settled — a
+    // turn with tool calls in it has more messages than the answer alone.
+    if (read) {
+      const messages =
+        queryClient.getQueryData<{ messages: { role: string }[] }>(["session", id])?.messages ?? [];
+      const last = messages.findLastIndex((message) => message.role === "assistant");
+      if (last !== -1) setSpoken(last);
+    }
   }
 
   async function send(text?: string) {
@@ -267,10 +277,13 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     // Both ends of the stream settle it and either may be first; per turn, so a turn left
     // running in another chat cannot settle this one on its behalf.
     let settled = false;
+    // Whether this turn's answer started reading itself, so settling can hand the message it
+    // is reading to the button that has to stop it.
+    let read = false;
     const finish = async () => {
       if (settled) return;
       settled = true;
-      await settle(turnId);
+      await settle(turnId, read);
     };
     // Held rather than read back off the ref: sending in another chat replaces what `abort`
     // points at, and this turn still has to know whether it was this one that was stopped.
@@ -290,7 +303,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
           if (event.type === "followups")
             void queryClient.invalidateQueries({ queryKey: ["session", turnId] });
           if (event.type === "done") {
-            if (config.data?.speakReplies && showing.current === turnId) speech.speak(answer);
+            if (config.data?.speakReplies && showing.current === turnId)
+              read = speech.speak(answer);
             void finish();
           }
           if (event.type === "text_delta") answer += event.text;
@@ -370,8 +384,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
       speech.stop();
       return;
     }
-    speech.speak(text);
-    setSpoken(index);
+    if (speech.speak(text)) setSpoken(index);
   }
   const speakRef = useRef(toggleSpeak);
   speakRef.current = toggleSpeak;

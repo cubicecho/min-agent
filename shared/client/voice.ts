@@ -67,6 +67,34 @@ export function speakableText(markdown: string): string {
   );
 }
 
+/**
+ * `text`, cut to `limit` somewhere a listener will hear as an ending.
+ *
+ * Both voices have a ceiling — a device one takes a few thousand characters per utterance,
+ * OpenAI's `speech` call 4096 — and a reply longer than that gets a tail nobody hears either
+ * way. What the cut costs is whether it lands after a sentence or halfway through a word,
+ * and the second sounds like a fault in the app rather than the end of what was said.
+ *
+ * Sentence first, then any whitespace, then the hard cut for text that offers neither — a
+ * long URL, or a language this does not know how to end a sentence in. The window is the last
+ * fifth so a merely-long reply is not cut short hunting for a full stop.
+ */
+export function spokenChunk(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+
+  const head = text.slice(0, limit);
+  const floor = Math.floor(limit * 0.8);
+
+  const ends = [...head.matchAll(/[.!?][)"'\]]*(?=\s|$)/g)];
+  const last = ends[ends.length - 1];
+  if (last?.index !== undefined && last.index >= floor) {
+    return head.slice(0, last.index + last[0].length).trim();
+  }
+
+  const space = head.lastIndexOf(" ");
+  return (space >= floor ? head.slice(0, space) : head).trim();
+}
+
 /** The agent answers a failure with `{ error }`; anything else is reported by status. */
 async function complain(response: Response, what: string): Promise<never> {
   const said = await response

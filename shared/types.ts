@@ -56,9 +56,15 @@ export const llmConfigSchema = z.object({
    * serves chat and no audio at all, so whisper usually lives somewhere else.
    */
   voiceBaseUrl: z.string().default(""),
-  /** Transcription model. Blank leaves dictation to whatever the device already has. */
+  /**
+   * Transcription model, or a `tcp://host:10300` Wyoming server. Blank leaves dictation to
+   * whatever the device already has.
+   */
   sttModel: z.string().default(""),
-  /** Speech model. Blank reads replies with the device's own voice. */
+  /**
+   * Speech model, or a `tcp://host:10200` Wyoming server. Blank reads replies with the
+   * device's own voice.
+   */
   ttsModel: z.string().default(""),
   /** The voice `ttsModel` speaks in. Blank takes the server's default. */
   ttsVoice: z.string().default(""),
@@ -74,6 +80,28 @@ export type LlmConfig = z.infer<typeof llmConfigSchema>;
  */
 export const voiceBaseUrlFor = (config: Pick<LlmConfig, "baseUrl" | "voiceBaseUrl">) =>
   config.voiceBaseUrl.trim() || config.baseUrl;
+
+/**
+ * A Wyoming server, or `null` when the value names a model.
+ *
+ * Wyoming has no model names — the server *is* the model, one process per voice or per
+ * whisper size — so there is nothing for `sttModel` to hold in that world except the address
+ * of the thing to ask. Reusing the field rather than adding a pair of new ones keeps the rule
+ * a reader already knows: blank is the device, filled in is somewhere else, and the value
+ * says where. It also means `voiceBaseUrl` is simply not consulted, which is right — a
+ * Wyoming server is not an OpenAI base URL and would never have been reachable under one.
+ *
+ * Deliberately strict about the scheme: `tcp://` is the only thing Home Assistant writes and
+ * the only thing that could be mistaken for a model name, so anything else stays a model and
+ * fails later with the provider's own message rather than here with a guess about intent.
+ */
+export const wyomingAddress = (value: string): { host: string; port: number } | null => {
+  const match = /^tcp:\/\/(\[[^\]]+\]|[^/:]+):(\d{1,5})\/?$/.exec(value.trim());
+  if (!match) return null;
+  const port = Number(match[2]);
+  if (port < 1 || port > 65535) return null;
+  return { host: match[1].replace(/^\[|\]$/g, ""), port };
+};
 
 /** The model to use for a side task, or "" when it is not configured. */
 export const modelForTask = (config: LlmConfig, task: ModelTask) =>

@@ -31,6 +31,14 @@ FROM node:26-slim
 
 WORKDIR /app
 
+# Dictation against a Wyoming server needs the recording decoded to PCM first, and this is
+# what decodes it — see `server/audio.ts`. It is the one apt package in the image and it is
+# not a small one; drop this line if nobody here points **Speech to text** at a `tcp://`
+# address, and the route says so in its error rather than failing quietly.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 

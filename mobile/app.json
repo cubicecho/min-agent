@@ -47,7 +47,14 @@
           "microphonePermission": "Allow min-agent to use the microphone so you can speak a message instead of typing it."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow min-agent to use the microphone so you can speak a message instead of typing it.",
+          "speechRecognitionPermission": "Allow min-agent to turn what you say into the message it sends."
+        }
+      ]
     ],
     "extra": {
       "router": {},
