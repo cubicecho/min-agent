@@ -12,6 +12,7 @@ import { SettingsLink } from "@/components/settings/link.tsx";
 import { Button, Empty, ErrorNote, Input, Loading, Muted, Screen } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
 import { useShortcut } from "@/lib/keys.ts";
+import { useBottomInset } from "@/lib/layout.ts";
 import { cn } from "@/lib/utils.ts";
 
 /**
@@ -242,6 +243,9 @@ function NoMatch({ list }: { list: List }) {
 export function SessionsPanel({ activeId }: { activeId?: string }) {
   const list = useSessions(activeId);
   const { sessions, newChat, open } = list;
+  // The panel runs the full height of the window, so its list ends under the bar at the
+  // foot of an Android display the same way a whole screen would.
+  const bottom = useBottomInset();
 
   return (
     <View className="w-72 shrink-0 border-l border-border bg-sidebar">
@@ -264,7 +268,11 @@ export function SessionsPanel({ activeId }: { activeId?: string }) {
         <Search list={list} className="mb-2" />
       </View>
 
-      <ScrollView className="flex-1" contentContainerClassName="gap-0.5 px-2 pb-3">
+      <ScrollView
+        className="flex-1"
+        contentContainerClassName="gap-0.5 px-2 pb-3"
+        contentContainerStyle={{ paddingBottom: 12 + bottom }}
+      >
         {sessions.isError ? (
           <View className="gap-2 px-1">
             <ErrorNote error={sessions.error} />

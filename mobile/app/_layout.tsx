@@ -112,7 +112,18 @@ function Sidebar({
   const railed = Platform.OS === "web" && !expanded;
 
   return (
-    <DrawerContentScrollView {...props} contentContainerStyle={{ flexGrow: 1, paddingTop: 0 }}>
+    <DrawerContentScrollView
+      {...props}
+      /*
+        `DrawerContentScrollView` pads its top by the status bar's height, which the web has
+        none of: there the padding is only a gap above the fold button, so it goes. On a
+        phone the drawer is drawn edge to edge under the status bar and the padding is the
+        only thing keeping the first row out from under the clock.
+      */
+      contentContainerStyle={
+        Platform.OS === "web" ? { flexGrow: 1, paddingTop: 0 } : { flexGrow: 1 }
+      }
+    >
       {onToggle && (
         <View style={{ alignItems: expanded ? "flex-end" : "center", paddingHorizontal: 8 }}>
           <Pressable

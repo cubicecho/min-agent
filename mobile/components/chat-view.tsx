@@ -41,7 +41,7 @@ import {
   Textarea,
 } from "@/components/ui.tsx";
 import { api, streamTurn } from "@/lib/client.ts";
-import { useWide } from "@/lib/layout.ts";
+import { useBottomInset, useWide } from "@/lib/layout.ts";
 import { colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 import { useDictation, useSpeech } from "@/lib/voice.ts";
@@ -74,6 +74,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const navigation = useNavigation();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const bottom = useBottomInset();
 
   // A chat started from the empty pane has an id before it has a route: the turn is
   // already streaming into this component, and navigating mid-stream would unmount it and
@@ -496,7 +497,13 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
         </View>
       ) : null}
 
-      <View className="border-t border-border px-4 py-3">
+      {/*
+        The composer is the bottom of the screen on a phone, and Android puts its gesture
+        pill or its three buttons over that. `useBottomInset` gives back the room they take
+        — and gives it up again while the keyboard is up, which has already pushed the
+        composer clear of them.
+      */}
+      <View className="border-t border-border px-4 py-3" style={{ paddingBottom: 12 + bottom }}>
         {/*
           Nothing below this can work without a model, and the composer cannot say where to
           get one — a placeholder is not something you can press. So the way out sits above
