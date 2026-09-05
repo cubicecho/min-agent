@@ -636,6 +636,30 @@ sentence in the final fifth of what fits, a word boundary if there is no sentenc
 only then the hard limit. Both voices have a ceiling, and a cut mid-word sounds like a fault in
 the app rather than the end of what was said.
 
+### Hands free
+
+**Settings → Device → Dictation** turns the microphone into something you can use without
+touching the phone again: with **Send as soon as I stop talking** on, the message goes by
+itself when the pause at the end is long enough, and the composer is emptied for the next one.
+
+That setting lives on the device rather than on the agent, and deliberately — it is stored
+beside the server address in the app's own storage, not in the `settings` row. How long a pause
+means "finished" is a fact about the room you are in and the phone in your hand; the tablet on
+the desk is allowed a different answer, and the browser build that shares the agent should not
+have this decided for it by whoever last used the phone.
+
+The pause is honoured differently by the two engines, because only one of them is being asked
+rather than told. The platform recogniser *is* an endpointer, so it is handed the length as
+Android's `EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS` — advisory, and plenty of
+recognisers keep their own timing. The model engine records until something stops it, so
+`lib/voice.ts` watches the recorder's level meter and stops it: nothing is armed until it has
+heard you start, and there are two thresholds rather than one so the dip between two words is
+not mistaken for the end of a sentence.
+
+With the setting off, nothing about the microphone changes — the button is still what sends,
+and what was said is still added to whatever is already in the box, because speaking is often
+the second half of a half-written message.
+
 ### Wyoming
 
 A `tcp://host:port` in place of a model name is a [Wyoming](https://github.com/rhasspy/wyoming)

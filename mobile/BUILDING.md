@@ -138,6 +138,17 @@ Version numbers are EAS's job (`cli.appVersionSource` is `remote`, with
 own and no build needs a commit to bump it. The `versionCode` in `app.json` is
 ignored by EAS and used only by a local Gradle build.
 
+### Pulling one without waiting
+
+An installed build checks for updates on launch, which is one relaunch more than you want while
+you are working on the thing. **Settings → Device → Updates** does it on demand: one press
+checks and downloads whatever is there, and a second restarts into it. The card also names what
+is running — the channel, the native runtime fingerprint and the update's own id — which is the
+quickest way to tell whether the phone in your hand is on the change you just pushed.
+
+The button is absent in a Metro-attached build and on the web, because there is nothing there
+for it to fetch: one serves its own JavaScript and the other is a page you can reload.
+
 ## Where it shows up
 
 Every ship lands on the repo's Releases page, one release per **binary** — a

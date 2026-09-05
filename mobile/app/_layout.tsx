@@ -23,6 +23,7 @@ import { useShortcut } from "@/lib/keys.ts";
 import { useWide } from "@/lib/layout.ts";
 import { loadServerUrl } from "@/lib/server-url.ts";
 import { colors } from "@/lib/theme.ts";
+import { loadVoiceSettings } from "@/lib/voice-settings.ts";
 
 /**
  * The drawer, its header and the screen behind them are painted by react-navigation, not
@@ -177,10 +178,12 @@ function Sidebar({
 
 export default function RootLayout() {
   // Nothing may render until the stored server address is in memory, or the first
-  // queries fire at the default address and fail.
+  // queries fire at the default address and fail. The dictation settings are read in the
+  // same breath — they are wanted before the first press of the microphone, not before the
+  // first frame, but one await is simpler than two lifetimes.
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    loadServerUrl().finally(() => setReady(true));
+    Promise.all([loadServerUrl(), loadVoiceSettings()]).finally(() => setReady(true));
   }, []);
 
   // On the web the nav is a sidebar, not something hidden behind a hamburger: `permanent`

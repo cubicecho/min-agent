@@ -12,6 +12,7 @@ export const SETTINGS_TABS = [
   { key: "mcp", label: "MCP", icon: "server" },
   { key: "apps", label: "Apps", icon: "layout" },
   { key: "server", label: "Server", icon: "link" },
+  { key: "device", label: "Device", icon: "smartphone" },
 ] as const satisfies readonly { key: string; label: string; icon: IconName }[];
 
 export type SettingsTab = (typeof SETTINGS_TABS)[number]["key"];

@@ -42,6 +42,26 @@ const MAX_SPOKEN = 4000;
 /* ------------------------------------------------------------------ recordings */
 
 /**
+ * What the model engine records with. `HIGH_QUALITY` with the level meter switched on, which
+ * is off by default and is what silence detection reads: without it `getStatus().metering` is
+ * undefined and a recording only ever ends when the button ends it. A module constant because
+ * `useAudioRecorder` builds a new recorder for a new object, and a literal is a new object on
+ * every render.
+ */
+const METERED = { ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true };
+
+/** How often the level is read while the model engine records. */
+const LEVEL_POLL = 150;
+
+/**
+ * The two levels silence detection works between, in dBFS — the scale `metering` reports,
+ * where -160 is a dead microphone and 0 is clipping. Above `SPEECH` is you; below `QUIET` is
+ * the room. Two thresholds rather than one so that the dip between two words is neither.
+ */
+const SPEECH = -30;
+const QUIET = -42;
+
+/**
  * What a recorded file holds, by the name it was saved under.
  *
  * `RecordingPresets.HIGH_QUALITY` writes `.m4a` on a device and `audio/webm` in a browser,
@@ -92,11 +112,20 @@ interface Recognition {
   lang: string;
   /** Android only, and only honoured when the locale's model is on disk. See `onDeviceLocales`. */
   requiresOnDeviceRecognition?: boolean;
+  /** Android only. How long a pause the system endpointer sits through before it gives up on you. */
+  androidIntentOptions?: {
+    EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS?: number;
+    EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS?: number;
+  };
   start(): void;
   stop(): void;
   abort(): void;
   onresult:
-    | ((event: { results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }) => void)
+    | ((event: {
+        /** Where this event's own results begin; everything before it has been seen already. */
+        resultIndex?: number;
+        results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
+      }) => void)
     | null;
   onerror: ((event: { error: string }) => void) | null;
   onend: (() => void) | null;
@@ -165,13 +194,24 @@ export interface Dictation {
  *
  * `onText` is read through a ref: the composer's handler closes over the draft and so is a
  * new function every keystroke, and re-arming a recogniser mid-sentence would lose it.
+ *
+ * `silence` is how long a pause has to last before what was said counts as finished, or null
+ * to leave that decision to the button. Each engine honours it the only way it can: the
+ * platform recogniser is an endpointer already and is asked to be that patient, while a
+ * recording has nothing deciding for it and gets its level watched instead. `onDone` fires
+ * after that, once per session that actually heard something, which is what lets the composer
+ * send without a press.
  */
 export function useDictation({
   model,
   onText,
+  onDone,
+  silence = null,
 }: {
   model: string;
   onText: (text: string) => void;
+  onDone?: () => void;
+  silence?: number | null;
 }): Dictation {
   const [listening, setListening] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -179,103 +219,30 @@ export function useDictation({
 
   const deliver = useRef(onText);
   deliver.current = onText;
+  const finished = useRef(onDone);
+  finished.current = onDone;
+  /** Read from inside a session that started before the setting was last changed. */
+  const pause = useRef(silence);
+  pause.current = silence;
 
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorder = useAudioRecorder(METERED);
   const recognition = useRef<Recognition | null>(null);
   /** A press while the last one is still opening or closing the microphone would race it. */
   const busy = useRef(false);
   /** The locales this device can recognise offline, once the answer has come back. */
   const offline = useRef<string[]>([]);
+  /** Whether this session handed anything over, so that its end is worth acting on. */
+  const said = useRef(false);
+  /** The level watch, while the model engine is recording. */
+  const watching = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const viaModel = Boolean(model.trim());
   const supported = viaModel || Boolean(recognitionClass());
 
-  useEffect(() => {
-    let live = true;
-    void onDeviceLocales().then((locales) => {
-      if (live) offline.current = locales;
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  // Leaving a screen with the microphone open would keep it open — the recogniser holds it,
-  // and so does a recording in progress. Neither stop is awaited: the component is going and
-  // there is nobody left to hand a transcript to.
-  useEffect(() => {
-    return () => {
-      recognition.current?.abort();
-      recognition.current = null;
-      if (!recorder.isRecording) return;
-      void recorder.stop().catch(() => {});
-      void setAudioModeAsync({ allowsRecording: false }).catch(() => {});
-    };
-  }, [recorder]);
-
-  const record = useCallback(async () => {
-    const permission = await requestRecordingPermissionsAsync();
-    if (!permission.granted) throw new Error("the microphone was not allowed");
-    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-    await recorder.prepareToRecordAsync();
-    recorder.record();
-  }, [recorder]);
-
-  const transcribe = useCallback(async () => {
-    await recorder.stop();
-    // Recording holds the audio session on iOS, and a reply read aloud straight after would
-    // come out of the earpiece. Handing it back costs nothing on the platforms it does not.
-    await setAudioModeAsync({ allowsRecording: false }).catch(() => {});
-
-    const uri = recorder.uri;
-    if (!uri) throw new Error("nothing was recorded");
-
-    setTranscribing(true);
-    try {
-      const text = await voice.transcribe(await readRecording(uri));
-      if (text) deliver.current(text);
-    } finally {
-      setTranscribing(false);
-    }
-  }, [recorder]);
-
-  /** The platform engine ends on its own — at a pause, or when `stop()` is called. */
-  const listen = useCallback(async () => {
-    const Recogniser = recognitionClass();
-    if (!Recogniser) throw new Error("this build has no speech recognition");
-
-    // A browser asks for the microphone itself, as part of starting. Android does not.
-    if (Platform.OS !== "web") {
-      const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-      if (!permission.granted) throw new Error("the microphone was not allowed");
-    }
-
-    const locale = currentLocale();
-    const session = new Recogniser();
-    session.continuous = false;
-    session.interimResults = false;
-    session.lang = locale;
-    session.requiresOnDeviceRecognition = offline.current.includes(locale);
-
-    session.onresult = ({ results }) => {
-      let said = "";
-      for (let index = 0; index < results.length; index++) {
-        const result = results[index];
-        if (result?.isFinal) said += result[0].transcript;
-      }
-      if (said.trim()) deliver.current(said.trim());
-    };
-    // `no-speech` and `aborted` are what a held-and-released button sounds like, not faults.
-    session.onerror = ({ error: reason }) => {
-      if (reason !== "no-speech" && reason !== "aborted") setError(reason);
-    };
-    session.onend = () => {
-      recognition.current = null;
-      setListening(false);
-    };
-
-    recognition.current = session;
-    session.start();
+  /** Everything reaches the composer through here, so that "was anything said" has one answer. */
+  const hand = useCallback((text: string) => {
+    said.current = true;
+    deliver.current(text);
   }, []);
 
   /**
@@ -295,6 +262,161 @@ export function useDictation({
       });
   }, []);
 
+  const unwatch = useCallback(() => {
+    if (watching.current) clearInterval(watching.current);
+    watching.current = null;
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    void onDeviceLocales().then((locales) => {
+      if (live) offline.current = locales;
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // Leaving a screen with the microphone open would keep it open — the recogniser holds it,
+  // and so does a recording in progress. Neither stop is awaited: the component is going and
+  // there is nobody left to hand a transcript to.
+  useEffect(() => {
+    return () => {
+      unwatch();
+      recognition.current?.abort();
+      recognition.current = null;
+      if (!recorder.isRecording) return;
+      void recorder.stop().catch(() => {});
+      void setAudioModeAsync({ allowsRecording: false }).catch(() => {});
+    };
+  }, [recorder, unwatch]);
+
+  const transcribe = useCallback(async () => {
+    unwatch();
+    await recorder.stop();
+    // Recording holds the audio session on iOS, and a reply read aloud straight after would
+    // come out of the earpiece. Handing it back costs nothing on the platforms it does not.
+    await setAudioModeAsync({ allowsRecording: false }).catch(() => {});
+
+    const uri = recorder.uri;
+    if (!uri) throw new Error("nothing was recorded");
+
+    setTranscribing(true);
+    try {
+      const text = await voice.transcribe(await readRecording(uri));
+      if (text) hand(text);
+    } finally {
+      setTranscribing(false);
+    }
+    if (said.current) finished.current?.();
+  }, [hand, recorder, unwatch]);
+
+  /** How a recording ends, whether the button ended it or the pause did. */
+  const stopAndSend = useCallback(() => {
+    only(async () => {
+      setListening(false);
+      await transcribe();
+    });
+  }, [only, transcribe]);
+
+  /**
+   * Stops the recording once the room has been quiet for long enough.
+   *
+   * Nothing is armed until something as loud as `SPEECH` has been heard: the pause before you
+   * start talking is longer than the one at the end, and a watch armed on the first tick would
+   * end the recording before there was anything in it. A recorder that reports no level at all
+   * — the web one — is left to the button, which still works.
+   */
+  const watchForSilence = useCallback(() => {
+    const quiet = pause.current;
+    if (!quiet) return;
+    let spoke = false;
+    let since = 0;
+    watching.current = setInterval(() => {
+      const level = recorder.getStatus().metering;
+      if (level === undefined) return;
+      if (level > SPEECH) {
+        spoke = true;
+        since = 0;
+        return;
+      }
+      if (!spoke) return;
+      // Between the two thresholds is neither talking nor silence, and the timer neither
+      // starts nor resets: it is the dip between words, which is not the end of a sentence.
+      if (level > QUIET) return;
+      if (!since) since = Date.now();
+      if (Date.now() - since < quiet) return;
+      unwatch();
+      stopAndSend();
+    }, LEVEL_POLL);
+  }, [recorder, stopAndSend, unwatch]);
+
+  const record = useCallback(async () => {
+    const permission = await requestRecordingPermissionsAsync();
+    if (!permission.granted) throw new Error("the microphone was not allowed");
+    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+    await recorder.prepareToRecordAsync();
+    recorder.record();
+    watchForSilence();
+  }, [recorder, watchForSilence]);
+
+  /** The platform engine ends on its own — at a pause, or when `stop()` is called. */
+  const listen = useCallback(async () => {
+    const Recogniser = recognitionClass();
+    if (!Recogniser) throw new Error("this build has no speech recognition");
+
+    // A browser asks for the microphone itself, as part of starting. Android does not.
+    if (Platform.OS !== "web") {
+      const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!permission.granted) throw new Error("the microphone was not allowed");
+    }
+
+    const locale = currentLocale();
+    const session = new Recogniser();
+    session.continuous = false;
+    session.interimResults = false;
+    session.lang = locale;
+    session.requiresOnDeviceRecognition = offline.current.includes(locale);
+    // How long a pause the endpointer should sit through before calling it finished. Android
+    // documents these as advisory and plenty of recognisers ignore them, so this is the
+    // setting being asked for rather than the setting being enforced.
+    if (pause.current) {
+      session.androidIntentOptions = {
+        EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: pause.current,
+        EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: pause.current,
+      };
+    }
+
+    session.onresult = ({ results, resultIndex = 0 }) => {
+      let heard = "";
+      // From `resultIndex`, not from zero. `results` is the session's history rather than its
+      // latest event, so a recogniser that settles a second phrase hands the first one back
+      // along with it — and starting at zero put the sentence you had already spoken into the
+      // box a second time, under the one you had just said.
+      for (let index = resultIndex; index < results.length; index++) {
+        const result = results[index];
+        if (!result?.isFinal) continue;
+        const phrase = result[0].transcript;
+        heard = heard ? `${heard} ${phrase}` : phrase;
+      }
+      if (heard.trim()) hand(heard.trim());
+    };
+    // `no-speech` and `aborted` are what a held-and-released button sounds like, not faults.
+    session.onerror = ({ error: reason }) => {
+      if (reason !== "no-speech" && reason !== "aborted") setError(reason);
+    };
+    session.onend = () => {
+      recognition.current = null;
+      setListening(false);
+      // The recogniser stopping on its own is the only sign there is that you have finished
+      // talking. A session that heard nothing is a button pressed twice, and not that.
+      if (said.current) finished.current?.();
+    };
+
+    recognition.current = session;
+    session.start();
+  }, [hand]);
+
   const toggle = useCallback(() => {
     setError(null);
 
@@ -302,6 +424,7 @@ export function useDictation({
     // permission dialog. A refusal puts it back.
     const start = (open: () => Promise<void>) =>
       only(async () => {
+        said.current = false;
         setListening(true);
         try {
           await open();
@@ -318,15 +441,12 @@ export function useDictation({
     }
 
     if (listening) {
-      only(async () => {
-        setListening(false);
-        await transcribe();
-      });
+      stopAndSend();
       return;
     }
 
     start(record);
-  }, [listen, listening, only, record, transcribe, viaModel]);
+  }, [listen, listening, only, record, stopAndSend, viaModel]);
 
   return { supported, listening, transcribing, error, toggle };
 }

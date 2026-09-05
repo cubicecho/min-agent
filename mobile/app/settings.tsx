@@ -4,6 +4,7 @@ import { useState } from "react";
 import { View } from "react-native";
 import { AgentPanel } from "@/components/settings/agent-panel.tsx";
 import { AppsPanel } from "@/components/settings/apps-panel.tsx";
+import { DevicePanel } from "@/components/settings/device-panel.tsx";
 import { DirtyProvider, useDirtyPanels } from "@/components/settings/dirty.tsx";
 import { McpPanel } from "@/components/settings/mcp-panel.tsx";
 import { ServerPanel } from "@/components/settings/server-panel.tsx";
@@ -48,6 +49,7 @@ const PANELS: Record<SettingsTab, (props: PanelProps) => React.JSX.Element | nul
   mcp: McpPanel,
   apps: AppsPanel,
   server: ServerPanel,
+  device: DevicePanel,
 };
 
 const isTab = (value: string | undefined): value is SettingsTab => !!value && value in PANELS;

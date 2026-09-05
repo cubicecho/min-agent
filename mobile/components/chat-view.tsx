@@ -43,6 +43,7 @@ import { useBottomInset, useWide } from "@/lib/layout.ts";
 import { colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 import { useDictation, useSpeech } from "@/lib/voice.ts";
+import { useVoiceSettings } from "@/lib/voice-settings.ts";
 
 /**
  * Chats, in the two arrangements the window has room for.
@@ -118,11 +119,37 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const asked = useRef(0);
 
   const speech = useSpeech({ model: config.data?.ttsModel ?? "" });
+  const voiceSettings = useVoiceSettings();
+  /**
+   * The draft as it stands right now, rather than as this render saw it. Dictation delivers
+   * its text and ends the session in the same tick, so the handler that sends has to read
+   * what the handler that typed just wrote — which React has not rendered yet.
+   */
+  const draftNow = useRef(draft);
+  draftNow.current = draft;
+
   const dictation = useDictation({
     model: config.data?.sttModel ?? "",
+    // Only when it is going to send: left alone, the microphone stays under the button, and
+    // a pause is a pause rather than a decision.
+    silence: voiceSettings.autoSend ? voiceSettings.silenceMs : null,
     // Dictation adds to the box rather than replacing it: what is already typed was typed
     // on purpose, and speaking is often the second half of a half-written message.
-    onText: (text) => setDraft((current) => (current.trim() ? `${current.trim()} ${text}` : text)),
+    onText: (text) => {
+      const next = draftNow.current.trim() ? `${draftNow.current.trim()} ${text}` : text;
+      draftNow.current = next;
+      setDraft(next);
+    },
+    // Hands free. The microphone decided you had finished, so the box goes as it stands —
+    // emptied here rather than by `send`, which leaves a prompt it was handed alone.
+    onDone: voiceSettings.autoSend
+      ? () => {
+          const spokenDraft = draftNow.current;
+          draftNow.current = "";
+          setDraft("");
+          void send(spokenDraft);
+        }
+      : undefined,
   });
 
   // Playback ends by itself, and the button on the message it belongs to has to notice.
