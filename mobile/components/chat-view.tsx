@@ -127,41 +127,21 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const draftNow = useRef(draft);
   draftNow.current = draft;
 
-  /**
-   * What the microphone last put in the box, so that the next thing it says takes that place
-   * rather than queueing up behind it. `useDictation` hands over the whole of what a session
-   * has heard each time, so this is always the exact string to lift back out — and when it is
-   * no longer the end of the draft, it has been edited and is left where it is.
-   */
-  const dictated = useRef("");
-
   const dictation = useDictation({
     model: config.data?.sttModel ?? "",
-    // Only when it is going to send: left alone, the microphone stays under the button, and
-    // a pause is a pause rather than a decision.
-    silence: voiceSettings.autoSend ? voiceSettings.silenceMs : null,
-    /*
-      What was typed is kept and what was said is replaced. Dictation is not a second half
-      added to a half-written message — it is one attempt at saying something, and a second
-      press is a second attempt at the same thing, which is what a first attempt that came out
-      wrong is for. Appending gave you both of them, one after the other.
-    */
+    // Dictation adds to the box rather than replacing it: what is already typed was typed on
+    // purpose, and a message is often said in more than one go — a press to think between two
+    // sentences should leave you with both of them.
     onText: (text) => {
-      const box = draftNow.current;
-      const typed = box.endsWith(dictated.current)
-        ? box.slice(0, box.length - dictated.current.length)
-        : box;
-      const next = typed.trim() ? `${typed.trim()} ${text}` : text;
-      dictated.current = text;
+      const next = draftNow.current.trim() ? `${draftNow.current.trim()} ${text}` : text;
       draftNow.current = next;
       setDraft(next);
     },
-    // Hands free. The microphone decided you had finished, so the box goes as it stands —
-    // emptied here rather than by `send`, which leaves a prompt it was handed alone.
+    // Hands free. The microphone said it was finished, so the box goes as it stands — emptied
+    // here rather than by `send`, which leaves a prompt it was handed alone.
     onDone: voiceSettings.autoSend
       ? () => {
           const spokenDraft = draftNow.current;
-          dictated.current = "";
           draftNow.current = "";
           setDraft("");
           void send(spokenDraft);

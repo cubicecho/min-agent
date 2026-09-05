@@ -7,10 +7,8 @@ import {
   Card,
   CardDescription,
   CardTitle,
-  Field,
   Muted,
   Screen,
-  Select,
   Switch,
 } from "@/components/ui.tsx";
 import { setVoiceSettings, useVoiceSettings } from "@/lib/voice-settings.ts";
@@ -19,24 +17,10 @@ import { setVoiceSettings, useVoiceSettings } from "@/lib/voice-settings.ts";
  * The settings that belong to this install rather than to the agent.
  *
  * Everything on the other panels is stored on the server and is the same for every client
- * that talks to it. These two are not: how long a pause you leave when you dictate is about
- * the room you are in, and which JavaScript this binary is running is about this binary. They
+ * that talks to it. These two are not: whether dictation sends for you is about how you are
+ * holding the thing, and which JavaScript this binary is running is about this binary. They
  * live in the device's own storage, and this is where they are set.
  */
-
-/**
- * The pauses worth offering. A slider would suggest the difference between 1.4 and 1.5
- * seconds is one anybody can hear; these are the four answers people actually want, which are
- * "before I have finished thinking", "about right", "I trail off", and "let me stop talking
- * properly first".
- */
-const PAUSES = [
-  { label: "Three quarters of a second", value: "750" },
-  { label: "One second", value: "1000" },
-  { label: "A second and a half", value: "1500" },
-  { label: "Two seconds", value: "2000" },
-  { label: "Three seconds", value: "3000" },
-];
 
 /** What the update button is doing, and what it last found out. */
 type Progress =
@@ -110,7 +94,7 @@ export function DevicePanel() {
       <Card>
         <CardTitle>Dictation</CardTitle>
         <CardDescription>
-          What the microphone button does when you stop talking. Stored on this device, not on the
+          What the microphone button does when it finishes. Stored on this device, not on the
           server, so each phone and tablet answers for itself.
         </CardDescription>
 
@@ -119,28 +103,21 @@ export function DevicePanel() {
             value={voice.autoSend}
             onValueChange={(autoSend) => void setVoiceSettings({ autoSend })}
           />
-          <Text className="flex-1 text-sm text-foreground">Send as soon as I stop talking</Text>
+          <Text className="flex-1 text-sm text-foreground">
+            Send as soon as the microphone is done
+          </Text>
         </View>
 
-        <Field
-          label="Pause before it counts as finished"
-          hint={
-            "Android's recogniser treats this as a suggestion and may keep its own timing; a transcription model, which records until the pause, always honours it."
-          }
-        >
-          <Select
-            value={String(voice.silenceMs)}
-            options={PAUSES}
-            disabled={!voice.autoSend}
-            onChange={(value) => void setVoiceSettings({ silenceMs: Number(value) })}
-          />
-        </Field>
-
-        {/* The one thing that is easy to get wrong: leaving this on and then wondering why a
-            half-finished sentence went. */}
+        {/* Which is not the same moment on both engines, and the difference is the whole
+            question of whether you have to touch the phone again. */}
         <Muted>
-          With this off the microphone button is the only thing that sends, and what was said is
-          added to whatever is already in the box.
+          Android's recogniser decides that itself, when you stop talking — so with this on, a
+          message can be spoken and sent without touching the phone again. A transcription model
+          records until you press the button a second time, and sends then.
+        </Muted>
+        <Muted>
+          With this off the button is the only thing that sends, and what was said is added to
+          whatever is already in the box — so a message can be dictated in as many goes as it takes.
         </Muted>
       </Card>
 

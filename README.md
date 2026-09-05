@@ -639,33 +639,30 @@ the app rather than the end of what was said.
 ### Hands free
 
 **Settings → Device → Dictation** turns the microphone into something you can use without
-touching the phone again: with **Send as soon as I stop talking** on, the message goes by
-itself when the pause at the end is long enough, and the composer is emptied for the next one.
+touching the phone again: with **Send as soon as the microphone is done** on, the message goes
+the moment dictation says it has finished, and the composer is emptied for the next one.
 
 That setting lives on the device rather than on the agent, and deliberately — it is stored
-beside the server address in the app's own storage, not in the `settings` row. How long a pause
-means "finished" is a fact about the room you are in and the phone in your hand; the tablet on
-the desk is allowed a different answer, and the browser build that shares the agent should not
-have this decided for it by whoever last used the phone.
+beside the server address in the app's own storage, not in the `settings` row. Whether the
+phone should send for you is a fact about how you are holding it; the tablet on the desk is
+allowed a different answer, and the browser build that shares the agent should not have this
+decided for it by whoever last used the phone.
 
-The pause is honoured differently by the two engines, because only one of them is being asked
-rather than told. The platform recogniser *is* an endpointer, so it is handed the length as
-Android's `EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS` — advisory, and plenty of
-recognisers keep their own timing. The model engine records until something stops it, so
-`lib/voice.ts` watches the recorder's level meter and stops it: nothing is armed until it has
-heard you start, and there are two thresholds rather than one so the dip between two words is
-not mistaken for the end of a sentence.
+"Finished" is whatever the engine says it is, and the app does not second-guess it. The
+platform recogniser *is* an endpointer — Android's, the one behind the microphone key on the
+keyboard — so it decides that you have stopped talking and ends the session itself, which is
+the case where nothing needs touching at all. A transcription model has no such thing: it
+records until the button ends it, and sends then, so the setting saves the press on *send*
+rather than the press on *stop*.
 
-Those thresholds are measured against the quietest thing heard so far rather than against a
-fixed number of decibels, which is the only way one setting works in two rooms: a phone on a
-desk reports a room at about -50 dBFS and one in a kitchen at -32, and a threshold low enough
-for the first is one the second never crosses — a recording that never ends by itself, in the
-room where you most wanted it to.
+There was a version of this that watched the recorder's level meter and picked the moment
+itself, with a pause length to configure. It is gone. Two thresholds and a timeout are a worse
+endpointer than the one already on the device, and the setting to go with them was a question
+nobody should have to answer about their own kitchen.
 
 With the setting off, nothing about the microphone changes but the button: it is still what
-sends. What is typed is kept either way, and what is dictated replaces what was dictated
-before it — a second press of the microphone is a second attempt at the same sentence, which
-is what a first attempt that came out wrong is for.
+sends. Either way what was said is added to whatever is already in the box — what is typed is
+typed on purpose, and a message can be dictated in as many goes as it takes.
 
 ### Wyoming
 

@@ -42,40 +42,6 @@ const MAX_SPOKEN = 4000;
 /* ------------------------------------------------------------------ recordings */
 
 /**
- * What the model engine records with. `HIGH_QUALITY` with the level meter switched on, which
- * is off by default and is what silence detection reads: without it `getStatus().metering` is
- * undefined and a recording only ever ends when the button ends it. A module constant because
- * `useAudioRecorder` builds a new recorder for a new object, and a literal is a new object on
- * every render.
- */
-const METERED = { ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true };
-
-/** How often the level is read while the model engine records. */
-const LEVEL_POLL = 150;
-
-/**
- * The two levels silence detection works between — not absolute ones, but decibels above the
- * quietest thing heard so far. Louder than `SPEECH_OVER` is you; within `QUIET_OVER` is the
- * room again; between the two is the dip between two words, which is neither.
- *
- * Measured against a floor rather than against a fixed dBFS number because there is no fixed
- * number that is right twice. A phone on a desk reports a room at about -50 dBFS and one in a
- * kitchen at -32, so a threshold low enough to work in the first is a threshold the second
- * never once crosses — which is a recording that never ends on its own, in the room where you
- * most want it to.
- */
-const SPEECH_OVER = 18;
-const QUIET_OVER = 8;
-
-/**
- * Below this, the microphone is reporting nothing rather than a quiet room: `metering` is
- * -160 exactly when the amplitude was zero, which is what the first reading after `record()`
- * is and what a muted microphone is forever. It counts as silence — it is silence — but it is
- * never allowed to become the floor everything else is measured against.
- */
-const NO_SIGNAL = -100;
-
-/**
  * What a recorded file holds, by the name it was saved under.
  *
  * `RecordingPresets.HIGH_QUALITY` writes `.m4a` on a device and `audio/webm` in a browser,
@@ -126,11 +92,6 @@ interface Recognition {
   lang: string;
   /** Android only, and only honoured when the locale's model is on disk. See `onDeviceLocales`. */
   requiresOnDeviceRecognition?: boolean;
-  /** Android only. How long a pause the system endpointer sits through before it gives up on you. */
-  androidIntentOptions?: {
-    EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS?: number;
-    EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS?: number;
-  };
   start(): void;
   stop(): void;
   abort(): void;
@@ -207,25 +168,25 @@ export interface Dictation {
  * A microphone that hands finished utterances to `onText`.
  *
  * `onText` is read through a ref: the composer's handler closes over the draft and so is a
- * new function every keystroke, and re-arming a recogniser mid-sentence would lose it.
+ * new function every keystroke, and re-arming a recogniser mid-sentence would lose it. It is
+ * called with each phrase as it is settled, to do what it likes with — this does not know or
+ * care what is already in the box.
  *
- * `silence` is how long a pause has to last before what was said counts as finished, or null
- * to leave that decision to the button. Each engine honours it the only way it can: the
- * platform recogniser is an endpointer already and is asked to be that patient, while a
- * recording has nothing deciding for it and gets its level watched instead. `onDone` fires
- * after that, once per session that actually heard something, which is what lets the composer
- * send without a press.
+ * `onDone` fires when the microphone has finished, once per session that actually heard
+ * something, and is what lets the composer send without a press. What "finished" means is
+ * whatever the engine says it is: the platform recogniser is an endpointer and decides for
+ * itself that you have stopped talking, while a recording runs until the button ends it.
+ * Deciding it here instead — watching the recorder's level meter for a pause of our own
+ * choosing — is a worse version of something Android already does well.
  */
 export function useDictation({
   model,
   onText,
   onDone,
-  silence = null,
 }: {
   model: string;
   onText: (text: string) => void;
   onDone?: () => void;
-  silence?: number | null;
 }): Dictation {
   const [listening, setListening] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -235,11 +196,8 @@ export function useDictation({
   deliver.current = onText;
   const finished = useRef(onDone);
   finished.current = onDone;
-  /** Read from inside a session that started before the setting was last changed. */
-  const pause = useRef(silence);
-  pause.current = silence;
 
-  const recorder = useAudioRecorder(METERED);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   /**
    * The recogniser, built once and started again and again.
    *
@@ -266,24 +224,13 @@ export function useDictation({
    * how "was this session worth acting on" is answered when it ends.
    */
   const heard = useRef("");
-  /** The level watch, while the model engine is recording. */
-  const watching = useRef<ReturnType<typeof setInterval> | null>(null);
-
   const viaModel = Boolean(model.trim());
   const supported = viaModel || Boolean(recognitionClass());
 
-  /**
-   * Everything reaches the composer through here, and what it hands over is the whole of what
-   * this session has heard rather than the phrase that just arrived.
-   *
-   * That is the contract `onText` is written against: each call *replaces* the last one's
-   * text, so a second press of the microphone is a second attempt at saying something and not
-   * a second sentence added to the first. A recogniser that settles a sentence in two goes
-   * still ends up with one sentence in the box, because both of them are in this string.
-   */
+  /** Everything reaches the composer through here, so that "was anything said" has one answer. */
   const hand = useCallback((phrase: string) => {
     heard.current = heard.current ? `${heard.current} ${phrase}` : phrase;
-    deliver.current(heard.current);
+    deliver.current(phrase);
   }, []);
 
   /**
@@ -303,11 +250,6 @@ export function useDictation({
       });
   }, []);
 
-  const unwatch = useCallback(() => {
-    if (watching.current) clearInterval(watching.current);
-    watching.current = null;
-  }, []);
-
   useEffect(() => {
     let live = true;
     void onDeviceLocales().then((locales) => {
@@ -325,7 +267,6 @@ export function useDictation({
     alive.current = true;
     return () => {
       alive.current = false;
-      unwatch();
       const session = recognition.current;
       recognition.current = null;
       open.current = false;
@@ -344,10 +285,9 @@ export function useDictation({
       void recorder.stop().catch(() => {});
       void setAudioModeAsync({ allowsRecording: false }).catch(() => {});
     };
-  }, [recorder, unwatch]);
+  }, [recorder]);
 
   const transcribe = useCallback(async () => {
-    unwatch();
     await recorder.stop();
     // Recording holds the audio session on iOS, and a reply read aloud straight after would
     // come out of the earpiece. Handing it back costs nothing on the platforms it does not.
@@ -364,7 +304,7 @@ export function useDictation({
       setTranscribing(false);
     }
     if (heard.current) finished.current?.();
-  }, [hand, recorder, unwatch]);
+  }, [hand, recorder]);
 
   /** How a recording ends, whether the button ended it or the pause did. */
   const stopAndSend = useCallback(() => {
@@ -374,60 +314,13 @@ export function useDictation({
     });
   }, [only, transcribe]);
 
-  /**
-   * Stops the recording once the room has been quiet for long enough.
-   *
-   * The room is whatever the quietest reading so far was — every level below is read as how
-   * far above that one it is, so the same two numbers work on a phone in a kitchen and on one
-   * on a desk. The floor can only fall, and a reading that sets a new one is by definition
-   * silence, which is what makes the measure self-correcting: it starts wherever the first
-   * reading happens to land and walks down to the truth within a second or two.
-   *
-   * Nothing is armed until something has been heard over it. The pause before you start
-   * talking is longer than the one at the end, and a watch armed on the first tick would end
-   * the recording before there was anything in it. A recorder that reports no level at all —
-   * the web one — never arms and is left to the button, which still works.
-   */
-  const watchForSilence = useCallback(() => {
-    const quiet = pause.current;
-    if (!quiet) return;
-    /** The quietest reading so far, and NaN until there has been one. */
-    let floor = Number.NaN;
-    let spoke = false;
-    let since = 0;
-    watching.current = setInterval(() => {
-      const level = recorder.getStatus().metering;
-      if (level === undefined) return;
-
-      const signal = level > NO_SIGNAL;
-      // `!(floor <= level)` rather than `level < floor`, so the first reading takes it.
-      if (signal && !(floor <= level)) floor = level;
-      const over = signal ? level - floor : 0;
-
-      if (over > SPEECH_OVER) {
-        spoke = true;
-        since = 0;
-        return;
-      }
-      if (!spoke) return;
-      // Between the two is neither talking nor silence, and the timer neither starts nor
-      // resets: it is the dip between two words, which is not the end of a sentence.
-      if (over > QUIET_OVER) return;
-      if (!since) since = Date.now();
-      if (Date.now() - since < quiet) return;
-      unwatch();
-      stopAndSend();
-    }, LEVEL_POLL);
-  }, [recorder, stopAndSend, unwatch]);
-
   const record = useCallback(async () => {
     const permission = await requestRecordingPermissionsAsync();
     if (!permission.granted) throw new Error("the microphone was not allowed");
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
     await recorder.prepareToRecordAsync();
     recorder.record();
-    watchForSilence();
-  }, [recorder, watchForSilence]);
+  }, [recorder]);
 
   /** The recogniser and its three handlers, made on first use and kept from then on. */
   const recogniser = useCallback(() => {
@@ -485,16 +378,6 @@ export function useDictation({
     session.interimResults = false;
     session.lang = locale;
     session.requiresOnDeviceRecognition = offline.current.includes(locale);
-    // How long a pause the endpointer should sit through before calling it finished. Android
-    // documents these as advisory and plenty of recognisers ignore them, so this is the
-    // setting being asked for rather than the setting being enforced.
-    session.androidIntentOptions = pause.current
-      ? {
-          EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: pause.current,
-          EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: pause.current,
-        }
-      : undefined;
-
     open.current = true;
     try {
       session.start();

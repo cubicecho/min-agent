@@ -5,32 +5,21 @@ import { useSyncExternalStore } from "react";
  * How dictation behaves on this device.
  *
  * Everything under **Settings → Agent** is a fact about the server, and so the same for every
- * client that talks to it. This is not that: how long a pause you leave at the end of a
- * sentence, and whether the thing in your hand should take that pause as "send it", is a fact
- * about the phone and the room it is in. The tablet on the desk may want a different answer,
- * so it is kept here — beside the server address, in this device's own storage — rather than
- * saved back to the agent.
+ * client that talks to it. This is not that: whether the thing in your hand should send the
+ * moment it decides you have stopped talking is a fact about the thing in your hand, and about
+ * whether it is being held at all. The tablet on the desk may want a different answer, so it
+ * is kept here — beside the server address, in this device's own storage — rather than saved
+ * back to the agent.
  */
 
 const KEY = "min-agent.voice";
 
 export interface VoiceSettings {
-  /** Send the message as soon as dictation decides you have stopped talking. */
+  /** Send the message as soon as the microphone says it has finished. */
   autoSend: boolean;
-  /** How long a pause has to last before it counts as the end of what you were saying. */
-  silenceMs: number;
 }
 
-/** Under half a second every breath ends the sentence, and past five you have given up waiting. */
-export const SILENCE_MIN = 500;
-export const SILENCE_MAX = 5000;
-
-const DEFAULTS: VoiceSettings = { autoSend: false, silenceMs: 1500 };
-
-const clamp = (ms: number) =>
-  Number.isFinite(ms)
-    ? Math.min(SILENCE_MAX, Math.max(SILENCE_MIN, Math.round(ms)))
-    : DEFAULTS.silenceMs;
+const DEFAULTS: VoiceSettings = { autoSend: false };
 
 let current: VoiceSettings = DEFAULTS;
 const listeners = new Set<() => void>();
@@ -51,7 +40,7 @@ export async function loadVoiceSettings() {
   try {
     if (stored) {
       const saved = JSON.parse(stored) as Partial<VoiceSettings>;
-      current = { autoSend: saved.autoSend === true, silenceMs: clamp(saved.silenceMs ?? NaN) };
+      current = { autoSend: saved.autoSend === true };
     }
   } catch {
     // Something that will not parse was written by a version that stored something else.
@@ -62,10 +51,7 @@ export async function loadVoiceSettings() {
 }
 
 export async function setVoiceSettings(change: Partial<VoiceSettings>) {
-  current = {
-    autoSend: change.autoSend ?? current.autoSend,
-    silenceMs: clamp(change.silenceMs ?? current.silenceMs),
-  };
+  current = { autoSend: change.autoSend ?? current.autoSend };
   // Told before it is written: the switch should move under the finger, not after a round
   // trip to storage, and a failed write is not a reason to refuse the setting for this run.
   announce();
