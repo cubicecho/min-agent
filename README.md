@@ -656,9 +656,16 @@ recognisers keep their own timing. The model engine records until something stop
 heard you start, and there are two thresholds rather than one so the dip between two words is
 not mistaken for the end of a sentence.
 
-With the setting off, nothing about the microphone changes — the button is still what sends,
-and what was said is still added to whatever is already in the box, because speaking is often
-the second half of a half-written message.
+Those thresholds are measured against the quietest thing heard so far rather than against a
+fixed number of decibels, which is the only way one setting works in two rooms: a phone on a
+desk reports a room at about -50 dBFS and one in a kitchen at -32, and a threshold low enough
+for the first is one the second never crosses — a recording that never ends by itself, in the
+room where you most wanted it to.
+
+With the setting off, nothing about the microphone changes but the button: it is still what
+sends. What is typed is kept either way, and what is dictated replaces what was dictated
+before it — a second press of the microphone is a second attempt at the same sentence, which
+is what a first attempt that came out wrong is for.
 
 ### Wyoming
 

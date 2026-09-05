@@ -20,7 +20,7 @@ import { Separator } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
 import { EMBEDS_STALE_TIME, visibleEmbeds } from "@/lib/embeds.ts";
 import { useShortcut } from "@/lib/keys.ts";
-import { useWide } from "@/lib/layout.ts";
+import { useBottomInset, useWide } from "@/lib/layout.ts";
 import { loadServerUrl } from "@/lib/server-url.ts";
 import { colors } from "@/lib/theme.ts";
 import { loadVoiceSettings } from "@/lib/voice-settings.ts";
@@ -194,6 +194,7 @@ export default function RootLayout() {
   // phone.
   const onWeb = Platform.OS === "web";
   const wide = useWide();
+  const bottom = useBottomInset();
   const [expanded, setExpanded] = useState(wide);
   // A window dragged across the breakpoint gets the shape that fits it. Toggling by hand
   // afterwards sticks until the next crossing.
@@ -217,6 +218,16 @@ export default function RootLayout() {
               />
             )}
             screenOptions={{
+              /*
+                Every screen's bottom clearance, set once. Android draws this app edge to
+                edge — under the bar at the foot of the display, and under the keyboard,
+                which no longer resizes the window — so the scene is padded by both and each
+                screen is free to simply fill what it is given. On the scene rather than on
+                the frame around it, because the drawer beside it is react-navigation's and
+                insets itself; and here rather than in each screen, because a screen that
+                forgets is a screen with its last button under the gesture pill.
+              */
+              sceneStyle: { paddingBottom: bottom },
               drawerType: onWeb ? "permanent" : "slide",
               // A permanent drawer cannot be opened or closed, so the header's toggle is a
               // dead control; the sidebar's own button is the one that does something.

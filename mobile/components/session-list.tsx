@@ -9,18 +9,9 @@ import { useNavigation, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, type TextInput, View } from "react-native";
 import { SettingsLink } from "@/components/settings/link.tsx";
-import {
-  Button,
-  Empty,
-  ErrorNote,
-  Input,
-  Loading,
-  Muted,
-  SCREEN_PADDING,
-} from "@/components/ui.tsx";
+import { Button, Empty, ErrorNote, Input, Loading, Muted } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
 import { useShortcut } from "@/lib/keys.ts";
-import { useBottomInset } from "@/lib/layout.ts";
 import { cn } from "@/lib/utils.ts";
 
 /**
@@ -254,9 +245,6 @@ function NoMatch({ list }: { list: List }) {
 export function SessionsPanel({ activeId }: { activeId?: string }) {
   const list = useSessions(activeId);
   const { sessions, newChat, open } = list;
-  // The panel runs the full height of the window, so its list ends under the bar at the
-  // foot of an Android display the same way a whole screen would.
-  const bottom = useBottomInset();
 
   return (
     <View className="w-72 shrink-0 border-l border-border bg-sidebar">
@@ -279,11 +267,7 @@ export function SessionsPanel({ activeId }: { activeId?: string }) {
         <Search list={list} className="mb-2" />
       </View>
 
-      <ScrollView
-        className="flex-1"
-        contentContainerClassName="gap-0.5 px-2 pb-3"
-        contentContainerStyle={{ paddingBottom: 12 + bottom }}
-      >
+      <ScrollView className="flex-1" contentContainerClassName="gap-0.5 px-2 pb-3">
         {sessions.isError ? (
           <View className="gap-2 px-1">
             <ErrorNote error={sessions.error} />
@@ -340,7 +324,6 @@ export function SessionsScreen() {
   const navigation = useNavigation();
   const list = useSessions();
   const { sessions, newChat, open } = list;
-  const bottom = useBottomInset();
 
   /*
     The drawer owns the header, so "New chat" goes up into it beside the title — the shape
@@ -385,7 +368,6 @@ export function SessionsScreen() {
       <ScrollView
         className="flex-1"
         contentContainerClassName="gap-4 p-4"
-        contentContainerStyle={{ paddingBottom: SCREEN_PADDING + bottom }}
         keyboardShouldPersistTaps="handled"
       >
         <ErrorNote error={sessions.error} />

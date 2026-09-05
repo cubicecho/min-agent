@@ -17,7 +17,6 @@ import {
   View,
 } from "react-native";
 import { useCopy } from "@/lib/copy.ts";
-import { useBottomInset } from "@/lib/layout.ts";
 import { type Colors, colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 
@@ -389,26 +388,23 @@ export function CopyButton({
 
 /* ----------------------------------------------------------------------- screens */
 
-/** The standard page frame: padded, scrollable, on the app background. */
-export const Screen = ({ children, className }: { children: ReactNode; className?: string }) => {
-  // The last thing on a long screen is a button as often as it is a paragraph, and Android
-  // draws this app under the bar at the foot of the display. Padding rather than a scroll
-  // inset, so the bottom of the content is reachable when the list is too short to scroll.
-  const bottom = useBottomInset();
-  return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentContainerClassName={cn("gap-4 p-4", className)}
-      contentContainerStyle={{ paddingBottom: SCREEN_PADDING + bottom }}
-      keyboardShouldPersistTaps="handled"
-    >
-      {children}
-    </ScrollView>
-  );
-};
-
-/** `p-4`, in the number an inline style has to add the bottom inset to. */
-export const SCREEN_PADDING = 16;
+/**
+ * The standard page frame: padded, scrollable, on the app background.
+ *
+ * Nothing here about the bar at the foot of an Android display, deliberately. That is the
+ * drawer's `sceneStyle`, one place for every screen — and it has to be, because
+ * `contentContainerClassName` *is* `contentContainerStyle` once react-native-css has mapped
+ * it, so an inline one to carry the inset takes the padding and the gaps with it.
+ */
+export const Screen = ({ children, className }: { children: ReactNode; className?: string }) => (
+  <ScrollView
+    className="flex-1 bg-background"
+    contentContainerClassName={cn("gap-4 p-4", className)}
+    keyboardShouldPersistTaps="handled"
+  >
+    {children}
+  </ScrollView>
+);
 
 export const Loading = () => (
   <View className="flex-1 items-center justify-center bg-background">

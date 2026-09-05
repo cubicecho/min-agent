@@ -39,7 +39,7 @@ import {
   Textarea,
 } from "@/components/ui.tsx";
 import { api, streamTurn } from "@/lib/client.ts";
-import { useBottomInset, useWide } from "@/lib/layout.ts";
+import { useWide } from "@/lib/layout.ts";
 import { colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 import { useDictation, useSpeech } from "@/lib/voice.ts";
@@ -73,7 +73,6 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const navigation = useNavigation();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const bottom = useBottomInset();
 
   // A chat started from the empty pane has an id before it has a route: the turn is
   // already streaming into this component, and navigating mid-stream would unmount it and
@@ -128,15 +127,32 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const draftNow = useRef(draft);
   draftNow.current = draft;
 
+  /**
+   * What the microphone last put in the box, so that the next thing it says takes that place
+   * rather than queueing up behind it. `useDictation` hands over the whole of what a session
+   * has heard each time, so this is always the exact string to lift back out — and when it is
+   * no longer the end of the draft, it has been edited and is left where it is.
+   */
+  const dictated = useRef("");
+
   const dictation = useDictation({
     model: config.data?.sttModel ?? "",
     // Only when it is going to send: left alone, the microphone stays under the button, and
     // a pause is a pause rather than a decision.
     silence: voiceSettings.autoSend ? voiceSettings.silenceMs : null,
-    // Dictation adds to the box rather than replacing it: what is already typed was typed
-    // on purpose, and speaking is often the second half of a half-written message.
+    /*
+      What was typed is kept and what was said is replaced. Dictation is not a second half
+      added to a half-written message — it is one attempt at saying something, and a second
+      press is a second attempt at the same thing, which is what a first attempt that came out
+      wrong is for. Appending gave you both of them, one after the other.
+    */
     onText: (text) => {
-      const next = draftNow.current.trim() ? `${draftNow.current.trim()} ${text}` : text;
+      const box = draftNow.current;
+      const typed = box.endsWith(dictated.current)
+        ? box.slice(0, box.length - dictated.current.length)
+        : box;
+      const next = typed.trim() ? `${typed.trim()} ${text}` : text;
+      dictated.current = text;
       draftNow.current = next;
       setDraft(next);
     },
@@ -145,6 +161,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     onDone: voiceSettings.autoSend
       ? () => {
           const spokenDraft = draftNow.current;
+          dictated.current = "";
           draftNow.current = "";
           setDraft("");
           void send(spokenDraft);
@@ -525,13 +542,12 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
       ) : null}
 
       {/*
-        The composer is the bottom of the screen on a phone, and Android puts the gesture
-        pill or the three buttons over that — and the keyboard over the lot of it. Padding
-        rather than a moved view: the column above is `flex-1`, so a composer that grows by
-        the height of the keyboard is a transcript that shrinks by it, which is what you want
-        to happen when the keys come up.
+        The composer is the bottom of the screen on a phone, over the gesture pill and under
+        the keyboard — but neither is its problem any more: the drawer pads the whole scene
+        by both, so the column above simply ends higher up when the keys come up, and the
+        transcript shrinks by the height of them rather than sliding behind them.
       */}
-      <View className="border-t border-border px-4 py-3" style={{ paddingBottom: 12 + bottom }}>
+      <View className="border-t border-border px-4 py-3">
         {/*
           Nothing below this can work without a model, and the composer cannot say where to
           get one — a placeholder is not something you can press. So the way out sits above

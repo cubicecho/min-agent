@@ -54,12 +54,26 @@ const METERED = { ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true };
 const LEVEL_POLL = 150;
 
 /**
- * The two levels silence detection works between, in dBFS — the scale `metering` reports,
- * where -160 is a dead microphone and 0 is clipping. Above `SPEECH` is you; below `QUIET` is
- * the room. Two thresholds rather than one so that the dip between two words is neither.
+ * The two levels silence detection works between — not absolute ones, but decibels above the
+ * quietest thing heard so far. Louder than `SPEECH_OVER` is you; within `QUIET_OVER` is the
+ * room again; between the two is the dip between two words, which is neither.
+ *
+ * Measured against a floor rather than against a fixed dBFS number because there is no fixed
+ * number that is right twice. A phone on a desk reports a room at about -50 dBFS and one in a
+ * kitchen at -32, so a threshold low enough to work in the first is a threshold the second
+ * never once crosses — which is a recording that never ends on its own, in the room where you
+ * most want it to.
  */
-const SPEECH = -30;
-const QUIET = -42;
+const SPEECH_OVER = 18;
+const QUIET_OVER = 8;
+
+/**
+ * Below this, the microphone is reporting nothing rather than a quiet room: `metering` is
+ * -160 exactly when the amplitude was zero, which is what the first reading after `record()`
+ * is and what a muted microphone is forever. It counts as silence — it is silence — but it is
+ * never allowed to become the floor everything else is measured against.
+ */
+const NO_SIGNAL = -100;
 
 /**
  * What a recorded file holds, by the name it was saved under.
@@ -231,18 +245,29 @@ export function useDictation({
   const busy = useRef(false);
   /** The locales this device can recognise offline, once the answer has come back. */
   const offline = useRef<string[]>([]);
-  /** Whether this session handed anything over, so that its end is worth acting on. */
-  const said = useRef(false);
+  /**
+   * Everything this session has heard, and empty until it has heard anything — which is also
+   * how "was this session worth acting on" is answered when it ends.
+   */
+  const heard = useRef("");
   /** The level watch, while the model engine is recording. */
   const watching = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const viaModel = Boolean(model.trim());
   const supported = viaModel || Boolean(recognitionClass());
 
-  /** Everything reaches the composer through here, so that "was anything said" has one answer. */
-  const hand = useCallback((text: string) => {
-    said.current = true;
-    deliver.current(text);
+  /**
+   * Everything reaches the composer through here, and what it hands over is the whole of what
+   * this session has heard rather than the phrase that just arrived.
+   *
+   * That is the contract `onText` is written against: each call *replaces* the last one's
+   * text, so a second press of the microphone is a second attempt at saying something and not
+   * a second sentence added to the first. A recogniser that settles a sentence in two goes
+   * still ends up with one sentence in the box, because both of them are in this string.
+   */
+  const hand = useCallback((phrase: string) => {
+    heard.current = heard.current ? `${heard.current} ${phrase}` : phrase;
+    deliver.current(heard.current);
   }, []);
 
   /**
@@ -308,7 +333,7 @@ export function useDictation({
     } finally {
       setTranscribing(false);
     }
-    if (said.current) finished.current?.();
+    if (heard.current) finished.current?.();
   }, [hand, recorder, unwatch]);
 
   /** How a recording ends, whether the button ended it or the pause did. */
@@ -322,28 +347,42 @@ export function useDictation({
   /**
    * Stops the recording once the room has been quiet for long enough.
    *
-   * Nothing is armed until something as loud as `SPEECH` has been heard: the pause before you
-   * start talking is longer than the one at the end, and a watch armed on the first tick would
-   * end the recording before there was anything in it. A recorder that reports no level at all
-   * — the web one — is left to the button, which still works.
+   * The room is whatever the quietest reading so far was — every level below is read as how
+   * far above that one it is, so the same two numbers work on a phone in a kitchen and on one
+   * on a desk. The floor can only fall, and a reading that sets a new one is by definition
+   * silence, which is what makes the measure self-correcting: it starts wherever the first
+   * reading happens to land and walks down to the truth within a second or two.
+   *
+   * Nothing is armed until something has been heard over it. The pause before you start
+   * talking is longer than the one at the end, and a watch armed on the first tick would end
+   * the recording before there was anything in it. A recorder that reports no level at all —
+   * the web one — never arms and is left to the button, which still works.
    */
   const watchForSilence = useCallback(() => {
     const quiet = pause.current;
     if (!quiet) return;
+    /** The quietest reading so far, and NaN until there has been one. */
+    let floor = Number.NaN;
     let spoke = false;
     let since = 0;
     watching.current = setInterval(() => {
       const level = recorder.getStatus().metering;
       if (level === undefined) return;
-      if (level > SPEECH) {
+
+      const signal = level > NO_SIGNAL;
+      // `!(floor <= level)` rather than `level < floor`, so the first reading takes it.
+      if (signal && !(floor <= level)) floor = level;
+      const over = signal ? level - floor : 0;
+
+      if (over > SPEECH_OVER) {
         spoke = true;
         since = 0;
         return;
       }
       if (!spoke) return;
-      // Between the two thresholds is neither talking nor silence, and the timer neither
-      // starts nor resets: it is the dip between words, which is not the end of a sentence.
-      if (level > QUIET) return;
+      // Between the two is neither talking nor silence, and the timer neither starts nor
+      // resets: it is the dip between two words, which is not the end of a sentence.
+      if (over > QUIET_OVER) return;
       if (!since) since = Date.now();
       if (Date.now() - since < quiet) return;
       unwatch();
@@ -410,7 +449,7 @@ export function useDictation({
       setListening(false);
       // The recogniser stopping on its own is the only sign there is that you have finished
       // talking. A session that heard nothing is a button pressed twice, and not that.
-      if (said.current) finished.current?.();
+      if (heard.current) finished.current?.();
     };
 
     recognition.current = session;
@@ -424,7 +463,7 @@ export function useDictation({
     // permission dialog. A refusal puts it back.
     const start = (open: () => Promise<void>) =>
       only(async () => {
-        said.current = false;
+        heard.current = "";
         setListening(true);
         try {
           await open();
