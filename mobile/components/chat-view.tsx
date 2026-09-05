@@ -18,10 +18,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  KeyboardAvoidingView,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -392,10 +390,12 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const onSpeak = useCallback((index: number, text: string) => speakRef.current(index, text), []);
 
   return (
-    <KeyboardAvoidingView
-      className="min-w-0 flex-1 bg-background"
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+    /*
+      No `KeyboardAvoidingView`. Under Android's edge-to-edge window it has nothing to react
+      to — the window is not resized when the keyboard opens — so the composer below reserves
+      the room itself and this column shrinks around it.
+    */
+    <View className="min-w-0 flex-1 bg-background">
       <View className="flex-row flex-wrap items-center justify-end gap-3 border-b border-border px-4 py-2">
         {/*
           The readout is the way in to the breakdown: it is already the thing you look at when
@@ -498,10 +498,11 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
       ) : null}
 
       {/*
-        The composer is the bottom of the screen on a phone, and Android puts its gesture
-        pill or its three buttons over that. `useBottomInset` gives back the room they take
-        — and gives it up again while the keyboard is up, which has already pushed the
-        composer clear of them.
+        The composer is the bottom of the screen on a phone, and Android puts the gesture
+        pill or the three buttons over that — and the keyboard over the lot of it. Padding
+        rather than a moved view: the column above is `flex-1`, so a composer that grows by
+        the height of the keyboard is a transcript that shrinks by it, which is what you want
+        to happen when the keys come up.
       */}
       <View className="border-t border-border px-4 py-3" style={{ paddingBottom: 12 + bottom }}>
         {/*
@@ -558,7 +559,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
           )}
         </View>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

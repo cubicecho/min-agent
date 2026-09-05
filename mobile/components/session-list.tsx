@@ -5,11 +5,19 @@ import {
   SEARCH_AFTER,
 } from "@shared/client/sessions.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, type TextInput, View } from "react-native";
 import { SettingsLink } from "@/components/settings/link.tsx";
-import { Button, Empty, ErrorNote, Input, Loading, Muted, Screen } from "@/components/ui.tsx";
+import {
+  Button,
+  Empty,
+  ErrorNote,
+  Input,
+  Loading,
+  Muted,
+  SCREEN_PADDING,
+} from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
 import { useShortcut } from "@/lib/keys.ts";
 import { useBottomInset } from "@/lib/layout.ts";
@@ -173,14 +181,17 @@ function RenameField({
   );
 }
 
+/** Whether there are enough chats that reading down the list is the slower way to find one. */
+const searchable = (list: List) => list.all.length > SEARCH_AFTER;
+
 /** Search box, shown only once there are enough chats for scanning to be the slower way. */
 function Search({ list, className }: { list: List; className?: string }) {
   const box = useRef<TextInput>(null);
   // Bound only while the box is on screen: a key that does nothing is worse than one that
   // was never taken, because the browser's own ⌘K would have done something.
-  useShortcut("mod+k", list.all.length > SEARCH_AFTER ? () => box.current?.focus() : undefined);
+  useShortcut("mod+k", searchable(list) ? () => box.current?.focus() : undefined);
 
-  if (list.all.length <= SEARCH_AFTER) return null;
+  if (!searchable(list)) return null;
   return (
     <Input
       ref={box}
@@ -326,73 +337,112 @@ export function SessionsPanel({ activeId }: { activeId?: string }) {
 
 /** The whole of the Chats screen on a narrow one, where there is no room to sit beside. */
 export function SessionsScreen() {
+  const navigation = useNavigation();
   const list = useSessions();
   const { sessions, newChat, open } = list;
+  const bottom = useBottomInset();
+
+  /*
+    The drawer owns the header, so "New chat" goes up into it beside the title — the shape
+    the wide layout's panel already has, and the one place on the screen a long list cannot
+    scroll it out of. It is put back on the way out because the option belongs to the route
+    rather than to this component, and `chat/[id]` is a different route with a title of its
+    own.
+  */
+  const start = newChat.mutate;
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Button
+          size="sm"
+          variant="ghost"
+          icon="plus"
+          busy={newChat.isPending}
+          onPress={() => start()}
+        >
+          New
+        </Button>
+      ),
+    });
+    return () => navigation.setOptions({ headerRight: undefined });
+  }, [navigation, start, newChat.isPending]);
 
   if (sessions.isLoading) return <Loading />;
 
   return (
-    <Screen>
-      <Button icon="plus" busy={newChat.isPending} onPress={() => newChat.mutate()}>
-        New chat
-      </Button>
-
-      <ErrorNote error={sessions.error} />
-      {sessions.isError && (
-        <>
-          <Muted>
-            The server did not answer, and nothing else on this screen will work until it does.
-          </Muted>
-          <View className="flex-row">
-            <SettingsLink tab="server" />
-          </View>
-        </>
-      )}
-
-      <Search list={list} />
-
-      {sessions.data?.length === 0 && <Empty>No sessions yet.</Empty>}
-      <NoMatch list={list} />
-
-      {list.groups.map((group) => (
-        // A card per group rather than one card with headings inside it: the heading belongs
-        // to the rows under it, and a border drawn around both says so.
-        <View key={group.bucket}>
-          <GroupHeading>{group.label}</GroupHeading>
-          <View className="overflow-hidden rounded-xl border border-border">
-            {group.sessions.map((item, index) => (
-              <View
-                key={item.id}
-                className={`flex-row items-center ${index > 0 ? "border-t border-border" : ""}`}
-              >
-                {list.editing === item.id ? (
-                  <View className="flex-1 px-3 py-2">
-                    <RenameField
-                      initial={item.title}
-                      onCommit={(title) => list.commit(item.id, title)}
-                    />
-                  </View>
-                ) : (
-                  <>
-                    <Pressable
-                      onPress={() => open(item.id)}
-                      className="flex-1 px-4 py-3 active:bg-accent"
-                    >
-                      <Text className="text-sm text-foreground" numberOfLines={1}>
-                        {item.title}
-                      </Text>
-                      <Muted>{when(item.updatedAt, group.bucket)}</Muted>
-                    </Pressable>
-                    <View className="pr-2">
-                      <RowActions list={list} id={item.id} title={item.title} />
-                    </View>
-                  </>
-                )}
-              </View>
-            ))}
-          </View>
+    <View className="flex-1 bg-background">
+      {/*
+        Outside the scroller rather than the first thing in it. The box is how you narrow a
+        list too long to read, which is exactly the list that scrolls it off the screen the
+        moment you start looking.
+      */}
+      {searchable(list) ? (
+        <View className="border-b border-border px-4 py-3">
+          <Search list={list} />
         </View>
-      ))}
-    </Screen>
+      ) : null}
+
+      <ScrollView
+        className="flex-1"
+        contentContainerClassName="gap-4 p-4"
+        contentContainerStyle={{ paddingBottom: SCREEN_PADDING + bottom }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <ErrorNote error={sessions.error} />
+        {sessions.isError && (
+          <>
+            <Muted>
+              The server did not answer, and nothing else on this screen will work until it does.
+            </Muted>
+            <View className="flex-row">
+              <SettingsLink tab="server" />
+            </View>
+          </>
+        )}
+
+        {sessions.data?.length === 0 && <Empty>No sessions yet.</Empty>}
+        <NoMatch list={list} />
+
+        {list.groups.map((group) => (
+          // A card per group rather than one card with headings inside it: the heading belongs
+          // to the rows under it, and a border drawn around both says so.
+          <View key={group.bucket}>
+            <GroupHeading>{group.label}</GroupHeading>
+            <View className="overflow-hidden rounded-xl border border-border">
+              {group.sessions.map((item, index) => (
+                <View
+                  key={item.id}
+                  className={`flex-row items-center ${index > 0 ? "border-t border-border" : ""}`}
+                >
+                  {list.editing === item.id ? (
+                    <View className="flex-1 px-3 py-2">
+                      <RenameField
+                        initial={item.title}
+                        onCommit={(title) => list.commit(item.id, title)}
+                      />
+                    </View>
+                  ) : (
+                    <>
+                      <Pressable
+                        onPress={() => open(item.id)}
+                        className="flex-1 px-4 py-3 active:bg-accent"
+                      >
+                        <Text className="text-sm text-foreground" numberOfLines={1}>
+                          {item.title}
+                        </Text>
+                        <Muted>{when(item.updatedAt, group.bucket)}</Muted>
+                      </Pressable>
+                      <View className="pr-2">
+                        <RowActions list={list} id={item.id} title={item.title} />
+                      </View>
+                    </>
+                  )}
+                </View>
+              ))}
+            </View>
+          </View>
+        ))}
+      </ScrollView>
+    </View>
   );
 }

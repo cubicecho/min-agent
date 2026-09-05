@@ -407,8 +407,8 @@ export const Screen = ({ children, className }: { children: ReactNode; className
   );
 };
 
-/** `p-4`, in the number the inline style above has to add the inset to. */
-const SCREEN_PADDING = 16;
+/** `p-4`, in the number an inline style has to add the bottom inset to. */
+export const SCREEN_PADDING = 16;
 
 export const Loading = () => (
   <View className="flex-1 items-center justify-center bg-background">

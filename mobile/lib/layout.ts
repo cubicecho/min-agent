@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Keyboard, useWindowDimensions } from "react-native";
+import { Keyboard, Platform, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /**
@@ -16,32 +16,43 @@ export const WIDE = 768;
 export const useWide = () => useWindowDimensions().width >= WIDE;
 
 /**
- * How much room the system bar at the foot of the screen needs.
+ * The room to leave under the last thing on a screen: the system bar at the foot of the
+ * display, and the keyboard on top of it while it is up.
  *
  * Android draws this app edge to edge — under the status bar and under the gesture pill or
- * the three buttons — so anything pinned to the bottom of a screen is drawn under a bar you
- * cannot tap through unless it reserves the room itself. The top is react-navigation's
- * header's problem and it already handles it; the bottom belongs to whatever is drawn last,
- * which is the composer on a chat and the scroll content everywhere else.
+ * the three buttons — and, since Android 15, there is no opting out. Edge to edge also means
+ * the window is never resized to make way for the keyboard: `adjustResize` is ignored, so a
+ * `KeyboardAvoidingView` has nothing to react to and the composer stays where it was, under
+ * the keys. Reserving the room is the app's job on both counts, which is what this is for.
  *
- * It goes to zero while the keyboard is up. The window has already been resized to sit above
- * the keyboard, and the keyboard covers the bar, so the inset would no longer be clearance
- * from anything — only a gap between the composer and the keys.
+ * The two numbers are added rather than picked between because on Android they measure
+ * different things: the keyboard is drawn over the navigation bar, and `keyboardDidShow`
+ * reports only the part of it above that bar. iOS measures its keyboard from the bottom of
+ * the screen, home indicator included, so there the larger of the two is the whole of it.
  */
 export function useBottomInset() {
   const { bottom } = useSafeAreaInsets();
-  return useKeyboardShown() ? 0 : bottom;
+  const keyboard = useKeyboardHeight();
+  return Platform.OS === "android" ? keyboard + bottom : keyboard || bottom;
 }
 
-function useKeyboardShown() {
-  const [shown, setShown] = useState(false);
+/** How tall the on-screen keyboard is, and zero while it is down. */
+function useKeyboardHeight() {
+  const [height, setHeight] = useState(0);
   useEffect(() => {
-    const shows = Keyboard.addListener("keyboardDidShow", () => setShown(true));
-    const hides = Keyboard.addListener("keyboardDidHide", () => setShown(false));
+    // iOS has the events that fire with the animation rather than after it, so the content
+    // travels with the keyboard instead of jumping once it has arrived. Android only ever
+    // emits the `Did` pair.
+    const shown = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hidden = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const shows = Keyboard.addListener(shown, (event) =>
+      setHeight(event.endCoordinates?.height ?? 0),
+    );
+    const hides = Keyboard.addListener(hidden, () => setHeight(0));
     return () => {
       shows.remove();
       hides.remove();
     };
   }, []);
-  return shown;
+  return height;
 }
