@@ -240,7 +240,23 @@ export function useDictation({
   pause.current = silence;
 
   const recorder = useAudioRecorder(METERED);
+  /**
+   * The recogniser, built once and started again and again.
+   *
+   * One instance rather than one per press, and not for tidiness. Off web this is
+   * `expo-speech-recognition`'s polyfill, and every handler set on one of those becomes a
+   * listener on the module's single native emitter — a subscription nothing removes when the
+   * session ends, because `stop()` and `abort()` are module-level functions that know nothing
+   * about the object they were called on. A new recogniser per press therefore left the old
+   * one listening: on the third press three of them heard the same sentence and handed it over
+   * three times, which is what "it repeats what I said" was. The instance is reconfigured
+   * before each `start()` instead, so there is exactly one of everything.
+   */
   const recognition = useRef<Recognition | null>(null);
+  /** Whether the microphone is open, readable from a handler that runs between renders. */
+  const open = useRef(false);
+  /** False once this hook has been torn down, for the one listener that cannot be removed. */
+  const alive = useRef(true);
   /** A press while the last one is still opening or closing the microphone would race it. */
   const busy = useRef(false);
   /** The locales this device can recognise offline, once the answer has come back. */
@@ -306,10 +322,24 @@ export function useDictation({
   // and so does a recording in progress. Neither stop is awaited: the component is going and
   // there is nobody left to hand a transcript to.
   useEffect(() => {
+    alive.current = true;
     return () => {
+      alive.current = false;
       unwatch();
-      recognition.current?.abort();
+      const session = recognition.current;
       recognition.current = null;
+      open.current = false;
+      if (session) {
+        session.abort();
+        // Nulling these is what takes the listeners off the native emitter; abandoning the
+        // object does not, and the next mount's recogniser would be talking over this one's.
+        // `onend` is the exception — the polyfill files its subscription under the wrapper it
+        // registered and looks it up by the handler it was given, so that one can only be
+        // ignored, which is what `alive` is for.
+        session.onresult = null;
+        session.onerror = null;
+        session.onend = null;
+      }
       if (!recorder.isRecording) return;
       void recorder.stop().catch(() => {});
       void setAudioModeAsync({ allowsRecording: false }).catch(() => {});
@@ -399,53 +429,35 @@ export function useDictation({
     watchForSilence();
   }, [recorder, watchForSilence]);
 
-  /** The platform engine ends on its own — at a pause, or when `stop()` is called. */
-  const listen = useCallback(async () => {
+  /** The recogniser and its three handlers, made on first use and kept from then on. */
+  const recogniser = useCallback(() => {
+    if (recognition.current) return recognition.current;
+
     const Recogniser = recognitionClass();
     if (!Recogniser) throw new Error("this build has no speech recognition");
-
-    // A browser asks for the microphone itself, as part of starting. Android does not.
-    if (Platform.OS !== "web") {
-      const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-      if (!permission.granted) throw new Error("the microphone was not allowed");
-    }
-
-    const locale = currentLocale();
     const session = new Recogniser();
-    session.continuous = false;
-    session.interimResults = false;
-    session.lang = locale;
-    session.requiresOnDeviceRecognition = offline.current.includes(locale);
-    // How long a pause the endpointer should sit through before calling it finished. Android
-    // documents these as advisory and plenty of recognisers ignore them, so this is the
-    // setting being asked for rather than the setting being enforced.
-    if (pause.current) {
-      session.androidIntentOptions = {
-        EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: pause.current,
-        EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: pause.current,
-      };
-    }
 
     session.onresult = ({ results, resultIndex = 0 }) => {
-      let heard = "";
-      // From `resultIndex`, not from zero. `results` is the session's history rather than its
-      // latest event, so a recogniser that settles a second phrase hands the first one back
-      // along with it — and starting at zero put the sentence you had already spoken into the
-      // box a second time, under the one you had just said.
+      if (!alive.current) return;
+      let phrase = "";
+      // From `resultIndex`, not from zero: `results` is the session's history rather than its
+      // latest event, and a recogniser that settles a second phrase hands the first one back
+      // along with it.
       for (let index = resultIndex; index < results.length; index++) {
         const result = results[index];
         if (!result?.isFinal) continue;
-        const phrase = result[0].transcript;
-        heard = heard ? `${heard} ${phrase}` : phrase;
+        phrase = phrase ? `${phrase} ${result[0].transcript}` : result[0].transcript;
       }
-      if (heard.trim()) hand(heard.trim());
+      if (phrase.trim()) hand(phrase.trim());
     };
     // `no-speech` and `aborted` are what a held-and-released button sounds like, not faults.
     session.onerror = ({ error: reason }) => {
+      if (!alive.current) return;
       if (reason !== "no-speech" && reason !== "aborted") setError(reason);
     };
     session.onend = () => {
-      recognition.current = null;
+      if (!alive.current || !open.current) return;
+      open.current = false;
       setListening(false);
       // The recogniser stopping on its own is the only sign there is that you have finished
       // talking. A session that heard nothing is a button pressed twice, and not that.
@@ -453,8 +465,44 @@ export function useDictation({
     };
 
     recognition.current = session;
-    session.start();
+    return session;
   }, [hand]);
+
+  /** The platform engine ends on its own — at a pause, or when `stop()` is called. */
+  const listen = useCallback(async () => {
+    const session = recogniser();
+
+    // A browser asks for the microphone itself, as part of starting. Android does not.
+    if (Platform.OS !== "web") {
+      const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!permission.granted) throw new Error("the microphone was not allowed");
+    }
+
+    // Every setting written afresh, because the object outlives the session: `start()` reads
+    // these as they stand, so anything left over from last time is what would be asked for.
+    const locale = currentLocale();
+    session.continuous = false;
+    session.interimResults = false;
+    session.lang = locale;
+    session.requiresOnDeviceRecognition = offline.current.includes(locale);
+    // How long a pause the endpointer should sit through before calling it finished. Android
+    // documents these as advisory and plenty of recognisers ignore them, so this is the
+    // setting being asked for rather than the setting being enforced.
+    session.androidIntentOptions = pause.current
+      ? {
+          EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: pause.current,
+          EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: pause.current,
+        }
+      : undefined;
+
+    open.current = true;
+    try {
+      session.start();
+    } catch (thrown) {
+      open.current = false;
+      throw thrown;
+    }
+  }, [recogniser]);
 
   const toggle = useCallback(() => {
     setError(null);
