@@ -70,8 +70,11 @@ const { entities } = buildSchema(db, {
       before: ({ args }) => {
         assertLlmConfigPatch(args?.set);
       },
-      after: async () => {
-        await refreshLlmConfig();
+      // Through `tx`, never through `db`. The hook runs inside the mutation's transaction, so
+      // a read on any other connection sees the row as it was before the write — which is how
+      // the cache came to run one save behind.
+      after: async ({ tx }) => {
+        await refreshLlmConfig(tx);
       },
     },
   },

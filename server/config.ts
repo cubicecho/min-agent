@@ -8,7 +8,7 @@ import {
   type McpServerConfig,
   mcpServerSchema,
 } from "../shared/types.ts";
-import { db } from "./db/client.ts";
+import { type Db, db } from "./db/client.ts";
 import { embeds, mcpServers, settings } from "./db/schema.ts";
 
 /** The singleton settings row. There is exactly one, created by `ensureSchema`. */
@@ -23,6 +23,11 @@ const DEFAULT_ID = "default";
  * write, and `loadLlmConfig()` stays the synchronous call it always was. Every write goes
  * through GraphQL, which refreshes this on the way out (`onWrite` in `graphql/schema.ts`), so
  * a second process editing the row is the only way to make this stale — and there isn't one.
+ *
+ * The refresh happens inside the writing transaction, which is the only place it can see the
+ * write (see `refreshLlmConfig`). A transaction that then rolled back would leave this holding
+ * a value that never landed — narrow enough to accept, and the alternative was a cache that
+ * was wrong after *every* save rather than after a rolled-back one.
  */
 let cached: LlmConfig = llmConfigSchema.parse({});
 
@@ -84,8 +89,24 @@ export function coerceLlmConfig(row: unknown): LlmConfig {
   }
 }
 
-export async function refreshLlmConfig(): Promise<LlmConfig> {
-  const [row] = await db.select().from(settings).where(eq(settings.id, DEFAULT_ID)).limit(1);
+/**
+ * Enough of a Drizzle executor to read one row: `db` itself, or a transaction opened over it.
+ */
+type Reader = Pick<Db, "select">;
+
+/**
+ * Re-reads the row into `cached`.
+ *
+ * `reader` is not decoration. The generated settings mutation runs inside a transaction — one
+ * the `onWrite` hook itself causes to exist — and a hook that read through the module-level
+ * `db` took a *different* connection out of the pool, one that cannot see an uncommitted write.
+ * So it faithfully re-read the row as it was before the save, and the cache ran exactly one
+ * write behind: a turn after changing the reasoning effort used the previous effort, and the
+ * new one only arrived when some later, unrelated save refreshed it. Reading through the
+ * mutation's own executor is what makes the write visible.
+ */
+export async function refreshLlmConfig(reader: Reader = db): Promise<LlmConfig> {
+  const [row] = await reader.select().from(settings).where(eq(settings.id, DEFAULT_ID)).limit(1);
   cached = coerceLlmConfig(row ?? {});
   return cached;
 }
