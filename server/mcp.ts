@@ -36,8 +36,11 @@ export async function reconnect(id: string, list: McpServerConfig[]) {
 /**
  * Tool definitions for the model. Pass `names` to get only those — on-demand loading sends a
  * handful of schemas instead of every one.
+ *
+ * Named rather than positional since 2.0: the pool also takes a `servers` scope there, and both
+ * are collections of strings, so a swap would have compiled and quietly offered no tools.
  */
-export const tools = (names?: string[]) => pool.tools(names);
+export const tools = (names?: string[]) => pool.tools({ names });
 
 /** Names and descriptions only — what the model browses before loading anything. */
 export const catalog = () => pool.catalog();
@@ -65,9 +68,16 @@ export const shutdown = () => pool.shutdown();
  * `headers` to `| null` for consumers whose columns are nullable, and min-agent's zod schema
  * defaults all three. What comes back is the row this module passed in, so the narrower type is
  * the true one.
+ *
+ * `secrets` because the MCP tab is an edit form: it opens on the row this returns and saves the
+ * row back, so a redacted `env` would not read as "not shown" but be written over the key that
+ * was there. 2.0 made withholding them the default, and the case it defends against — a config
+ * sent to a browser — is one min-agent has always been in, since `McpServerConfig` carries both
+ * fields across GraphQL. Worth revisiting as its own change; it is not one to make by taking a
+ * new default silently.
  */
 export function state(): McpServerState[] {
-  return pool.state().map((server) => ({
+  return pool.state({ secrets: true }).map((server) => ({
     config: server.config as McpServerConfig,
     status: server.status,
     error: server.error || undefined,
