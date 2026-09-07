@@ -2,15 +2,18 @@ import {
   ask,
   backoffMs,
   type CatalogServer,
+  ContextOverflow,
   carryOver,
   catalogPrompt,
   clean,
+  compact as compactTokens,
   contextLimitFor,
   errorMessage,
   expandNames,
   getClient,
   inCatalog,
   isGrammarError,
+  isOverflow,
   isTransient,
   LOAD_TOOLS,
   LOAD_TOOLS_DEFINITION,
@@ -231,14 +234,87 @@ function forApi(session: Session): OpenAI.ChatCompletionMessageParam[] {
   });
 }
 
-/** Not every OpenAI-compatible server accepts `stream_options`; we find out once. */
-let usageSupported = true;
+/** What one endpoint turned out not to support. Both start optimistic and only ever latch off. */
+export interface Capabilities {
+  /**
+   * `stream_options` is how a streamed request asks for its token counts, and a server that has
+   * not heard of it rejects the whole request rather than the option. The counts are worth one
+   * failed request to find out about, not one per turn.
+   */
+  usageInStream: boolean;
+  /**
+   * llama.cpp-backed servers compile all tool schemas into one grammar and reject keywords
+   * their converter cannot express. Once we have seen that, drop them.
+   */
+  strictSchemas: boolean;
+}
 
 /**
- * llama.cpp-backed servers compile all tool schemas into one grammar and reject keywords
- * their converter cannot express. Once we have seen that, drop them for the rest of the run.
+ * What each endpoint cannot do, remembered for the life of the process.
+ *
+ * Keyed by base URL, because these are facts about the server on the other end rather than about
+ * this one. There is a single settings row here, but the address in it is a text box: an Ollama
+ * box that cannot compile a grammar and a cloud API that can are both reachable from it over an
+ * afternoon, and the first one's refusal must not go on stripping `pattern`/`format` from the
+ * second one's requests — or leave it without token counts — until the process restarts.
  */
-let strictSchemas = true;
+const capabilities = new Map<string, Capabilities>();
+
+export function capabilitiesFor(baseUrl: string): Capabilities {
+  const known = capabilities.get(baseUrl);
+  if (known) return known;
+  const fresh: Capabilities = { usageInStream: true, strictSchemas: true };
+  capabilities.set(baseUrl, fresh);
+  return fresh;
+}
+
+/** Test seam: forget what every endpoint has refused, so one test cannot latch another's. */
+export const resetCapabilities = () => capabilities.clear();
+
+/**
+ * Sends a request, and sends it again each time the answer is the endpoint refusing something
+ * this turn can do without.
+ *
+ * A loop rather than a single fallback: a server that has heard of neither `stream_options` nor
+ * a grammar keyword complains about them one at a time, and answering only the first left the
+ * second to fail the turn outright — so the first turn against such a server was spent finding
+ * out what the turn after it starts knowing. It terminates in at most one pass per capability,
+ * since every pass either latches one off for good or rethrows.
+ *
+ * An overflow is the one refusal here that is not negotiable: the request was larger than the
+ * model will read, and sending it again is the same refusal a round trip later. It is kept in
+ * the server's own words with ours added, because the whole difficulty of that failure is that
+ * the number in it disagrees with the one the turn was working to.
+ */
+export async function negotiate<T>(
+  supports: Capabilities,
+  contextLimit: number,
+  send: (supports: Capabilities) => Promise<T>,
+): Promise<T> {
+  for (;;) {
+    try {
+      return await send(supports);
+    } catch (error) {
+      const detail = errorMessage(error);
+      if (isOverflow(detail)) {
+        throw new ContextOverflow(
+          contextLimit > 0
+            ? `${detail} — this turn was built to ${compactTokens(contextLimit)} tokens, so the window ` +
+                "in Settings → Agent is larger than what the server actually serves."
+            : `${detail} — set Settings → Agent → Context window, and the turn will compact ` +
+                "itself before it gets this far.",
+        );
+      }
+      if (supports.strictSchemas && isGrammarError(detail)) {
+        console.warn("[agent] server could not build a grammar; retrying without pattern/format");
+        supports.strictSchemas = false;
+      } else if (supports.usageInStream && /stream_options/i.test(detail)) {
+        console.warn("[agent] server rejected stream_options; token counts disabled");
+        supports.usageInStream = false;
+      } else throw error;
+    }
+  }
+}
 
 export interface RunOptions {
   session: Session;
@@ -261,6 +337,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   const emit = onEvent ?? (() => {});
   const server = endpoint(config);
   const client = getClient(server);
+  const supports = capabilitiesFor(server.baseUrl);
   const contextLimit = await contextLimitFor(
     { ...server, model: chosenModel },
     config.contextLimit,
@@ -376,15 +453,15 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       compacted: Boolean(session.compaction),
     });
 
-    const open = (withUsage: boolean, strict: boolean) => {
-      const tools = strict ? declared : relaxTools(declared);
+    const open = (supports: Capabilities) => {
+      const tools = supports.strictSchemas ? declared : relaxTools(declared);
       return client.chat.completions.create(
         {
           model: chosenModel,
           max_tokens: config.maxTokens,
           temperature: config.temperature,
           stream: true,
-          ...(withUsage ? { stream_options: { include_usage: true } } : {}),
+          ...(supports.usageInStream ? { stream_options: { include_usage: true } } : {}),
           messages: [{ role: "system", content: system }, ...history],
           ...(tools.length ? { tools } : {}),
         },
@@ -393,41 +470,30 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     };
 
     /**
-     * The same request again when it was lost rather than refused.
+     * The negotiated request, sent again when it was lost rather than refused.
+     *
+     * The two recoveries nest. `negotiate` is the inner one: a capability this endpoint turns
+     * out not to have, answered and latched against it for good. This is the outer one — the
+     * endpoint being unreachable, busy or silent, which is nothing to do with what the request
+     * said and is worth simply waiting out.
      *
      * `getClient` turns the SDK's own retrying off, because a stream that has already produced
      * tokens must never be replayed from the top and the SDK cannot tell whether it has. Here
      * it cannot have: this resolves before the first chunk is read, so a failure at this point
-     * is a request that never became an answer. A refusal — a bad schema, an unknown model —
-     * is not transient and goes straight out, as it did before.
+     * is a request that never became an answer. A refusal — a bad schema, an unknown model, a
+     * request past the window — is not transient and goes straight out.
      */
-    const openOrRetry = async (withUsage: boolean, strict: boolean) => {
-      for (let attempt = 0; ; attempt++) {
-        try {
-          return await open(withUsage, strict);
-        } catch (error) {
-          if (attempt >= OPEN_RETRIES || !isTransient(error)) throw error;
-          const wait = backoffMs(attempt);
-          console.warn(`[agent] ${errorMessage(error)}; retrying in ${Math.round(wait)}ms`);
-          await sleep(wait, signal);
-        }
-      }
-    };
-
     let stream: Awaited<ReturnType<typeof open>>;
-    try {
-      stream = await openOrRetry(usageSupported, strictSchemas);
-    } catch (error) {
-      const detail = errorMessage(error);
-      if (usageSupported && /stream_options/i.test(detail)) {
-        console.warn("[agent] server rejected stream_options; token counts disabled");
-        usageSupported = false;
-        stream = await openOrRetry(false, strictSchemas);
-      } else if (strictSchemas && isGrammarError(detail)) {
-        console.warn("[agent] server could not build a grammar; retrying without pattern/format");
-        strictSchemas = false;
-        stream = await openOrRetry(usageSupported, false);
-      } else throw error;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        stream = await negotiate(supports, contextLimit, open);
+        break;
+      } catch (error) {
+        if (attempt >= OPEN_RETRIES || !isTransient(error)) throw error;
+        const wait = backoffMs(attempt);
+        console.warn(`[agent] ${errorMessage(error)}; retrying in ${Math.round(wait)}ms`);
+        await sleep(wait, signal);
+      }
     }
 
     iterations++;
@@ -607,7 +673,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
             }
           }
         } catch (error) {
-          content = error instanceof Error ? error.message : String(error);
+          content = errorMessage(error);
           isError = true;
         }
         emit({ type: "tool_result", toolUseId: call.id, content, isError });

@@ -111,7 +111,7 @@ app.listen(PORT, HOST, () => {
 await mcp.sync(await loadMcpServers());
 
 const shutdown = async () => {
-  await mcp.sync([]);
+  await mcp.shutdown();
   process.exit(0);
 };
 process.on("SIGINT", shutdown);
