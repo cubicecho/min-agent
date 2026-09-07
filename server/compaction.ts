@@ -1,5 +1,5 @@
+import { estimateTokens } from "@cubicecho/agent-core";
 import type { Compaction, StoredMessage } from "../shared/types.ts";
-import { estimateTokens } from "./side-tasks.ts";
 
 /**
  * Context compaction.

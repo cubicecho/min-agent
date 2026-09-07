@@ -1,3 +1,4 @@
+import type { Endpoint } from "@cubicecho/agent-core";
 import { asc, eq } from "drizzle-orm";
 import {
   type EmbedConfig,
@@ -93,6 +94,22 @@ export const loadLlmConfig = (): LlmConfig => cached;
 
 /** The key from the settings row, else the environment. */
 export const resolveApiKey = (config = cached) => config.apiKey || process.env.OPENAI_API_KEY || "";
+
+/**
+ * The settings, as `@cubicecho/agent-core` wants an endpoint.
+ *
+ * The package asks each function for the narrowest thing it reads rather than for a whole
+ * config, which is what lets min-agent's settings satisfy it without growing fields it has no
+ * screen for. The key is resolved here because the stored row may not hold it — a blank one
+ * falls back to `$OPENAI_API_KEY` — and the timeout is zero because min-agent has never had
+ * one: a local model can take a minute over a long answer, and a turn is already cancellable
+ * from the client.
+ */
+export const endpoint = (config = cached): Endpoint => ({
+  baseUrl: config.baseUrl,
+  apiKey: resolveApiKey(config),
+  requestTimeoutSeconds: 0,
+});
 
 export async function loadMcpServers(): Promise<McpServerConfig[]> {
   const rows = await db.select().from(mcpServers).orderBy(asc(mcpServers.position));

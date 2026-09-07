@@ -7,7 +7,7 @@ import { loadMcpServers, refreshLlmConfig } from "./config.ts";
 import { waitForDatabase } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
 import { schema } from "./graphql/schema.ts";
-import { mcp } from "./mcp.ts";
+import * as mcp from "./mcp.ts";
 import { displayHost, HOST, PORT, ROOT } from "./paths.ts";
 import { voice } from "./voice.ts";
 

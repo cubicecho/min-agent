@@ -25,7 +25,7 @@ import {
 } from "../config.ts";
 import { db } from "../db/client.ts";
 import { settings } from "../db/schema.ts";
-import { mcp } from "../mcp.ts";
+import * as mcp from "../mcp.ts";
 import { truncateSession } from "../store.ts";
 import { runTurnEvents, type TurnArgs } from "../turns.ts";
 
