@@ -22,6 +22,11 @@ import { VERSION } from "./paths.ts";
  * the state once the reconcile is done. Fifteen seconds is longer than any healthy stdio server
  * takes to start and short enough that a broken one reads as broken rather than as a hung UI.
  *
+ * Since pool 2.4.3 it is a budget for the whole connect rather than a ceiling on each request in
+ * it. It bounded `initialize` and every page of `tools/list` separately before, so the number
+ * multiplied by a page count only the server knows — a server that paginates its tools could
+ * stall Save for a minute with 15s set, which is exactly the wait this line exists to prevent.
+ *
  * `clientVersion` is the other half of what a dialled server is told about its caller, and new in
  * pool 2.3.0. Without it the handshake paired `min-agent` with the pool's own version — a number
  * that moves for reasons min-agent's users never see, under a name that says it is min-agent's.
