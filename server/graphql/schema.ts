@@ -158,7 +158,7 @@ const McpServerStateType = new GraphQLObjectType({
     config: { type: new GraphQLNonNull(McpServerConfigType) },
     status: {
       type: new GraphQLNonNull(GraphQLString),
-      description: "disabled | connecting | ready | error",
+      description: "disabled | idle | connecting | ready | error",
     },
     error: { type: GraphQLString },
     tools: { type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(McpToolType))) },

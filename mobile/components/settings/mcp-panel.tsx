@@ -40,6 +40,7 @@ const STATUS_STYLE: Record<McpStatus, string> = {
   ready: "bg-emerald-500/15",
   error: "bg-destructive/15",
   connecting: "bg-amber-500/15",
+  idle: "bg-muted",
   disabled: "bg-muted",
 };
 
@@ -47,6 +48,7 @@ const STATUS_TEXT: Record<McpStatus, string> = {
   ready: "text-emerald-500",
   error: "text-destructive",
   connecting: "text-amber-500",
+  idle: "text-muted-foreground",
   disabled: "text-muted-foreground",
 };
 

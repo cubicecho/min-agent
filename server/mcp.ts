@@ -7,41 +7,23 @@ import type { McpServerConfig, McpServerState } from "../shared/types.ts";
  * The pool is the shared thing — connecting, reconnecting, qualifying tool names, running a
  * call — and this is the half that is min-agent's own: a server here is identified by the id
  * the user typed, and the screens read a server's whole config back beside its status.
+ *
+ * min-agent has never had a slug column: its ids are already slug-shaped
+ * (`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,31}$`) and the MCP tab says so — "a server's id is the namespace
+ * its tools live under". Since 0.6.0 the pool defaults `slug` to `id`, so the rows go in as they
+ * are stored.
  */
-
-/**
- * The pool namespaces tools by a `slug` alongside the id. min-agent has never had one: its ids
- * are already slug-shaped (`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,31}$`) and the MCP tab says so — "a
- * server's id is the namespace its tools live under". So the id is the slug, mapped here rather
- * than added to the schema, which would put a second name on the screen with nothing to say.
- */
-const pooled = (config: McpServerConfig) => ({ ...config, slug: config.id });
 
 const pool = new McpPool({ clientName: "min-agent" });
 
-/**
- * The configs behind the live connections, kept so `state()` can hand a whole server back.
- *
- * The pool reports the identity and the status of what it is connected to, not the command
- * that started it — but the MCP tab draws the edit form and the connection state as one row,
- * so the two are rejoined here.
- */
-let configs = new Map<string, McpServerConfig>();
-
-const remember = (list: McpServerConfig[]) => {
-  configs = new Map(list.map((config) => [config.id, config]));
-};
-
 /** Reconcile live clients with the stored rows. Called on boot and on every edit. */
 export async function sync(list: McpServerConfig[]) {
-  remember(list);
-  await pool.sync(list.map(pooled));
+  await pool.sync(list);
 }
 
 /** Tears one server's connection down and dials it again. */
 export async function reconnect(id: string, list: McpServerConfig[]) {
-  remember(list);
-  await pool.reconnect(id, list.map(pooled));
+  await pool.reconnect(id, list);
 }
 
 /**
@@ -59,19 +41,21 @@ export const call = (qualifiedName: string, input: unknown) => pool.call(qualifi
 /**
  * Every configured server, with its live connection state and tools.
  *
- * Driven by the stored rows rather than by what the pool reports, so the MCP tab lists the
- * servers in the order they were saved in and a row that has not been dialled yet still has
- * somewhere to draw its form.
+ * Since 0.7.0 the pool reports the row it was configured from, in the order it was given them,
+ * so the MCP tab lists the servers in the order they were saved in and a row that has not been
+ * dialled yet still has somewhere to draw its form — without a second copy of the rows here to
+ * go stale.
+ *
+ * The config is narrowed on the way back out: the pool's row type widens `args`, `env` and
+ * `headers` to `| null` for consumers whose columns are nullable, and min-agent's zod schema
+ * defaults all three. What comes back is the row this module passed in, so the narrower type is
+ * the true one.
  */
 export function state(): McpServerState[] {
-  const live = new Map(pool.state().map((server) => [server.id, server]));
-  return [...configs.values()].map((config) => {
-    const server = live.get(config.id);
-    return {
-      config,
-      status: server?.status ?? "connecting",
-      error: server?.error || undefined,
-      tools: server?.tools ?? [],
-    };
-  });
+  return pool.state().map((server) => ({
+    config: server.config as McpServerConfig,
+    status: server.status,
+    error: server.error || undefined,
+    tools: server.tools,
+  }));
 }
