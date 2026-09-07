@@ -1,4 +1,33 @@
-import OpenAI from "openai";
+import {
+  ask,
+  backoffMs,
+  type CatalogServer,
+  carryOver,
+  catalogPrompt,
+  clean,
+  contextLimitFor,
+  errorMessage,
+  expandNames,
+  getClient,
+  inCatalog,
+  isGrammarError,
+  isTransient,
+  LOAD_TOOLS,
+  LOAD_TOOLS_DEFINITION,
+  listModels as listEndpointModels,
+  listLines,
+  loadResult,
+  PRESELECT_SYSTEM,
+  parseJson,
+  preselectInput,
+  preselection,
+  relaxTools,
+  requestedNames,
+  sanitizeTools,
+  sleep,
+  tryAsk,
+} from "@cubicecho/agent-core";
+import type OpenAI from "openai";
 import { measureRequest, splitContext } from "../shared/client/usage.ts";
 import {
   type ContextBreakdown,
@@ -19,70 +48,13 @@ import {
   SUMMARY_PROMPT,
   transcriptFor,
 } from "./compaction.ts";
-import { loadLlmConfig, resolveApiKey } from "./config.ts";
-import { type CatalogServer, mcp } from "./mcp.ts";
-import { isGrammarError, relaxTools, sanitizeTools } from "./schema-compat.ts";
-import { ask, clean, listLines, parseJson, tryAsk } from "./side-tasks.ts";
+import { endpoint, loadLlmConfig } from "./config.ts";
+import * as mcp from "./mcp.ts";
 import { addMessage, patchMessage, updateSession } from "./store.ts";
-import {
-  carryOver,
-  catalogPrompt,
-  expandNames,
-  inCatalog,
-  LOAD_TOOLS,
-  loadResult,
-  loadToolsDefinition,
-  PRESELECT_SYSTEM,
-  preselectInput,
-  preselection,
-  requestedNames,
-} from "./tool-loading.ts";
 
-/** Local servers usually ignore the key, but the SDK insists on a non-empty one. */
-export function getClient(config = loadLlmConfig()) {
-  return new OpenAI({ baseURL: config.baseUrl, apiKey: resolveApiKey(config) || "min-agent" });
-}
-
-/** Servers name the context window half a dozen ways; take the first one that shows up. */
-const CONTEXT_KEYS = [
-  "context_length",
-  "max_context_window",
-  "max_model_len",
-  "context_window",
-  "n_ctx",
-];
-
-function contextLengthOf(model: object): number | undefined {
-  const record = model as Record<string, unknown>;
-  for (const key of CONTEXT_KEYS) {
-    const value = record[key];
-    if (typeof value === "number" && value > 0) return value;
-  }
-  return undefined;
-}
-
-/** Last known model list, so a turn can look up a context window without a round trip. */
-let modelCache: ModelInfo[] = [];
-
+/** What the configured endpoint serves, id-sorted, with whatever window it declares. */
 export async function listModels(): Promise<ModelInfo[]> {
-  const { data } = await getClient().models.list();
-  modelCache = data
-    .map((model) => ({ id: model.id, contextLength: contextLengthOf(model) }))
-    .sort((a, b) => a.id.localeCompare(b.id));
-  return modelCache;
-}
-
-/** Best effort — a server that will not list models still has to be able to run a turn. */
-async function contextLimitFor(model: string, override: number): Promise<number | undefined> {
-  if (override) return override;
-  if (!modelCache.length) {
-    try {
-      await listModels();
-    } catch {
-      return undefined;
-    }
-  }
-  return modelCache.find((entry) => entry.id === model)?.contextLength;
+  return listEndpointModels(endpoint());
 }
 
 function titleFrom(text: string) {
@@ -115,7 +87,7 @@ async function compact(
     ? `Notes so far:\n${session.compaction.summary}\n\nContinue them with this exchange:\n\n`
     : "";
   const summary = await ask(
-    config,
+    endpoint(config),
     model,
     SUMMARY_PROMPT,
     previous + transcriptFor(session.messages, from, through),
@@ -151,7 +123,7 @@ async function generateTitle(
   signal?: AbortSignal,
 ): Promise<string> {
   const reply = await ask(
-    config,
+    endpoint(config),
     model,
     "You name conversations. Reply with a title of at most six words for a chat that opens " +
       "with the message below. Reply with the title alone — no quotes, no trailing punctuation, " +
@@ -181,7 +153,8 @@ async function preselect(
   prompt: string,
   signal?: AbortSignal,
 ): Promise<string[]> {
-  const reply = await ask(config, model, PRESELECT_SYSTEM, preselectInput(catalog, prompt), {
+  const input = preselectInput(catalog, prompt);
+  const reply = await ask(endpoint(config), model, PRESELECT_SYSTEM, input, {
     maxTokens: 256,
     signal,
   });
@@ -189,6 +162,14 @@ async function preselect(
   if (chosen.length) console.log(`[agent] preselected: ${chosen.join(", ")}`);
   return chosen;
 }
+
+/**
+ * How many times a lost request is worth sending again before the turn gives up.
+ *
+ * Not a setting. min-agent talks to one endpoint, usually on the same machine or the next one
+ * over, and the number that would go in that box is the same number for everyone.
+ */
+const OPEN_RETRIES = 2;
 
 /** Cap on suggestions offered, and on the length of one before it stops reading as a chip. */
 const MAX_FOLLOWUPS = 3;
@@ -210,7 +191,7 @@ async function suggestFollowups(
   signal?: AbortSignal,
 ): Promise<string[]> {
   const text = await ask(
-    config,
+    endpoint(config),
     model,
     `Below is a question and the answer it got. Suggest at most ${MAX_FOLLOWUPS} questions the ` +
       "person might sensibly ask next. Each must be specific to what was actually said and " +
@@ -278,8 +259,12 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   if (!chosenModel) throw new Error("No model selected — pick one in Config.");
 
   const emit = onEvent ?? (() => {});
-  const client = getClient(config);
-  const contextLimit = await contextLimitFor(chosenModel, config.contextLimit);
+  const server = endpoint(config);
+  const client = getClient(server);
+  const contextLimit = await contextLimitFor(
+    { ...server, model: chosenModel },
+    config.contextLimit,
+  );
 
   // In on-demand mode the model sees a name-only catalogue up front and pulls in the
   // definitions it needs as the turn runs; `loaded` grows between iterations.
@@ -302,12 +287,11 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // Two small-model calls have to land before the first token is asked for, and neither depends
   // on the other, so they overlap. Compaction goes before the user's message is appended, so the
   // summary covers settled history and the question that prompted it stays verbatim.
-  const window = contextLimit ?? 0;
-  const compactionModel = window ? modelForTask(config, "compaction") : "";
+  const compactionModel = contextLimit ? modelForTask(config, "compaction") : "";
   const preselectModel = onDemand ? modelForTask(config, "toolSelect") : "";
   const [, preselected = []] = await Promise.all([
     compactionModel
-      ? tryAsk("compaction", () => compact(session, config, compactionModel, window, signal))
+      ? tryAsk("compaction", () => compact(session, config, compactionModel, contextLimit, signal))
       : undefined,
     preselectModel
       ? tryAsk("preselect", () => preselect(config, preselectModel, catalog, prompt, signal))
@@ -371,7 +355,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       routed
         ? mcp.tools(preselected)
         : onDemand
-          ? [loadToolsDefinition(), ...mcp.tools([...loaded])]
+          ? [LOAD_TOOLS_DEFINITION, ...mcp.tools([...loaded])]
           : mcp.tools(),
     );
 
@@ -408,19 +392,41 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       );
     };
 
+    /**
+     * The same request again when it was lost rather than refused.
+     *
+     * `getClient` turns the SDK's own retrying off, because a stream that has already produced
+     * tokens must never be replayed from the top and the SDK cannot tell whether it has. Here
+     * it cannot have: this resolves before the first chunk is read, so a failure at this point
+     * is a request that never became an answer. A refusal — a bad schema, an unknown model —
+     * is not transient and goes straight out, as it did before.
+     */
+    const openOrRetry = async (withUsage: boolean, strict: boolean) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await open(withUsage, strict);
+        } catch (error) {
+          if (attempt >= OPEN_RETRIES || !isTransient(error)) throw error;
+          const wait = backoffMs(attempt);
+          console.warn(`[agent] ${errorMessage(error)}; retrying in ${Math.round(wait)}ms`);
+          await sleep(wait, signal);
+        }
+      }
+    };
+
     let stream: Awaited<ReturnType<typeof open>>;
     try {
-      stream = await open(usageSupported, strictSchemas);
+      stream = await openOrRetry(usageSupported, strictSchemas);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = errorMessage(error);
       if (usageSupported && /stream_options/i.test(detail)) {
         console.warn("[agent] server rejected stream_options; token counts disabled");
         usageSupported = false;
-        stream = await open(false, strictSchemas);
+        stream = await openOrRetry(false, strictSchemas);
       } else if (strictSchemas && isGrammarError(detail)) {
         console.warn("[agent] server could not build a grammar; retrying without pattern/format");
         strictSchemas = false;
-        stream = await open(usageSupported, false);
+        stream = await openOrRetry(usageSupported, false);
       } else throw error;
     }
 

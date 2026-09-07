@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertLlmConfigPatch, coerceLlmConfig } from "../server/config.ts";
+import { assertLlmConfigPatch, coerceLlmConfig, endpoint } from "../server/config.ts";
 import { llmConfigSchema, modelForTask } from "../shared/types.ts";
 
 /**
@@ -85,5 +85,31 @@ describe("coerceLlmConfig", () => {
   it("leaves a good row exactly as it was", () => {
     const stored = llmConfigSchema.parse({ model: "gpt-5", maxTokens: 8192 });
     expect(coerceLlmConfig(stored)).toEqual(stored);
+  });
+});
+
+describe("endpoint", () => {
+  /**
+   * The adapter between min-agent's settings and `@cubicecho/agent-core`, which asks for the
+   * narrowest thing each of its functions reads rather than for a whole config.
+   */
+  it("carries the base URL and the resolved key, and asks for no timeout", () => {
+    const config = llmConfigSchema.parse({ baseUrl: "http://box:8080/v1", apiKey: "sk-test" });
+    expect(endpoint(config)).toEqual({
+      baseUrl: "http://box:8080/v1",
+      apiKey: "sk-test",
+      requestTimeoutSeconds: 0,
+    });
+  });
+
+  it("falls back to the environment when the row holds no key", () => {
+    const previous = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "sk-from-env";
+    try {
+      expect(endpoint(llmConfigSchema.parse({})).apiKey).toBe("sk-from-env");
+    } finally {
+      if (previous === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previous;
+    }
   });
 });

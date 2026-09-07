@@ -129,8 +129,8 @@ release still goes out to GHCR. A run of chores publishes nothing.
 - `mobile/` — the front end. `app/` is one file per route, `components/ui.tsx` is the widget set,
   `components/settings/` the panels behind the settings tabs, `electron/` is the desktop shell.
   Its web export is what the server serves.
-- `server/` — express + graphql-yoga. `agent.ts` is the tool-calling loop, `mcp.ts` the MCP
-  client pool, `store.ts` session persistence, `config.ts` the settings and MCP rows.
+- `server/` — express + graphql-yoga. `agent.ts` is the tool-calling loop, `mcp.ts` the wiring
+  to the MCP pool, `store.ts` session persistence, `config.ts` the settings and MCP rows.
 - `server/db/` — `schema.ts` is the Drizzle table definitions, `client.ts` the pool and the
   boot-time wait for it, `migrate.ts` the migration runner.
 - `drizzle/` — generated migrations. Not written by hand; not edited after they have shipped.
@@ -155,6 +155,17 @@ release still goes out to GHCR. A run of chores publishes nothing.
   state), `sessions.ts` (the session-list filter), `queries.ts` (how long settings stay fresh),
   `usage.ts` (token/cost formatting).
 - `tests/` — Vitest (`npm test`).
+
+Two pieces of the runner are not in this repo. `@cubicecho/agent-core` holds the parts that do
+not know what the agent is *for* — making a tool schema a strict server will accept, getting
+definitions in front of a model without paying for all of them, the one-shot calls that support
+a turn, the pooled client, and the rules about retrying. `@cubicecho/agent-mcp-pool` holds the MCP
+connections. Both were forked three ways across this server, `kanban_server` and `task_server`
+before they were packages, and all three had been fixing the same bugs separately.
+
+`server/mcp.ts` and `endpoint()` in `server/config.ts` are the whole of the adaptation: min-agent
+identifies a server by the id the user typed and has no request timeout, and neither of those had
+to change to use packages that expect otherwise.
 
 ## The database
 
@@ -300,8 +311,8 @@ six identical calls in a row, in one observed case.
 llama.cpp-backed servers (llama-server, Lemonade, Ollama) compile every tool's parameter schema
 into a single GBNF grammar. One shape the converter dislikes fails the whole request, not just the
 one tool, and the error is unhelpful — `Unable to generate parser for this template`, or
-`Unrecognized schema: "object"`. MCP servers emit those shapes routinely, so `server/schema-compat.ts`
-normalises them before every request:
+`Unrecognized schema: "object"`. MCP servers emit those shapes routinely, so
+`sanitizeTools` in `@cubicecho/agent-core` normalises them before every request:
 
 | Shape | Rewritten to |
 | --- | --- |
@@ -310,7 +321,7 @@ normalises them before every request:
 | `type: ["string", "null"]` | `type: "string"`, `nullable: true` |
 | `type: ["string", "number"]` | `anyOf` of single-type schemas |
 | `anyOf: [X, {"type": "null"}]` | `X` with `nullable: true` |
-| `default` beside a `$ref` | `default` dropped |
+| anything beside a `$ref` | dropped; the reference stands alone |
 | `allOf` / `anyOf` / `enum` / `not` at the top level | dropped |
 | a `pattern` using lookaround, e.g. `^(?!\\.)` | `pattern` dropped |
 
