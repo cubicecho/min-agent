@@ -39,7 +39,15 @@ const pool = new McpPool({
   connectTimeoutMs: 15_000,
 });
 
-/** Reconcile live clients with the stored rows. Called on boot and on every edit. */
+/**
+ * Reconcile live clients with the stored rows. Called on boot and on every edit.
+ *
+ * `list` is required here, and both of these pass the pool's own optional parameter through as
+ * non-optional on purpose: min-agent owns the rows, so the pool is built with no `load` to fall
+ * back on, and since 2.4.1 a reconcile with neither is a `no-configs` refusal rather than an
+ * empty set that closes every server. Keeping the argument mandatory means that refusal is a
+ * type error here instead of a rejected promise in a resolver.
+ */
 export async function sync(list: McpServerConfig[]) {
   await pool.sync(list);
 }

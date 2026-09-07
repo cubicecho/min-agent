@@ -80,9 +80,10 @@ function titleFrom(text: string) {
  * survives the one prefix added here. That matters more here than in most consumers: five
  * settings pick models independently, so "which model" is not answerable from context.
  *
- * One notice is exempt and reads as the endpoint's when it is not: the no-thinking hints, which
- * latch per (endpoint, model) but announce themselves as `server`. Filed upstream as
- * cubicecho/agent-core#51; nothing to do here but know that line names no model.
+ * 2.2.1 closed the last line that broke that convention: the no-thinking hints latch per
+ * (endpoint, model) and used to announce themselves as `server` (cubicecho/agent-core#51). What
+ * still reads as `server` says so truthfully — a grammar it could not build, a `stream_options`
+ * it has not heard of — because those two latch per endpoint and no model is implicated.
  */
 const notice = (message: string) => console.warn(`[agent] ${message}`);
 
