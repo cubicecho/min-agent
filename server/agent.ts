@@ -1,6 +1,5 @@
 import {
   ask,
-  backoffMs,
   type Capabilities,
   type CatalogServer,
   ContextOverflow,
@@ -15,22 +14,23 @@ import {
   getClient,
   inCatalog,
   isOverflow,
-  isTransient,
   LOAD_TOOLS,
   LOAD_TOOLS_DEFINITION,
   listModels as listEndpointModels,
   listLines,
   loadResult,
   modelCapabilitiesFor,
-  negotiate,
   PRESELECT_SYSTEM,
   parseJson,
   preselectInput,
   preselection,
   relaxTools,
   requestedNames,
+  runTurn as runRoundTrip,
+  type StreamTurnOptions,
   sanitizeTools,
-  sleep,
+  type Turn,
+  timeoutMs,
   tryAsk,
 } from "@cubicecho/agent-core";
 import type OpenAI from "openai";
@@ -74,8 +74,9 @@ function titleFrom(text: string) {
  * silence.
  *
  * Worth passing everywhere, because most of what arrives here latches for the life of the
- * process and this line is the only announcement that it did: `sendNegotiated` for the chat
- * model, and the side tasks, which have negotiated their own requests since agent-core 2.1.2.
+ * process and this line is the only announcement that it did: `sendTurn` for the chat model,
+ * and the side tasks, which have negotiated their own requests since agent-core 2.1.2. It also
+ * carries `runTurn`'s retry notices, so a turn waiting out an endpoint says so while it waits.
  * Since 2.2.0 a notice opens with what refused — the model by name, or `server` — so the source
  * survives the one prefix added here. That matters more here than in most consumers: five
  * settings pick models independently, so "which model" is not answerable from context.
@@ -194,6 +195,12 @@ async function preselect(
  *
  * Not a setting. min-agent talks to one endpoint, usually on the same machine or the next one
  * over, and the number that would go in that box is the same number for everyone.
+ *
+ * It is a budget for the round trip rather than for opening it. The loop it used to guard could
+ * only ever fire on a request that never became an answer, because it wrapped the call that
+ * resolves before the first chunk; `runTurn` bounds the read as well, and stops retrying the
+ * moment the server has said anything. A downgrade does not spend an attempt — that is a
+ * different request, not the same one again.
  */
 const OPEN_RETRIES = 2;
 
@@ -229,12 +236,6 @@ async function suggestFollowups(
   return listLines(text, MAX_FOLLOWUPS, MAX_FOLLOWUP_CHARS);
 }
 
-/** Some servers stream chain-of-thought on a side channel. */
-type Delta = OpenAI.ChatCompletionChunk.Choice.Delta & {
-  reasoning_content?: string | null;
-  reasoning?: string | null;
-};
-
 /**
  * Drops our own `reasoning_content` and `stats` before the history goes back over the wire —
  * they are display artifacts, and strict servers reject unknown message fields.
@@ -257,26 +258,57 @@ function forApi(session: Session): OpenAI.ChatCompletionMessageParam[] {
   });
 }
 
+/** What one round trip needs beyond the body it sends. */
+export interface SendOptions
+  extends Pick<StreamTurnOptions, "signal" | "idleMs" | "onThinking" | "onOutput"> {
+  /** What this endpoint has already refused, latched further as it refuses more. */
+  supports: Capabilities;
+  /** The model the body names, so the refusals that are the model's are negotiated too. */
+  model: string;
+  /** The window this turn was built to, for the one refusal below. Zero when none is set. */
+  contextLimit: number;
+}
+
 /**
- * Sends a request, letting `negotiate` answer whatever this endpoint or this model turns out to
- * refuse, and saying what min-agent knows about the one refusal it cannot answer.
+ * Sends one round trip — negotiated, retried, and read back as a `Turn` — and says what
+ * min-agent knows about the one refusal none of that can answer.
  *
- * The memory of what an endpoint and a model have refused — and the loop that answers a refusal
- * by latching it off and sending again — is agent-core's since 2.1.0. What is left here is the
- * overflow: the request was larger than the model will read, so sending it again is the same
- * refusal a round trip later. It goes back in the server's own words with ours added, because
- * the whole difficulty of that failure is that the number the server reports and the window this
- * turn was built to disagree — and the setting that disagrees is one screen away.
+ * All three of those loops are agent-core's `runTurn`, which is the whole reason this function
+ * is four lines: the memory of what an endpoint and a model have refused and the re-send that
+ * answers a refusal (since 2.1.0), the attempt budget around a request that was lost rather
+ * than refused, and the reading of a stream into a message. min-agent wrote its own of each
+ * until it did, and the one worth naming is the retry — it wrapped only the call that resolves
+ * before the first chunk, so an endpoint that accepted the request and then dropped it was a
+ * dead turn rather than a second attempt.
+ *
+ * What is left here is the overflow: the request was larger than the model will read, so sending
+ * it again is the same refusal a round trip later. It goes back in the server's own words with
+ * ours added, because the whole difficulty of that failure is that the number the server reports
+ * and the window this turn was built to disagree — and the setting that disagrees is one screen
+ * away.
+ *
+ * `runTurn` also offers to size the body against a `contextLimit` and refuse it here rather than
+ * a round trip later. min-agent does not take it yet, on purpose: its limit is the *configured*
+ * window, which this very message exists to say may be larger than what the server serves, and a
+ * guard read off the number under suspicion would refuse turns for the wrong reason. Worth taking
+ * once the window comes from `contextLimitFor` alone.
+ *
+ * @param client The pooled client for this endpoint. `getClient` builds it with the SDK's own
+ * retrying off, because a stream that has already produced tokens must never be replayed from
+ * the top and the SDK cannot tell whether it has — so the budget below is the only one in play.
+ * @param request Builds the body. Called again per downgrade and per attempt, since a downgrade
+ * changes what it may send.
  */
-export async function sendNegotiated<T>(
-  supports: Capabilities,
-  model: string,
-  contextLimit: number,
-  send: (supports: Capabilities) => Promise<T>,
-): Promise<T> {
+export async function sendTurn(
+  client: OpenAI,
+  request: (supports: Capabilities) => OpenAI.ChatCompletionCreateParamsStreaming,
+  { supports, model, contextLimit, ...stream }: SendOptions,
+): Promise<Turn> {
   try {
-    return await negotiate(supports, send, {
+    return await runRoundTrip(client, supports, request, {
+      ...stream,
       model,
+      maxRetries: OPEN_RETRIES,
       onNotice: notice,
     });
   } catch (error) {
@@ -435,96 +467,69 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       compacted: Boolean(session.compaction),
     });
 
-    const open = (supports: Capabilities) => {
+    /**
+     * The body, built from whatever the last attempt latched off — which is why it is a callback
+     * and not an object: `relaxTools` has to apply to the schemas that were just sanitised, and
+     * `stream_options` is present or absent rather than adjusted.
+     *
+     * `modelCapabilitiesFor` rather than the second argument `runTurn` offers, which is optional
+     * because a caller may not have named a model. This one always does, so reading it back is
+     * unconditional here and stays that way if the argument is ever dropped by accident.
+     */
+    const open = (supports: Capabilities): OpenAI.ChatCompletionCreateParamsStreaming => {
       const tools = supports.strictSchemas ? declared : relaxTools(declared);
       const takes = modelCapabilitiesFor(supports, chosenModel);
       const effort = config.reasoningEffort;
-      return client.chat.completions.create(
-        {
-          model: chosenModel,
-          // Two spellings of one ceiling. `max_tokens` is the one every server understands
-          // and the reasoning models are the exception, so it stays the thing we open with.
-          ...(takes.legacyTokenLimit
-            ? { max_tokens: config.maxTokens }
-            : { max_completion_tokens: config.maxTokens }),
-          ...(takes.chosenTemperature ? { temperature: config.temperature } : {}),
-          // `off` is not a value to send: it is the setting saying leave the field out, which
-          // is the only thing a server that has never heard of reasoning will accept.
-          ...(effort !== "off" && takes.reasoningEffort ? { reasoning_effort: effort } : {}),
-          stream: true,
-          ...(supports.usageInStream ? { stream_options: { include_usage: true } } : {}),
-          messages: [{ role: "system", content: system }, ...history],
-          ...(tools.length ? { tools } : {}),
-        },
-        { signal },
-      );
+      return {
+        model: chosenModel,
+        // Two spellings of one ceiling. `max_tokens` is the one every server understands
+        // and the reasoning models are the exception, so it stays the thing we open with.
+        ...(takes.legacyTokenLimit
+          ? { max_tokens: config.maxTokens }
+          : { max_completion_tokens: config.maxTokens }),
+        ...(takes.chosenTemperature ? { temperature: config.temperature } : {}),
+        // `off` is not a value to send: it is the setting saying leave the field out, which
+        // is the only thing a server that has never heard of reasoning will accept.
+        ...(effort !== "off" && takes.reasoningEffort ? { reasoning_effort: effort } : {}),
+        stream: true,
+        ...(supports.usageInStream ? { stream_options: { include_usage: true } } : {}),
+        messages: [{ role: "system", content: system }, ...history],
+        ...(tools.length ? { tools } : {}),
+      };
     };
 
-    /**
-     * The negotiated request, sent again when it was lost rather than refused.
-     *
-     * The two recoveries nest. `negotiate` is the inner one: a capability this endpoint turns
-     * out not to have, answered and latched against it for good. This is the outer one — the
-     * endpoint being unreachable, busy or silent, which is nothing to do with what the request
-     * said and is worth simply waiting out.
-     *
-     * `getClient` turns the SDK's own retrying off, because a stream that has already produced
-     * tokens must never be replayed from the top and the SDK cannot tell whether it has. Here
-     * it cannot have: this resolves before the first chunk is read, so a failure at this point
-     * is a request that never became an answer. A refusal — a bad schema, an unknown model, a
-     * request past the window — is not transient and goes straight out.
-     */
-    let stream: Awaited<ReturnType<typeof open>>;
-    for (let attempt = 0; ; attempt++) {
-      try {
-        stream = await sendNegotiated(supports, chosenModel, contextLimit, open);
-        break;
-      } catch (error) {
-        if (attempt >= OPEN_RETRIES || !isTransient(error)) throw error;
-        const wait = backoffMs(attempt);
-        console.warn(`[agent] ${errorMessage(error)}; retrying in ${Math.round(wait)}ms`);
-        await sleep(wait, signal);
-      }
-    }
-
     iterations++;
-    const before = { ...turnUsage };
+    // Kept outside the round trip because an abort never hands one back: `runTurn` throws, and
+    // what streamed before the stop is only in these. `turn.content` says the same as `text` on
+    // the way out, and the message below is still built from `text` — so it and `reasoning`,
+    // which a `Turn` does not carry at all, are read from one place rather than two.
     let text = "";
     let reasoning = "";
-    const calls = new Map<number, { id: string; name: string; args: string }>();
 
+    let turn: Turn;
     try {
-      for await (const chunk of stream) {
-        if (chunk.usage) {
-          turnUsage.promptTokens += chunk.usage.prompt_tokens ?? 0;
-          turnUsage.completionTokens += chunk.usage.completion_tokens ?? 0;
-          turnUsage.totalTokens += chunk.usage.total_tokens ?? 0;
-        }
-
-        const delta = chunk.choices[0]?.delta as Delta | undefined;
-        if (!delta) continue;
-
-        const thought = delta.reasoning_content ?? delta.reasoning;
-        if (thought || delta.content) {
+      turn = await sendTurn(client, open, {
+        supports,
+        model: chosenModel,
+        contextLimit,
+        signal,
+        // Zero today — `endpoint` has never set a request timeout, because a local model can
+        // take a minute over a long answer. Wired through so that the day it becomes a setting,
+        // a server that stops answering mid-stream ends the turn instead of hanging it.
+        idleMs: timeoutMs(server),
+        onThinking: (delta) => {
           if (!firstTokenAt) firstTokenAt = Date.now();
           lastTokenAt = Date.now();
-        }
-        if (thought) {
-          reasoning += thought;
-          emit({ type: "reasoning_delta", text: thought });
-        }
-        if (delta.content) {
-          text += delta.content;
-          emit({ type: "text_delta", text: delta.content });
-        }
-        for (const call of delta.tool_calls ?? []) {
-          const current = calls.get(call.index) ?? { id: "", name: "", args: "" };
-          if (call.id) current.id = call.id;
-          if (call.function?.name) current.name += call.function.name;
-          if (call.function?.arguments) current.args += call.function.arguments;
-          calls.set(call.index, current);
-        }
-      }
+          reasoning += delta;
+          emit({ type: "reasoning_delta", text: delta });
+        },
+        onOutput: (delta) => {
+          if (!firstTokenAt) firstTokenAt = Date.now();
+          lastTokenAt = Date.now();
+          text += delta;
+          emit({ type: "text_delta", text: delta });
+        },
+      });
     } catch (error) {
       // Stopping a turn used to throw away everything it had already said: the assistant
       // message is only appended once the stream ends, so an abort left the reply on screen
@@ -542,13 +547,32 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       throw error;
     }
 
+    // Assigned, not accumulated. `stream_options.include_usage` sends one final chunk and a
+    // sum over the chunks agreed with it, but llama.cpp reports cumulatively per chunk — so the
+    // old `+=` made a sum of sums, and a turn against it read as several times its true cost.
+    // The turn's own total still accumulates: that is one number per round trip, and a turn is
+    // as many round trips as the model asked for tools.
     lastRoundTrip = {
-      promptTokens: turnUsage.promptTokens - before.promptTokens,
-      completionTokens: turnUsage.completionTokens - before.completionTokens,
-      totalTokens: turnUsage.totalTokens - before.totalTokens,
+      promptTokens: turn.usage.prompt,
+      completionTokens: turn.usage.completion,
+      totalTokens: turn.usage.total,
     };
+    turnUsage.promptTokens += lastRoundTrip.promptTokens;
+    turnUsage.completionTokens += lastRoundTrip.completionTokens;
+    turnUsage.totalTokens += lastRoundTrip.totalTokens;
 
-    const roundTripCalls = [...calls.values()].filter((call) => call.name);
+    // A call with no name is a fragment the server never finished sending; there is nothing to
+    // run and nothing to answer it with. `streamTurn` gives every call an id even when the
+    // server did not, so the result has something to point at.
+    //
+    // `flatMap` rather than a filter and a map, because the SDK's tool call is a union and only
+    // the function arm has a `function` to read: dropping the other arm and reading the name are
+    // the same narrowing, and split across two callbacks TypeScript has to be told twice.
+    const roundTripCalls = turn.toolCalls.flatMap((call) =>
+      call.type === "function" && call.function.name
+        ? [{ id: call.id, name: call.function.name, args: call.function.arguments }]
+        : [],
+    );
     // Loading a definition is bookkeeping, not work the model did for the user.
     toolCalls += roundTripCalls.filter((call) => call.name !== LOAD_TOOLS).length;
     const assistant: StoredMessage = {
