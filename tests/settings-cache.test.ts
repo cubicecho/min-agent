@@ -1,4 +1,4 @@
-import type { GraphQLError, GraphQLSchema } from "graphql";
+import type { GraphQLSchema } from "graphql";
 import { graphql } from "graphql";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -33,14 +33,6 @@ const save = (set: Record<string, unknown>) =>
     `,
     variableValues: { set },
   });
-
-/**
- * Every message down an error's chain. The generated resolvers replace anything that is not
- * already a `GraphQLError` with a flat "Internal server error", and execution wraps that one
- * more time, so the reason a write was refused sits two `originalError`s below the surface.
- */
-const causes = (error: unknown): string[] =>
-  error instanceof Error ? [error.message, ...causes((error as GraphQLError).originalError)] : [];
 
 describe.skipIf(!url)("the settings cache", () => {
   beforeAll(async () => {
@@ -80,13 +72,15 @@ describe.skipIf(!url)("the settings cache", () => {
    * it rolls the mutation back. Nothing should reach the cache, since nothing reached the row —
    * which is the half of the refresh-inside-the-transaction trade that has to hold.
    *
-   * The reason is dug out of the error chain by `causes`, since the surface message is masked.
+   * And the reason reaches the client, rather than the flat "Internal server error" the
+   * generated resolvers mask everything else with — see `onError` in `graphql/schema.ts`.
    */
   it("is untouched by a write the bounds check refused", async () => {
     await save({ reasoningEffort: "high" });
     const result = await save({ maxTokens: 300_000 });
 
-    expect(causes(result.errors?.[0]).join(" | ")).toMatch(/maxTokens/);
+    expect(result.errors?.[0].message).toMatch(/maxTokens/);
+    expect(result.errors?.[0].extensions.code).toBe("BAD_USER_INPUT");
     expect(loadLlmConfig().reasoningEffort).toBe("high");
     expect(loadLlmConfig().maxTokens).toBe(4096);
     expect((await refreshLlmConfig()).maxTokens).toBe(4096);

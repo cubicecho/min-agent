@@ -25,6 +25,7 @@ import {
 } from "../config.ts";
 import { db } from "../db/client.ts";
 import { settings } from "../db/schema.ts";
+import { surfaced } from "../errors.ts";
 import * as mcp from "../mcp.ts";
 import { truncateSession } from "../store.ts";
 import { runTurnEvents, type TurnArgs } from "../turns.ts";
@@ -36,6 +37,19 @@ import { runTurnEvents, type TurnArgs } from "../turns.ts";
  * models a server reports, the live state of the MCP connections, and running a turn.
  */
 const { entities } = buildSchema(db, {
+  /**
+   * Lets a `UserError` reach the client with its own message, and leaves everything else to
+   * the default — which replaces it with a flat `Internal server error`, because a driver
+   * message names tables, columns, constraints and the values that violated them.
+   *
+   * Returning nothing falls through to that default. Without this, the bounds `before` checks
+   * below were thrown, masked, and shown as "Internal server error" in the toast — the check
+   * ran, and the person who typed 300000 was told nothing about which field or which limit.
+   *
+   * graphql-yoga masks a second time, over every field including the hand-written ones. See
+   * `maskedErrors` in `index.ts`.
+   */
+  onError: surfaced,
   // `sessions` → type `Session`, queries `sessions` (list) and `sessionsSingle`.
   typeNameMapper: "singularize",
   defaults: {

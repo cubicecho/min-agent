@@ -2,10 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import compression from "compression";
 import express from "express";
-import { createYoga } from "graphql-yoga";
+import { createYoga, maskError } from "graphql-yoga";
 import { loadMcpServers, refreshLlmConfig } from "./config.ts";
 import { waitForDatabase } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
+import { surfaced } from "./errors.ts";
 import { schema } from "./graphql/schema.ts";
 import * as mcp from "./mcp.ts";
 import { displayHost, HOST, PORT, ROOT } from "./paths.ts";
@@ -35,6 +36,21 @@ const yoga = createYoga({
   // Landing on the endpoint in a browser should explain itself; GraphiQL is how a schema
   // this size is read.
   graphiql: { title: "min-agent" },
+  /**
+   * Yoga replaces anything a resolver throws that is not already a GraphQL error with
+   * `Unexpected error.` — the right default, since a thrown `Error` is as likely to be a
+   * dropped connection as a validated field, and its message and stack are the server's
+   * business. But it took the hand-written resolvers' messages with it: a duplicate MCP
+   * server id or an embed with no URL was refused, correctly, and the note under the Save
+   * button said only that something had gone wrong.
+   *
+   * So a `UserError` — the ones written to be read by whoever caused them — is surfaced, and
+   * everything else still goes through `maskError` untouched. The generated resolvers mask
+   * once before this, on their own hook; see `onError` in `graphql/schema.ts`.
+   */
+  maskedErrors: {
+    maskError: (error, message, isDev) => surfaced(error) ?? maskError(error, message, isDev),
+  },
 });
 
 /**
