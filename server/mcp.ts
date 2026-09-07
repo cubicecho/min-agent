@@ -1,5 +1,6 @@
 import { McpPool } from "@cubicecho/agent-mcp-pool";
 import type { McpServerConfig, McpServerState } from "../shared/types.ts";
+import { VERSION } from "./paths.ts";
 
 /**
  * min-agent's MCP servers, as `@cubicecho/agent-mcp-pool` holds them.
@@ -20,8 +21,16 @@ import type { McpServerConfig, McpServerState } from "../shared/types.ts";
  * waits with it — for every *other* server on the list as well, since the mutation answers with
  * the state once the reconcile is done. Fifteen seconds is longer than any healthy stdio server
  * takes to start and short enough that a broken one reads as broken rather than as a hung UI.
+ *
+ * `clientVersion` is the other half of what a dialled server is told about its caller, and new in
+ * pool 2.3.0. Without it the handshake paired `min-agent` with the pool's own version — a number
+ * that moves for reasons min-agent's users never see, under a name that says it is min-agent's.
  */
-const pool = new McpPool({ clientName: "min-agent", connectTimeoutMs: 15_000 });
+const pool = new McpPool({
+  clientName: "min-agent",
+  clientVersion: VERSION,
+  connectTimeoutMs: 15_000,
+});
 
 /** Reconcile live clients with the stored rows. Called on boot and on every edit. */
 export async function sync(list: McpServerConfig[]) {
