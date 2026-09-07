@@ -610,8 +610,9 @@ function Nothing({ configured }: { configured: boolean }) {
 const PART_COLOR: Record<keyof ContextBreakdown, string> = {
   // The standing overhead is the blue end, the conversation the warm one, this turn green,
   // and a part's tool traffic is the lighter shade of whatever it belongs to — so the bar
-  // reads as three things before it reads as eight.
+  // reads as three things before it reads as nine.
   system: "bg-sky-500",
+  guidance: "bg-sky-400",
   catalogue: "bg-sky-300",
   tools: "bg-violet-500",
   summary: "bg-amber-500",
