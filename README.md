@@ -330,10 +330,14 @@ expressed in one *at all* — no converter will ever accept it. One such regex, 
 one Gmail tool, is enough to fail every request in a 67-tool set. Dropping it costs a single
 advisory constraint on a single string field.
 
-If a request still comes back with a grammar failure, the run retries once with `pattern` and
+If a request still comes back with a grammar failure, the turn sends it again with `pattern` and
 `format` stripped from every schema — both only ever narrowed a string the tool re-validates
-anyway. The retry latches for the process, so it costs one failed request, not one per turn. Cloud
-providers accept everything here, so the fallback never fires against them.
+anyway. What that finds out is remembered **per endpoint**, so it costs one failed request rather
+than one per turn, and a llama.cpp box refusing a grammar does not go on stripping keywords from a
+cloud API's requests once the base URL has moved on. The same negotiation covers `stream_options`
+(see [Turn statistics](#turn-statistics)) and it loops: a server that has heard of neither
+complains about them one at a time, and the turn answers each in turn instead of failing on the
+second. Cloud providers accept everything here, so the fallback never fires against them.
 
 Detection is deliberately loose, because every server words it differently — llama-server says
 `error parsing grammar`, Lemonade says `Failed to initialize samplers: failed to parse grammar`.
@@ -442,6 +446,12 @@ pay for itself is not worth a round trip.
 
 Like titling, a failure is swallowed: the turn proceeds on the full transcript, which is the
 behaviour you had before compaction existed.
+
+Compaction is driven by what the *last* turn cost, so a single huge paste or an unusually large
+tool result can still overrun a window nothing had a chance to fold. When it does, the endpoint's
+complaint comes back with the number the turn was working to added to it — the whole difficulty of
+that failure is that the two disagree, and the usual cause is a **Context window** larger than what
+the server actually serves (llama.cpp will list a 256k model it loaded at `-c 16384`).
 
 ## Turn statistics
 

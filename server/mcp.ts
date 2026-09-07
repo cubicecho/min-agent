@@ -14,7 +14,14 @@ import type { McpServerConfig, McpServerState } from "../shared/types.ts";
  * are stored.
  */
 
-const pool = new McpPool({ clientName: "min-agent" });
+/**
+ * `connectTimeoutMs` because a reconcile is serialised and a wedged server holds the whole of
+ * it: the SDK waits a minute for an `initialize` that is not coming, and Save on the MCP tab
+ * waits with it — for every *other* server on the list as well, since the mutation answers with
+ * the state once the reconcile is done. Fifteen seconds is longer than any healthy stdio server
+ * takes to start and short enough that a broken one reads as broken rather than as a hung UI.
+ */
+const pool = new McpPool({ clientName: "min-agent", connectTimeoutMs: 15_000 });
 
 /** Reconcile live clients with the stored rows. Called on boot and on every edit. */
 export async function sync(list: McpServerConfig[]) {
@@ -37,6 +44,14 @@ export const catalog = () => pool.catalog();
 
 /** Runs one tool call and returns text for a tool result. */
 export const call = (qualifiedName: string, input: unknown) => pool.call(qualifiedName, input);
+
+/**
+ * Closes every connection, for a process on its way out.
+ *
+ * `pool.shutdown()` rather than reconciling against an empty list: it also drops a debounced
+ * reconcile that would otherwise fire into a closing pool, and it says what it is for.
+ */
+export const shutdown = () => pool.shutdown();
 
 /**
  * Every configured server, with its live connection state and tools.
