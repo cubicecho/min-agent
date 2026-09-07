@@ -25,6 +25,13 @@ import { VERSION } from "./paths.ts";
  * `clientVersion` is the other half of what a dialled server is told about its caller, and new in
  * pool 2.3.0. Without it the handshake paired `min-agent` with the pool's own version — a number
  * that moves for reasons min-agent's users never see, under a name that says it is min-agent's.
+ *
+ * Since pool 2.4.0 a row can carry its own `connectTimeoutMs` and outrank this number, which is
+ * the answer to the compromise above — a `uvx` server that downloads itself on first run wants two
+ * minutes, and every other server on the list should not wait with it. min-agent does not offer it
+ * yet: it would be a column, a GraphQL field and a form input, and the row here is deliberately
+ * the small one (no `cwd`, no `idleTimeoutMs` either). Worth doing when a server that slow turns
+ * up; until then 15s stands for all of them.
  */
 const pool = new McpPool({
   clientName: "min-agent",
