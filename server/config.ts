@@ -10,6 +10,7 @@ import {
 } from "../shared/types.ts";
 import { type Db, db } from "./db/client.ts";
 import { embeds, mcpServers, settings } from "./db/schema.ts";
+import { UserError } from "./errors.ts";
 
 /** The singleton settings row. There is exactly one, created by `ensureSchema`. */
 const DEFAULT_ID = "default";
@@ -50,7 +51,7 @@ const reasons = (issues: { path: PropertyKey[]; message: string }[]) =>
  */
 export function assertLlmConfigPatch(patch: unknown): void {
   const result = llmConfigPatchSchema.safeParse(patch ?? {});
-  if (!result.success) throw new Error(reasons(result.error.issues));
+  if (!result.success) throw new UserError(reasons(result.error.issues));
 }
 
 /**
@@ -147,7 +148,7 @@ export async function loadMcpServers(): Promise<McpServerConfig[]> {
 export async function saveMcpServers(list: McpServerConfig[]): Promise<McpServerConfig[]> {
   const parsed = list.map((server) => mcpServerSchema.parse(server));
   if (new Set(parsed.map((server) => server.id)).size !== parsed.length) {
-    throw new Error("duplicate server id");
+    throw new UserError("duplicate server id");
   }
 
   await db.transaction(async (tx) => {
@@ -179,11 +180,12 @@ export async function saveEmbeds(list: EmbedConfig[]): Promise<EmbedConfig[]> {
     // row is named because the screen saves the whole list at once and the message has to
     // say which of them the complaint is about.
     const result = embedSchema.safeParse(embed);
-    if (!result.success) throw new Error(`${embed.id || "app"} — ${reasons(result.error.issues)}`);
+    if (!result.success)
+      throw new UserError(`${embed.id || "app"} — ${reasons(result.error.issues)}`);
     parsed.push(result.data);
   }
   if (new Set(parsed.map((embed) => embed.id)).size !== parsed.length) {
-    throw new Error("duplicate embed id");
+    throw new UserError("duplicate embed id");
   }
 
   await db.transaction(async (tx) => {
