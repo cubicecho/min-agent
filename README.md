@@ -330,14 +330,33 @@ expressed in one *at all* — no converter will ever accept it. One such regex, 
 one Gmail tool, is enough to fail every request in a 67-tool set. Dropping it costs a single
 advisory constraint on a single string field.
 
-If a request still comes back with a grammar failure, the turn sends it again with `pattern` and
-`format` stripped from every schema — both only ever narrowed a string the tool re-validates
-anyway. What that finds out is remembered **per endpoint**, so it costs one failed request rather
-than one per turn, and a llama.cpp box refusing a grammar does not go on stripping keywords from a
-cloud API's requests once the base URL has moved on. The same negotiation covers `stream_options`
-(see [Turn statistics](#turn-statistics)) and it loops: a server that has heard of neither
-complains about them one at a time, and the turn answers each in turn instead of failing on the
-second. Cloud providers accept everything here, so the fallback never fires against them.
+If a request still comes back with a grammar failure, `negotiate` in `@cubicecho/agent-core`
+sends it again with `pattern` and `format` stripped from every schema — both only ever narrowed a
+string the tool re-validates anyway. What that finds out is remembered **per endpoint**, so it
+costs one failed request rather than one per turn, and a llama.cpp box refusing a grammar does not
+go on stripping keywords from a cloud API's requests once the base URL has moved on. The same
+negotiation covers `stream_options` (see [Turn statistics](#turn-statistics)) and it loops: a
+server that has heard of neither complains about them one at a time, and the turn answers each in
+turn instead of failing on the second. Cloud providers accept everything here, so the fallback
+never fires against them.
+
+Under the endpoint sits a second level, for the refusals that are a *model's* rather than a
+server's: a `reasoning_effort` it does not take, a ceiling it spells `max_completion_tokens`, a
+temperature that is not ours to pick. Those cannot latch on the endpoint, because one API key
+reaches every model a provider offers — the first turn on a model that cannot reason would stop
+every later one ever being asked to, with Settings → Agent still reading `high`. So they are
+remembered **per (endpoint, model)** and answered by the same loop. `sendNegotiated` in
+`server/agent.ts` is min-agent's whole share of this: it names the model, and turns the one
+refusal that cannot be negotiated — a request past the window — into an error that says which
+setting disagrees with the server.
+
+The [task models](#task-models) reach that second level too, since agent-core 2.1.2 — the same
+`(endpoint, model)` entry, so whichever of a turn and a side task meets a refusal first pays for
+it and the other does not. Every notice from either goes to the server log under `[agent]`,
+because all of this latches for the life of the process and that line is the only announcement
+that it did. Since 2.2.0 a notice opens with what refused — the model by name, or `server` — so
+`gpt-4o does not take a reasoning effort` says which of the models on one endpoint it was about,
+which matters here because five settings choose models independently.
 
 Detection is deliberately loose, because every server words it differently — llama-server says
 `error parsing grammar`, Lemonade says `Failed to initialize samplers: failed to parse grammar`.
@@ -370,7 +389,18 @@ title will spend its entire budget deliberating and return **empty content** —
 `reasoning_effort: "none"` and `chat_template_kwargs: {enable_thinking: false}` together, since
 servers disagree about which they take. On Qwen3.6-27B that is the difference between 18s of
 thinking for an empty string and 1.0s for `Python Subprocess Pipe Hang`. A server that rejects
-the unknown fields gets one retry without them, and min-agent stops sending them after that.
+the unknown fields gets one retry without them, and stops being offered them after that.
+
+The two are given up on separately, since agent-core 2.1.2. `reasoning_effort` is a field the
+[same negotiation the chat turn uses](#schema-compatibility) already knows how to be refused, so
+it is latched there, per (endpoint, model), rather than dropped with the hint beside it. A model
+that has never heard of it therefore goes on being told, in the spelling it *does* read, not to
+think — where before, one refusal took both.
+
+Latching it there also shares the answer both ways: a turn that has found out what a model
+refuses spares the side task on that model the round trip, and the other way about. So a
+reasoning model set as the title model — the case this whole wrinkle is about — costs one failed
+request for the life of the process rather than one per session.
 
 Adding a task is a line in `MODEL_TASKS` in `shared/model-tasks.ts` and a read of
 `modelForTask()`; `taskModels` is an open record, so no config migration is needed.

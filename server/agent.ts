@@ -1,8 +1,10 @@
 import {
   ask,
   backoffMs,
+  type Capabilities,
   type CatalogServer,
   ContextOverflow,
+  capabilitiesFor,
   carryOver,
   catalogPrompt,
   clean,
@@ -12,7 +14,6 @@ import {
   expandNames,
   getClient,
   inCatalog,
-  isGrammarError,
   isOverflow,
   isTransient,
   LOAD_TOOLS,
@@ -20,6 +21,8 @@ import {
   listModels as listEndpointModels,
   listLines,
   loadResult,
+  modelCapabilitiesFor,
+  negotiate,
   PRESELECT_SYSTEM,
   parseJson,
   preselectInput,
@@ -66,6 +69,24 @@ function titleFrom(text: string) {
 }
 
 /**
+ * Where agent-core's notices go. It prints nothing on its own — a library that writes to the
+ * console picks its consumer's log for it — so anything not handed this is given up on in
+ * silence.
+ *
+ * Worth passing everywhere, because most of what arrives here latches for the life of the
+ * process and this line is the only announcement that it did: `sendNegotiated` for the chat
+ * model, and the side tasks, which have negotiated their own requests since agent-core 2.1.2.
+ * Since 2.2.0 a notice opens with what refused — the model by name, or `server` — so the source
+ * survives the one prefix added here. That matters more here than in most consumers: five
+ * settings pick models independently, so "which model" is not answerable from context.
+ *
+ * One notice is exempt and reads as the endpoint's when it is not: the no-thinking hints, which
+ * latch per (endpoint, model) but announce themselves as `server`. Filed upstream as
+ * cubicecho/agent-core#51; nothing to do here but know that line names no model.
+ */
+const notice = (message: string) => console.warn(`[agent] ${message}`);
+
+/**
  * Folds the settled head of a long transcript into a summary, if it has grown far enough into
  * the window to need it. Returns a note for the log; the work is the mutation of `session`.
  *
@@ -94,7 +115,7 @@ async function compact(
     model,
     SUMMARY_PROMPT,
     previous + transcriptFor(session.messages, from, through),
-    { maxTokens: 1024, signal },
+    { maxTokens: 1024, signal, onNotice: notice },
   );
   if (!summary) return "";
 
@@ -132,7 +153,7 @@ async function generateTitle(
       "with the message below. Reply with the title alone — no quotes, no trailing punctuation, " +
       "no preamble.",
     prompt.slice(0, 2000),
-    { signal },
+    { signal, onNotice: notice },
   );
   const title = clean(reply.split("\n").filter(Boolean).pop() ?? "");
   return title.length > 60 ? `${title.slice(0, 57)}…` : title;
@@ -160,6 +181,7 @@ async function preselect(
   const reply = await ask(endpoint(config), model, PRESELECT_SYSTEM, input, {
     maxTokens: 256,
     signal,
+    onNotice: notice,
   });
   const chosen = preselection(parseJson<unknown>(reply), catalog);
   if (chosen.length) console.log(`[agent] preselected: ${chosen.join(", ")}`);
@@ -201,7 +223,7 @@ async function suggestFollowups(
       'answerable from here — no generic invitations like "tell me more". Write them as the ' +
       "person would type them, under a dozen words each, one per line, nothing else.",
     `Question:\n${prompt.slice(0, 2000)}\n\nAnswer:\n${reply.slice(0, 6000)}`,
-    { maxTokens: 200, signal },
+    { maxTokens: 200, signal, onNotice: notice },
   );
   return listLines(text, MAX_FOLLOWUPS, MAX_FOLLOWUP_CHARS);
 }
@@ -234,143 +256,38 @@ function forApi(session: Session): OpenAI.ChatCompletionMessageParam[] {
   });
 }
 
-/** What one endpoint turned out not to support. Everything starts optimistic and only latches off. */
-export interface Capabilities {
-  /**
-   * `stream_options` is how a streamed request asks for its token counts, and a server that has
-   * not heard of it rejects the whole request rather than the option. The counts are worth one
-   * failed request to find out about, not one per turn.
-   */
-  usageInStream: boolean;
-  /**
-   * llama.cpp-backed servers compile all tool schemas into one grammar and reject keywords
-   * their converter cannot express. Once we have seen that, drop them.
-   */
-  strictSchemas: boolean;
-  /**
-   * The models on this endpoint that have refused something, by name.
-   *
-   * A second level rather than more fields beside the two above, because these are facts about
-   * a *model* and not about the server hosting it: one OpenAI endpoint takes `reasoning_effort`
-   * for gpt-5 and refuses it for gpt-4o. Flattened into the endpoint, one turn on the wrong
-   * model would switch reasoning off for every model after it — the setting left reading "high"
-   * with nothing behind it, which is worse than it never having worked.
-   */
-  models: Map<string, ModelCapabilities>;
-}
-
-/** What one model on that endpoint turned out not to take. */
-export interface ModelCapabilities {
-  /** Takes a `reasoning_effort` at all. A model that cannot reason refuses the field. */
-  reasoningEffort: boolean;
-  /**
-   * Spells its ceiling `max_tokens`. The reasoning models want `max_completion_tokens`, and
-   * they are exactly the models anyone sets an effort on.
-   */
-  legacyTokenLimit: boolean;
-  /** Takes a temperature we picked, rather than only its own default. */
-  chosenTemperature: boolean;
-}
-
 /**
- * What each endpoint cannot do, remembered for the life of the process.
+ * Sends a request, letting `negotiate` answer whatever this endpoint or this model turns out to
+ * refuse, and saying what min-agent knows about the one refusal it cannot answer.
  *
- * Keyed by base URL, because these are facts about the server on the other end rather than about
- * this one. There is a single settings row here, but the address in it is a text box: an Ollama
- * box that cannot compile a grammar and a cloud API that can are both reachable from it over an
- * afternoon, and the first one's refusal must not go on stripping `pattern`/`format` from the
- * second one's requests — or leave it without token counts — until the process restarts.
+ * The memory of what an endpoint and a model have refused — and the loop that answers a refusal
+ * by latching it off and sending again — is agent-core's since 2.1.0. What is left here is the
+ * overflow: the request was larger than the model will read, so sending it again is the same
+ * refusal a round trip later. It goes back in the server's own words with ours added, because
+ * the whole difficulty of that failure is that the number the server reports and the window this
+ * turn was built to disagree — and the setting that disagrees is one screen away.
  */
-const capabilities = new Map<string, Capabilities>();
-
-export function capabilitiesFor(baseUrl: string): Capabilities {
-  const known = capabilities.get(baseUrl);
-  if (known) return known;
-  const fresh: Capabilities = { usageInStream: true, strictSchemas: true, models: new Map() };
-  capabilities.set(baseUrl, fresh);
-  return fresh;
-}
-
-/** Test seam: forget what every endpoint has refused, so one test cannot latch another's. */
-export const resetCapabilities = () => capabilities.clear();
-
-/** What this model on this endpoint has refused, optimistic until it has refused something. */
-export function modelCapabilitiesFor(supports: Capabilities, model: string): ModelCapabilities {
-  const known = supports.models.get(model);
-  if (known) return known;
-  const fresh: ModelCapabilities = {
-    reasoningEffort: true,
-    legacyTokenLimit: true,
-    chosenTemperature: true,
-  };
-  supports.models.set(model, fresh);
-  return fresh;
-}
-
-/**
- * Sends a request, and sends it again each time the answer is the endpoint refusing something
- * this turn can do without.
- *
- * A loop rather than a single fallback: a server that has heard of neither `stream_options` nor
- * a grammar keyword complains about them one at a time, and answering only the first left the
- * second to fail the turn outright — so the first turn against such a server was spent finding
- * out what the turn after it starts knowing. It terminates in at most one pass per capability,
- * since every pass either latches one off for good or rethrows.
- *
- * The endpoint's capabilities and the model's are answered in the same loop because a refusal
- * arrives the same way whichever it is about, and one request can meet both. An OpenAI
- * reasoning model has two of its own waiting — `max_tokens`, and then the temperature — so a
- * loop that stopped at the first would have handed the user the second.
- *
- * An overflow is the one refusal here that is not negotiable: the request was larger than the
- * model will read, and sending it again is the same refusal a round trip later. It is kept in
- * the server's own words with ours added, because the whole difficulty of that failure is that
- * the number in it disagrees with the one the turn was working to.
- */
-export async function negotiate<T>(
+export async function sendNegotiated<T>(
   supports: Capabilities,
   model: string,
   contextLimit: number,
   send: (supports: Capabilities) => Promise<T>,
 ): Promise<T> {
-  const takes = modelCapabilitiesFor(supports, model);
-  for (;;) {
-    try {
-      return await send(supports);
-    } catch (error) {
-      const detail = errorMessage(error);
-      if (isOverflow(detail)) {
-        throw new ContextOverflow(
-          contextLimit > 0
-            ? `${detail} — this turn was built to ${compactTokens(contextLimit)} tokens, so the window ` +
-                "in Settings → Agent is larger than what the server actually serves."
-            : `${detail} — set Settings → Agent → Context window, and the turn will compact ` +
-                "itself before it gets this far.",
-        );
-      }
-      if (supports.strictSchemas && isGrammarError(detail)) {
-        console.warn("[agent] server could not build a grammar; retrying without pattern/format");
-        supports.strictSchemas = false;
-      } else if (supports.usageInStream && /stream_options/i.test(detail)) {
-        console.warn("[agent] server rejected stream_options; token counts disabled");
-        supports.usageInStream = false;
-      } else if (takes.reasoningEffort && /reasoning_effort/i.test(detail)) {
-        console.warn(`[agent] ${model} will not take a reasoning effort; retrying without one`);
-        takes.reasoningEffort = false;
-      } else if (
-        // Both names, because `max_tokens` on its own is also how a server says the number was
-        // too large — and the answer to that is not to send it again under a different name.
-        takes.legacyTokenLimit &&
-        /max_tokens/i.test(detail) &&
-        /max_completion_tokens/i.test(detail)
-      ) {
-        console.warn(`[agent] ${model} wants max_completion_tokens; retrying with it`);
-        takes.legacyTokenLimit = false;
-      } else if (takes.chosenTemperature && /temperature/i.test(detail)) {
-        console.warn(`[agent] ${model} takes only its own temperature; retrying without ours`);
-        takes.chosenTemperature = false;
-      } else throw error;
-    }
+  try {
+    return await negotiate(supports, send, {
+      model,
+      onNotice: notice,
+    });
+  } catch (error) {
+    const detail = errorMessage(error);
+    if (!isOverflow(detail)) throw error;
+    throw new ContextOverflow(
+      contextLimit > 0
+        ? `${detail} — this turn was built to ${compactTokens(contextLimit)} tokens, so the window ` +
+            "in Settings → Agent is larger than what the server actually serves."
+        : `${detail} — set Settings → Agent → Context window, and the turn will compact ` +
+            "itself before it gets this far.",
+    );
   }
 }
 
@@ -426,10 +343,16 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   const preselectModel = onDemand ? modelForTask(config, "toolSelect") : "";
   const [, preselected = []] = await Promise.all([
     compactionModel
-      ? tryAsk("compaction", () => compact(session, config, compactionModel, contextLimit, signal))
+      ? tryAsk(
+          "compaction",
+          () => compact(session, config, compactionModel, contextLimit, signal),
+          { onNotice: notice },
+        )
       : undefined,
     preselectModel
-      ? tryAsk("preselect", () => preselect(config, preselectModel, catalog, prompt, signal))
+      ? tryAsk("preselect", () => preselect(config, preselectModel, catalog, prompt, signal), {
+          onNotice: notice,
+        })
       : undefined,
   ]);
 
@@ -450,14 +373,14 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
 
     const titleModel = modelForTask(config, "title");
     if (titleModel) {
-      titling = tryAsk("title", () => generateTitle(config, titleModel, prompt, signal)).then(
-        async (title) => {
-          if (!title) return;
-          session.title = title;
-          await updateSession(session.id, { title });
-          emit({ type: "title", title });
-        },
-      );
+      titling = tryAsk("title", () => generateTitle(config, titleModel, prompt, signal), {
+        onNotice: notice,
+      }).then(async (title) => {
+        if (!title) return;
+        session.title = title;
+        await updateSession(session.id, { title });
+        emit({ type: "title", title });
+      });
     }
   }
   await updateSession(session.id, { title: session.title, model: chosenModel });
@@ -553,7 +476,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     let stream: Awaited<ReturnType<typeof open>>;
     for (let attempt = 0; ; attempt++) {
       try {
-        stream = await negotiate(supports, chosenModel, contextLimit, open);
+        stream = await sendNegotiated(supports, chosenModel, contextLimit, open);
         break;
       } catch (error) {
         if (attempt >= OPEN_RETRIES || !isTransient(error)) throw error;
@@ -692,8 +615,10 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       const followupModel = modelForTask(config, "followups");
       const body = typeof assistant.content === "string" ? assistant.content : "";
       if (followupModel && body) {
-        const followups = await tryAsk("followups", () =>
-          suggestFollowups(config, followupModel, prompt, body, signal),
+        const followups = await tryAsk(
+          "followups",
+          () => suggestFollowups(config, followupModel, prompt, body, signal),
+          { onNotice: notice },
         );
         if (followups?.length) {
           assistant.followups = followups;

@@ -1,24 +1,24 @@
-import { ContextOverflow } from "@cubicecho/agent-core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type Capabilities,
+  ContextOverflow,
   capabilitiesFor,
-  negotiate,
+  modelCapabilitiesFor,
   resetCapabilities,
-} from "../server/agent.ts";
+} from "@cubicecho/agent-core";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { sendNegotiated } from "../server/agent.ts";
 
 /**
  * What a turn does when the endpoint refuses something it can do without.
  *
- * Both capabilities are found out the same way — by asking for them and being turned down — so
- * what is tested here is the shape of the recovery rather than either option: that a server
- * refusing both is answered in one turn instead of failing it, that what one endpoint cannot do
- * is not held against another, and that a refusal with nothing to negotiate is passed straight
- * back to the caller.
+ * The loop itself is agent-core's since 2.1.0, and tested there — that a server refusing two
+ * things is answered in one turn, that one endpoint's refusal is not held against another, that
+ * a model's refusal is not held against the model beside it. What is min-agent's, and so what is
+ * tested here, is the wiring into it and the one refusal it cannot answer: a request past the
+ * window, which has to reach the user saying which setting disagrees with the server.
  */
 
-const GRAMMAR = "Failed to initialize samplers: failed to parse grammar";
-const NO_STREAM_OPTIONS = "Unrecognized request argument supplied: stream_options";
+const NO_REASONING = "Unsupported parameter: 'reasoning_effort' is not supported with this model.";
 const OVERFLOW =
   "This model's maximum context length is 8192 tokens, however you requested 9001 tokens";
 
@@ -37,46 +37,21 @@ function serving(...failures: string[]) {
 
 beforeEach(resetCapabilities);
 
-describe("negotiate", () => {
-  it("answers both refusals in one turn rather than failing on the second", async () => {
-    const supports = capabilitiesFor("http://box:8080/v1");
-    const { send, seen } = serving(NO_STREAM_OPTIONS, GRAMMAR);
+describe("sendNegotiated", () => {
+  it("names the model, so the refusals that are the model's are answered too", async () => {
+    const supports = capabilitiesFor("https://api.openai.com/v1");
+    const { send } = serving(NO_REASONING);
 
-    await expect(negotiate(supports, "a-model", 0, send)).resolves.toBe("answered");
-
-    // The regression: answering only the first refusal left the second to fail the turn, so the
-    // first turn against such a server was spent finding out what the next one starts knowing.
-    expect(send).toHaveBeenCalledTimes(3);
-    expect(seen[0]).toMatchObject({ usageInStream: true, strictSchemas: true });
-    expect(seen[2]).toMatchObject({ usageInStream: false, strictSchemas: false });
-  });
-
-  it("latches what it learned, so a later turn does not ask again", async () => {
-    const supports = capabilitiesFor("http://box:8080/v1");
-    await negotiate(supports, "a-model", 0, serving(GRAMMAR).send);
-
-    const { send, seen } = serving();
-    await negotiate(capabilitiesFor("http://box:8080/v1"), "a-model", 0, send);
-
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(seen[0]?.strictSchemas).toBe(false);
-  });
-
-  it("holds one endpoint's refusal against that endpoint only", async () => {
-    await negotiate(capabilitiesFor("http://ollama:11434/v1"), "a-model", 0, serving(GRAMMAR).send);
-
-    const { send, seen } = serving();
-    await negotiate(capabilitiesFor("https://api.openai.com/v1"), "a-model", 0, send);
-
-    expect(seen[0]).toMatchObject({ usageInStream: true, strictSchemas: true });
-    expect(capabilitiesFor("http://ollama:11434/v1").strictSchemas).toBe(false);
+    // Left unnamed, this is a refusal with nothing to negotiate and the turn fails on it.
+    await expect(sendNegotiated(supports, "gpt-4o", 0, send)).resolves.toBe("answered");
+    expect(modelCapabilitiesFor(supports, "gpt-4o").reasoningEffort).toBe(false);
   });
 
   it("passes back a refusal there is nothing to negotiate about", async () => {
     const { send } = serving("model 'nope' not found");
 
     await expect(
-      negotiate(capabilitiesFor("http://box:8080/v1"), "a-model", 0, send),
+      sendNegotiated(capabilitiesFor("http://box:8080/v1"), "a-model", 0, send),
     ).rejects.toThrow("not found");
     expect(send).toHaveBeenCalledTimes(1);
   });
@@ -84,7 +59,7 @@ describe("negotiate", () => {
   it("does not send an overflowing request a second time, and says what the turn assumed", async () => {
     const { send } = serving(OVERFLOW);
 
-    const failure = await negotiate(
+    const failure = await sendNegotiated(
       capabilitiesFor("http://box:8080/v1"),
       "a-model",
       262_144,
@@ -103,7 +78,7 @@ describe("negotiate", () => {
     const { send } = serving(OVERFLOW);
 
     await expect(
-      negotiate(capabilitiesFor("http://box:8080/v1"), "a-model", 0, send),
+      sendNegotiated(capabilitiesFor("http://box:8080/v1"), "a-model", 0, send),
     ).rejects.toThrow(/Context window/);
   });
 });

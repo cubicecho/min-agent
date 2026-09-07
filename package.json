@@ -29,8 +29,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@cubicecho/agent-core": "^2.0.6",
-    "@cubicecho/agent-mcp-pool": "^2.0.0",
+    "@cubicecho/agent-core": "^2.2.0",
+    "@cubicecho/agent-mcp-pool": "^2.2.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@vantreeseba/drizzle-graphql": "^9.0.0",
     "compression": "^1.8.1",
