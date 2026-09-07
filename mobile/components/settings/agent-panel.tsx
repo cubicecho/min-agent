@@ -1,3 +1,4 @@
+import { REASONING_EFFORTS, type ReasoningEffort } from "@shared/types.ts";
 import { View } from "react-native";
 import {
   Card,
@@ -10,6 +11,28 @@ import {
 } from "@/components/ui.tsx";
 import type { Draft } from "./config-form.tsx";
 import { ConfigForm } from "./config-form.tsx";
+
+/**
+ * The reasoning menu, in the order `REASONING_EFFORTS` gives it.
+ *
+ * Only the two at the top are spelled out. The rest are a ladder and read as one, and a label
+ * explaining what "medium" means beside "low" and "high" would be saying it twice.
+ */
+const EFFORT_LABEL: Record<ReasoningEffort, string> = {
+  off: "Off — send no reasoning setting at all",
+  none: "None — tell a reasoning model not to think",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+};
+
+const EFFORT_OPTIONS = REASONING_EFFORTS.map((effort) => ({
+  label: EFFORT_LABEL[effort],
+  value: effort,
+}));
 
 /**
  * How the agent runs a turn: how long it may be, how hard it may work, and what it is told.
@@ -73,6 +96,17 @@ export function AgentPanel() {
                 </Field>
               </View>
             </View>
+
+            <Field
+              label="Reasoning effort"
+              hint="Only a reasoning model takes this. Off and None are not the same: Off leaves the setting off the request, which is the only thing a server that has never heard of reasoning will accept, and None sends it — the way a model that can reason is told not to on this turn. A model that refuses the setting is asked again without it, so a wrong pick here costs a round trip rather than the turn."
+            >
+              <Select
+                value={draft.reasoningEffort}
+                options={EFFORT_OPTIONS}
+                onChange={(value) => set("reasoningEffort", value as ReasoningEffort)}
+              />
+            </Field>
           </Card>
 
           <Card>

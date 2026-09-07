@@ -1,4 +1,4 @@
-import type { LlmConfigView } from "@shared/types.ts";
+import type { LlmConfigView, ReasoningEffort } from "@shared/types.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 import { View } from "react-native";
@@ -33,6 +33,7 @@ export type Draft = {
   pricing: { inputPer1M: number; outputPer1M: number };
   contextLimit: number;
   toolDiscovery: "eager" | "ondemand";
+  reasoningEffort: ReasoningEffort;
   taskModels: Record<string, string>;
   voiceBaseUrl: string;
   sttModel: string;
@@ -64,6 +65,7 @@ const PANEL_OF: Record<keyof Draft, ConfigTab> = {
   maxToolIterations: "agent",
   contextLimit: "agent",
   toolDiscovery: "agent",
+  reasoningEffort: "agent",
   systemPrompt: "agent",
   voiceBaseUrl: "voice",
   sttModel: "voice",

@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ADD COLUMN "reasoning_effort" text DEFAULT 'off' NOT NULL;

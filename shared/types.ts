@@ -9,6 +9,35 @@ import type { ModelTask } from "./model-tasks.ts";
  * database and reused to fill in a row's defaults.
  */
 
+/**
+ * How hard a reasoning model should think, as the completion's `reasoning_effort`.
+ *
+ * `off` is min-agent's own value rather than the API's, and it is the default because it is
+ * the only one that is safe not to have been chosen: it leaves the field off the request. A
+ * server that has never heard of reasoning refuses the request outright, and OpenAI refuses it
+ * on a model that cannot reason — so "nobody has been to this setting" has to be a state that
+ * sends nothing, and `none` is not that state. `none` is the API's own value for a model that
+ * *can* reason being told not to on this turn, which is a different request and a real one.
+ *
+ * The rest is the ladder the OpenAI SDK declares. Written out rather than derived from
+ * `OpenAI.ReasoningEffort` because this is a menu: it needs an order, and a rung must not
+ * appear in it because a dependency was bumped. The `satisfies` is the half of that the
+ * compiler should still hold us to — every rung has to be something the API takes, so a value
+ * the SDK *drops* is caught here rather than by a provider a user is talking to.
+ */
+export const REASONING_EFFORTS = [
+  "off",
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const satisfies readonly ("off" | NonNullable<OpenAI.ReasoningEffort>)[];
+
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
 export const llmConfigSchema = z.object({
   /** Any OpenAI-compatible endpoint: OpenAI, Ollama, LM Studio, vLLM, OpenRouter, ... */
   baseUrl: z.string().min(1).default("http://localhost:11434/v1"),
@@ -37,6 +66,11 @@ export const llmConfigSchema = z.object({
    * catalogue and lets the model pull in the schemas it needs, mid-turn.
    */
   toolDiscovery: z.enum(["eager", "ondemand"]).default("ondemand"),
+  /**
+   * How hard the model should think before it answers, as `reasoning_effort` on the request.
+   * `off` — the default — leaves the parameter off it entirely. See `REASONING_EFFORTS`.
+   */
+  reasoningEffort: z.enum(REASONING_EFFORTS).default("off"),
   /**
    * Per-task model overrides, keyed by the entries in `MODEL_TASKS`. A missing or empty value
    * means the task is off (or falls back to `model`, per the task). Kept as an open record so
@@ -347,7 +381,15 @@ export interface Session {
 
 export type SessionSummary = Omit<Session, "messages"> & { messageCount: number };
 
-export type McpStatus = "disabled" | "connecting" | "ready" | "error";
+/**
+ * Mirrors `McpStatus` in `@cubicecho/agent-mcp-pool`, which is where these are decided.
+ *
+ * `idle` is registered-but-not-connected: a success state, not a failure — the pool has the row
+ * and there is simply no child right now. min-agent runs the pool eagerly, so nothing here
+ * reports it today; it is in the union because the pool's type has it and narrowing on the way
+ * out would be this module asserting something the dependency does not promise.
+ */
+export type McpStatus = "disabled" | "idle" | "connecting" | "ready" | "error";
 
 export interface McpServerState {
   config: McpServerConfig;

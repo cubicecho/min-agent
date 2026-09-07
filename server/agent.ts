@@ -240,6 +240,80 @@ let usageSupported = true;
  */
 let strictSchemas = true;
 
+/*
+  The two above are what a *server* turned out not to take, so one answer holds for the run.
+  The three below are what a *model* would not take, and are remembered per model instead: one
+  OpenAI endpoint accepts `reasoning_effort` for gpt-5 and refuses it for gpt-4o, so a single
+  flag would let one turn on the wrong model switch reasoning off for every model after it —
+  the setting left reading "high" with nothing behind it, which is worse than it not working.
+*/
+
+/** Models that would not be told how hard to think, so the next turn does not ask again. */
+const noReasoningEffort = new Set<string>();
+
+/** Models that refuse `max_tokens` and want `max_completion_tokens` — the reasoning ones. */
+const modernTokenLimit = new Set<string>();
+
+/** Models that accept only their own default temperature, which reasoning models do. */
+const fixedTemperature = new Set<string>();
+
+/**
+ * How many refusals one request may learn from before it gives up and reports the last.
+ *
+ * There are five things above to find out and each is found out at most once, so this is only
+ * a floor under a loop that already terminates. It has to be more than one: an OpenAI
+ * reasoning model refuses `max_tokens` *and* `temperature`, and learning a single thing per
+ * turn would mean the second refusal was the one the user saw.
+ */
+const PARAM_RETRIES = 5;
+
+/**
+ * Take note of a parameter the server has just refused, and say whether to try again without.
+ *
+ * Everything here is sent optimistically because most servers take it, and a refusal is the
+ * server telling us which ones this one does not. Each branch is guarded by the note it
+ * writes, so a refusal already known about is not a reason to repeat the request — it falls
+ * through to `false` and the error goes out, which is what should happen when the complaint
+ * is about something we have no answer for.
+ *
+ * Exported for its test: what the notes are keyed on is the whole design, and it is not
+ * something a test can reach through `run`, which needs a database and a model server.
+ */
+export function learnFromRefusal(detail: string, model: string): boolean {
+  if (usageSupported && /stream_options/i.test(detail)) {
+    console.warn("[agent] server rejected stream_options; token counts disabled");
+    usageSupported = false;
+    return true;
+  }
+  if (strictSchemas && isGrammarError(detail)) {
+    console.warn("[agent] server could not build a grammar; retrying without pattern/format");
+    strictSchemas = false;
+    return true;
+  }
+  if (!noReasoningEffort.has(model) && /reasoning_effort/i.test(detail)) {
+    console.warn(`[agent] ${model} will not take a reasoning effort; retrying without one`);
+    noReasoningEffort.add(model);
+    return true;
+  }
+  // Both names, because `max_tokens` on its own is also how a server says the number was too
+  // large — and the answer to that is not to send the same number under a different name.
+  if (
+    !modernTokenLimit.has(model) &&
+    /max_tokens/i.test(detail) &&
+    /max_completion_tokens/i.test(detail)
+  ) {
+    console.warn(`[agent] ${model} wants max_completion_tokens; retrying with it`);
+    modernTokenLimit.add(model);
+    return true;
+  }
+  if (!fixedTemperature.has(model) && /temperature/i.test(detail)) {
+    console.warn(`[agent] ${model} takes only its own temperature; retrying without ours`);
+    fixedTemperature.add(model);
+    return true;
+  }
+  return false;
+}
+
 export interface RunOptions {
   session: Session;
   prompt: string;
@@ -378,11 +452,21 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
 
     const open = (withUsage: boolean, strict: boolean) => {
       const tools = strict ? declared : relaxTools(declared);
+      const effort = config.reasoningEffort;
       return client.chat.completions.create(
         {
           model: chosenModel,
-          max_tokens: config.maxTokens,
-          temperature: config.temperature,
+          // Two spellings of one ceiling. `max_tokens` is the one every server understands
+          // and the reasoning models are the exception, so it stays the thing we open with.
+          ...(modernTokenLimit.has(chosenModel)
+            ? { max_completion_tokens: config.maxTokens }
+            : { max_tokens: config.maxTokens }),
+          ...(fixedTemperature.has(chosenModel) ? {} : { temperature: config.temperature }),
+          // `off` is not a value to send: it is the setting saying leave the field out, which
+          // is the only thing a server that has never heard of reasoning will accept.
+          ...(effort !== "off" && !noReasoningEffort.has(chosenModel)
+            ? { reasoning_effort: effort }
+            : {}),
           stream: true,
           ...(withUsage ? { stream_options: { include_usage: true } } : {}),
           messages: [{ role: "system", content: system }, ...history],
@@ -414,20 +498,20 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       }
     };
 
+    /*
+      Open it, and when the refusal is about something we chose to send, drop that and go
+      again. A loop rather than the one retry this was: the refusals are not exclusive, and an
+      OpenAI reasoning model has two of them waiting — `max_tokens` and then `temperature`.
+    */
     let stream: Awaited<ReturnType<typeof open>>;
-    try {
-      stream = await openOrRetry(usageSupported, strictSchemas);
-    } catch (error) {
-      const detail = errorMessage(error);
-      if (usageSupported && /stream_options/i.test(detail)) {
-        console.warn("[agent] server rejected stream_options; token counts disabled");
-        usageSupported = false;
-        stream = await openOrRetry(false, strictSchemas);
-      } else if (strictSchemas && isGrammarError(detail)) {
-        console.warn("[agent] server could not build a grammar; retrying without pattern/format");
-        strictSchemas = false;
-        stream = await openOrRetry(usageSupported, false);
-      } else throw error;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        stream = await openOrRetry(usageSupported, strictSchemas);
+        break;
+      } catch (error) {
+        const detail = errorMessage(error);
+        if (attempt >= PARAM_RETRIES || !learnFromRefusal(detail, chosenModel)) throw error;
+      }
     }
 
     iterations++;

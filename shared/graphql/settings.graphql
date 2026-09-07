@@ -10,6 +10,7 @@ query Config {
     systemPrompt
     contextLimit
     toolDiscovery
+    reasoningEffort
     taskModels
     pricing
     voiceBaseUrl

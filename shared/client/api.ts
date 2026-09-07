@@ -130,6 +130,7 @@ const WRITABLE_COLUMNS: Record<keyof Omit<LlmConfig, "apiKey">, true> = {
   systemPrompt: true,
   contextLimit: true,
   toolDiscovery: true,
+  reasoningEffort: true,
   taskModels: true,
   pricing: true,
   voiceBaseUrl: true,

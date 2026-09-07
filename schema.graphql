@@ -8,6 +8,7 @@ type Setting {
   systemPrompt: String!
   contextLimit: Int!
   toolDiscovery: SettingsToolDiscoveryEnum!
+  reasoningEffort: SettingsReasoningEffortEnum!
   taskModels: JSON!
   pricing: JSON!
   voiceBaseUrl: String!
@@ -28,6 +29,32 @@ enum SettingsToolDiscoveryEnum {
 
   """Value: ondemand"""
   ondemand
+}
+
+enum SettingsReasoningEffortEnum {
+  """Value: off"""
+  off
+
+  """Value: none"""
+  none
+
+  """Value: minimal"""
+  minimal
+
+  """Value: low"""
+  low
+
+  """Value: medium"""
+  medium
+
+  """Value: high"""
+  high
+
+  """Value: xhigh"""
+  xhigh
+
+  """Value: max"""
+  max
 }
 
 """
@@ -69,6 +96,7 @@ type SettingMinAggregate {
   systemPrompt: String
   contextLimit: Int
   toolDiscovery: SettingsToolDiscoveryEnum
+  reasoningEffort: SettingsReasoningEffortEnum
   voiceBaseUrl: String
   sttModel: String
   ttsModel: String
@@ -85,6 +113,7 @@ type SettingMaxAggregate {
   systemPrompt: String
   contextLimit: Int
   toolDiscovery: SettingsToolDiscoveryEnum
+  reasoningEffort: SettingsReasoningEffortEnum
   voiceBaseUrl: String
   sttModel: String
   ttsModel: String
@@ -101,6 +130,7 @@ type SettingCountNonNullAggregate {
   systemPrompt: Int!
   contextLimit: Int!
   toolDiscovery: Int!
+  reasoningEffort: Int!
   taskModels: Int!
   pricing: Int!
   voiceBaseUrl: Int!
@@ -120,6 +150,7 @@ type SettingCountDistinctAggregate {
   systemPrompt: Int!
   contextLimit: Int!
   toolDiscovery: Int!
+  reasoningEffort: Int!
   voiceBaseUrl: Int!
   sttModel: Int!
   ttsModel: Int!
@@ -150,6 +181,7 @@ type SettingGroupKeys {
   systemPrompt: String
   contextLimit: Int
   toolDiscovery: SettingsToolDiscoveryEnum
+  reasoningEffort: SettingsReasoningEffortEnum
   voiceBaseUrl: String
   sttModel: String
   ttsModel: String
@@ -630,6 +662,7 @@ input UpdateSettingInput {
   systemPrompt: String
   contextLimit: Int
   toolDiscovery: SettingsToolDiscoveryEnum
+  reasoningEffort: SettingsReasoningEffortEnum
   taskModels: JSON
   pricing: JSON
   voiceBaseUrl: String
@@ -658,6 +691,7 @@ input SettingFilters {
   systemPrompt: StringFilter
   contextLimit: IntFilter
   toolDiscovery: SettingsToolDiscoveryEnumFilter
+  reasoningEffort: SettingsReasoningEffortEnumFilter
   taskModels: JSONFilter
   pricing: JSONFilter
   voiceBaseUrl: StringFilter
@@ -906,6 +940,80 @@ input SettingsToolDiscoveryEnumFilter {
   NOT: SettingsToolDiscoveryEnumFilter
 }
 
+input SettingsReasoningEffortEnumFilter {
+  """Equal to"""
+  eq: SettingsReasoningEffortEnum
+
+  """Not equal to"""
+  ne: SettingsReasoningEffortEnum
+
+  """Less than"""
+  lt: SettingsReasoningEffortEnum
+
+  """Less than or equal to"""
+  lte: SettingsReasoningEffortEnum
+
+  """Greater than"""
+  gt: SettingsReasoningEffortEnum
+
+  """Greater than or equal to"""
+  gte: SettingsReasoningEffortEnum
+  like: String
+  notLike: String
+  ilike: String
+  notIlike: String
+
+  """
+  Matches values starting with the given string. `%`, `_` and `\` are matched literally.
+  """
+  startsWith: String
+
+  """
+  Matches values ending with the given string. `%`, `_` and `\` are matched literally.
+  """
+  endsWith: String
+
+  """
+  Matches values containing the given string. `%`, `_` and `\` are matched literally.
+  """
+  contains: String
+
+  """Case-insensitive `startsWith`."""
+  iStartsWith: String
+
+  """Case-insensitive `endsWith`."""
+  iEndsWith: String
+
+  """Case-insensitive `contains`."""
+  iContains: String
+
+  """
+  When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own.
+  """
+  insensitive: Boolean
+
+  """Matches any one of these values (SQL `IN`)"""
+  inArray: [SettingsReasoningEffortEnum!]
+
+  """Matches none of these values (SQL `NOT IN`)"""
+  notInArray: [SettingsReasoningEffortEnum!]
+
+  """When true, matches rows where the column is NULL"""
+  isNull: Boolean
+
+  """When true, matches rows where the column is not NULL"""
+  isNotNull: Boolean
+
+  """At least one branch matches; ANDed with any sibling operators"""
+  OR: [SettingsReasoningEffortEnumFilter!]
+
+  """Every branch matches"""
+  AND: [SettingsReasoningEffortEnumFilter!]
+
+  """Negates the nested operators"""
+  NOT: SettingsReasoningEffortEnumFilter
+}
+
 input JSONFilter {
   """JSON equality on the whole value"""
   eq: JSON
@@ -1089,6 +1197,7 @@ input SettingOrderBy {
   systemPrompt: InnerOrder
   contextLimit: InnerOrder
   toolDiscovery: InnerOrder
+  reasoningEffort: InnerOrder
   taskModels: InnerOrder
   pricing: InnerOrder
   voiceBaseUrl: InnerOrder
@@ -1195,6 +1304,7 @@ input SettingCountNonNullHaving {
   systemPrompt: AggregateNumberFilter
   contextLimit: AggregateNumberFilter
   toolDiscovery: AggregateNumberFilter
+  reasoningEffort: AggregateNumberFilter
   taskModels: AggregateNumberFilter
   pricing: AggregateNumberFilter
   voiceBaseUrl: AggregateNumberFilter
@@ -1214,6 +1324,7 @@ input SettingCountDistinctHaving {
   systemPrompt: AggregateNumberFilter
   contextLimit: AggregateNumberFilter
   toolDiscovery: AggregateNumberFilter
+  reasoningEffort: AggregateNumberFilter
   voiceBaseUrl: AggregateNumberFilter
   sttModel: AggregateNumberFilter
   ttsModel: AggregateNumberFilter
@@ -2057,6 +2168,7 @@ enum SettingDistinctColumn {
   systemPrompt
   contextLimit
   toolDiscovery
+  reasoningEffort
   taskModels
   pricing
   voiceBaseUrl
@@ -2077,6 +2189,7 @@ enum SettingGroupByColumn {
   systemPrompt
   contextLimit
   toolDiscovery
+  reasoningEffort
   voiceBaseUrl
   sttModel
   ttsModel
@@ -2178,7 +2291,7 @@ type ModelInfo {
 type McpServerState {
   config: McpServerConfig!
 
-  """disabled | connecting | ready | error"""
+  """disabled | idle | connecting | ready | error"""
   status: String!
   error: String
   tools: [McpTool!]!

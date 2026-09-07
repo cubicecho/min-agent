@@ -65,6 +65,16 @@ export const settings = table("settings", {
     .notNull()
     .default("ondemand"),
   /**
+   * `reasoning_effort` on the completion, or `off` to leave the field off it. Spelled out
+   * here rather than taken from `REASONING_EFFORTS` for the same reason `toolDiscovery` is:
+   * this file is read by drizzle-kit, which loads it on its own to diff the schema.
+   */
+  reasoningEffort: text({
+    enum: ["off", "none", "minimal", "low", "medium", "high", "xhigh", "max"],
+  })
+    .notNull()
+    .default("off"),
+  /**
    * Per-task model overrides, keyed by the entries in `MODEL_TASKS`. Kept as an open JSON
    * object rather than a column each, so adding a task needs no migration.
    */

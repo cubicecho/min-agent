@@ -750,7 +750,7 @@ export type McpServerOrderBy = {
 export type McpServerState = {
   config: McpServerConfig;
   error?: Maybe<Scalars['String']['output']>;
-  /** disabled | connecting | ready | error */
+  /** disabled | idle | connecting | ready | error */
   status: Scalars['String']['output'];
   tools: Array<McpTool>;
 };
@@ -1643,6 +1643,7 @@ export type Setting = {
   maxToolIterations: Scalars['Int']['output'];
   model: Scalars['String']['output'];
   pricing: Scalars['JSON']['output'];
+  reasoningEffort: SettingsReasoningEffortEnum;
   speakReplies: Scalars['Boolean']['output'];
   sttModel: Scalars['String']['output'];
   systemPrompt: Scalars['String']['output'];
@@ -1685,6 +1686,7 @@ export type SettingCountDistinctAggregate = {
   maxTokens: Scalars['Int']['output'];
   maxToolIterations: Scalars['Int']['output'];
   model: Scalars['Int']['output'];
+  reasoningEffort: Scalars['Int']['output'];
   sttModel: Scalars['Int']['output'];
   systemPrompt: Scalars['Int']['output'];
   temperature: Scalars['Int']['output'];
@@ -1701,6 +1703,7 @@ export type SettingCountDistinctHaving = {
   maxTokens?: InputMaybe<AggregateNumberFilter>;
   maxToolIterations?: InputMaybe<AggregateNumberFilter>;
   model?: InputMaybe<AggregateNumberFilter>;
+  reasoningEffort?: InputMaybe<AggregateNumberFilter>;
   sttModel?: InputMaybe<AggregateNumberFilter>;
   systemPrompt?: InputMaybe<AggregateNumberFilter>;
   temperature?: InputMaybe<AggregateNumberFilter>;
@@ -1718,6 +1721,7 @@ export type SettingCountNonNullAggregate = {
   maxToolIterations: Scalars['Int']['output'];
   model: Scalars['Int']['output'];
   pricing: Scalars['Int']['output'];
+  reasoningEffort: Scalars['Int']['output'];
   speakReplies: Scalars['Int']['output'];
   sttModel: Scalars['Int']['output'];
   systemPrompt: Scalars['Int']['output'];
@@ -1737,6 +1741,7 @@ export type SettingCountNonNullHaving = {
   maxToolIterations?: InputMaybe<AggregateNumberFilter>;
   model?: InputMaybe<AggregateNumberFilter>;
   pricing?: InputMaybe<AggregateNumberFilter>;
+  reasoningEffort?: InputMaybe<AggregateNumberFilter>;
   speakReplies?: InputMaybe<AggregateNumberFilter>;
   sttModel?: InputMaybe<AggregateNumberFilter>;
   systemPrompt?: InputMaybe<AggregateNumberFilter>;
@@ -1757,6 +1762,7 @@ export enum SettingDistinctColumn {
   MaxToolIterations = 'maxToolIterations',
   Model = 'model',
   Pricing = 'pricing',
+  ReasoningEffort = 'reasoningEffort',
   SpeakReplies = 'speakReplies',
   SttModel = 'sttModel',
   SystemPrompt = 'systemPrompt',
@@ -1782,6 +1788,7 @@ export type SettingFilters = {
   maxToolIterations?: InputMaybe<IntFilter>;
   model?: InputMaybe<StringFilter>;
   pricing?: InputMaybe<JsonFilter>;
+  reasoningEffort?: InputMaybe<SettingsReasoningEffortEnumFilter>;
   speakReplies?: InputMaybe<BooleanFilter>;
   sttModel?: InputMaybe<StringFilter>;
   systemPrompt?: InputMaybe<StringFilter>;
@@ -1812,6 +1819,7 @@ export enum SettingGroupByColumn {
   MaxTokens = 'maxTokens',
   MaxToolIterations = 'maxToolIterations',
   Model = 'model',
+  ReasoningEffort = 'reasoningEffort',
   SpeakReplies = 'speakReplies',
   SttModel = 'sttModel',
   SystemPrompt = 'systemPrompt',
@@ -1830,6 +1838,7 @@ export type SettingGroupKeys = {
   maxTokens?: Maybe<Scalars['Int']['output']>;
   maxToolIterations?: Maybe<Scalars['Int']['output']>;
   model?: Maybe<Scalars['String']['output']>;
+  reasoningEffort?: Maybe<SettingsReasoningEffortEnum>;
   speakReplies?: Maybe<Scalars['Boolean']['output']>;
   sttModel?: Maybe<Scalars['String']['output']>;
   systemPrompt?: Maybe<Scalars['String']['output']>;
@@ -1859,6 +1868,7 @@ export type SettingMaxAggregate = {
   maxTokens?: Maybe<Scalars['Int']['output']>;
   maxToolIterations?: Maybe<Scalars['Int']['output']>;
   model?: Maybe<Scalars['String']['output']>;
+  reasoningEffort?: Maybe<SettingsReasoningEffortEnum>;
   sttModel?: Maybe<Scalars['String']['output']>;
   systemPrompt?: Maybe<Scalars['String']['output']>;
   temperature?: Maybe<Scalars['Float']['output']>;
@@ -1882,6 +1892,7 @@ export type SettingMinAggregate = {
   maxTokens?: Maybe<Scalars['Int']['output']>;
   maxToolIterations?: Maybe<Scalars['Int']['output']>;
   model?: Maybe<Scalars['String']['output']>;
+  reasoningEffort?: Maybe<SettingsReasoningEffortEnum>;
   sttModel?: Maybe<Scalars['String']['output']>;
   systemPrompt?: Maybe<Scalars['String']['output']>;
   temperature?: Maybe<Scalars['Float']['output']>;
@@ -1906,6 +1917,7 @@ export type SettingOrderBy = {
   maxToolIterations?: InputMaybe<InnerOrder>;
   model?: InputMaybe<InnerOrder>;
   pricing?: InputMaybe<InnerOrder>;
+  reasoningEffort?: InputMaybe<InnerOrder>;
   speakReplies?: InputMaybe<InnerOrder>;
   sttModel?: InputMaybe<InnerOrder>;
   systemPrompt?: InputMaybe<InnerOrder>;
@@ -1929,6 +1941,72 @@ export type SettingSumHaving = {
   maxTokens?: InputMaybe<AggregateNumberFilter>;
   maxToolIterations?: InputMaybe<AggregateNumberFilter>;
   temperature?: InputMaybe<AggregateNumberFilter>;
+};
+
+export enum SettingsReasoningEffortEnum {
+  /** Value: high */
+  High = 'high',
+  /** Value: low */
+  Low = 'low',
+  /** Value: max */
+  Max = 'max',
+  /** Value: medium */
+  Medium = 'medium',
+  /** Value: minimal */
+  Minimal = 'minimal',
+  /** Value: none */
+  None = 'none',
+  /** Value: off */
+  Off = 'off',
+  /** Value: xhigh */
+  Xhigh = 'xhigh'
+}
+
+export type SettingsReasoningEffortEnumFilter = {
+  /** Every branch matches */
+  AND?: InputMaybe<Array<SettingsReasoningEffortEnumFilter>>;
+  /** Negates the nested operators */
+  NOT?: InputMaybe<SettingsReasoningEffortEnumFilter>;
+  /** At least one branch matches; ANDed with any sibling operators */
+  OR?: InputMaybe<Array<SettingsReasoningEffortEnumFilter>>;
+  /** Matches values containing the given string. `%`, `_` and `\` are matched literally. */
+  contains?: InputMaybe<Scalars['String']['input']>;
+  /** Matches values ending with the given string. `%`, `_` and `\` are matched literally. */
+  endsWith?: InputMaybe<Scalars['String']['input']>;
+  /** Equal to */
+  eq?: InputMaybe<SettingsReasoningEffortEnum>;
+  /** Greater than */
+  gt?: InputMaybe<SettingsReasoningEffortEnum>;
+  /** Greater than or equal to */
+  gte?: InputMaybe<SettingsReasoningEffortEnum>;
+  /** Case-insensitive `contains`. */
+  iContains?: InputMaybe<Scalars['String']['input']>;
+  /** Case-insensitive `endsWith`. */
+  iEndsWith?: InputMaybe<Scalars['String']['input']>;
+  /** Case-insensitive `startsWith`. */
+  iStartsWith?: InputMaybe<Scalars['String']['input']>;
+  ilike?: InputMaybe<Scalars['String']['input']>;
+  /** Matches any one of these values (SQL `IN`) */
+  inArray?: InputMaybe<Array<SettingsReasoningEffortEnum>>;
+  /** When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own. */
+  insensitive?: InputMaybe<Scalars['Boolean']['input']>;
+  /** When true, matches rows where the column is not NULL */
+  isNotNull?: InputMaybe<Scalars['Boolean']['input']>;
+  /** When true, matches rows where the column is NULL */
+  isNull?: InputMaybe<Scalars['Boolean']['input']>;
+  like?: InputMaybe<Scalars['String']['input']>;
+  /** Less than */
+  lt?: InputMaybe<SettingsReasoningEffortEnum>;
+  /** Less than or equal to */
+  lte?: InputMaybe<SettingsReasoningEffortEnum>;
+  /** Not equal to */
+  ne?: InputMaybe<SettingsReasoningEffortEnum>;
+  notIlike?: InputMaybe<Scalars['String']['input']>;
+  /** Matches none of these values (SQL `NOT IN`) */
+  notInArray?: InputMaybe<Array<SettingsReasoningEffortEnum>>;
+  notLike?: InputMaybe<Scalars['String']['input']>;
+  /** Matches values starting with the given string. `%`, `_` and `\` are matched literally. */
+  startsWith?: InputMaybe<Scalars['String']['input']>;
 };
 
 export enum SettingsToolDiscoveryEnum {
@@ -2090,6 +2168,7 @@ export type UpdateSettingInput = {
   maxToolIterations?: InputMaybe<Scalars['Int']['input']>;
   model?: InputMaybe<Scalars['String']['input']>;
   pricing?: InputMaybe<Scalars['JSON']['input']>;
+  reasoningEffort?: InputMaybe<SettingsReasoningEffortEnum>;
   speakReplies?: InputMaybe<Scalars['Boolean']['input']>;
   sttModel?: InputMaybe<Scalars['String']['input']>;
   systemPrompt?: InputMaybe<Scalars['String']['input']>;
@@ -2190,7 +2269,7 @@ export type TruncateSessionMutation = { truncateSession: number };
 export type ConfigQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type ConfigQuery = { hasApiKey: boolean, setting?: { baseUrl: string, model: string, maxTokens: number, temperature: number, maxToolIterations: number, systemPrompt: string, contextLimit: number, toolDiscovery: SettingsToolDiscoveryEnum, taskModels: unknown, pricing: unknown, voiceBaseUrl: string, sttModel: string, ttsModel: string, ttsVoice: string, speakReplies: boolean } | null };
+export type ConfigQuery = { hasApiKey: boolean, setting?: { baseUrl: string, model: string, maxTokens: number, temperature: number, maxToolIterations: number, systemPrompt: string, contextLimit: number, toolDiscovery: SettingsToolDiscoveryEnum, reasoningEffort: SettingsReasoningEffortEnum, taskModels: unknown, pricing: unknown, voiceBaseUrl: string, sttModel: string, ttsModel: string, ttsVoice: string, speakReplies: boolean } | null };
 
 export type SaveConfigMutationVariables = Exact<{
   set: UpdateSettingInput;
@@ -2503,6 +2582,7 @@ export const ConfigDocument = new TypedDocumentString(`
     systemPrompt
     contextLimit
     toolDiscovery
+    reasoningEffort
     taskModels
     pricing
     voiceBaseUrl

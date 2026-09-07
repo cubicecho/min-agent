@@ -12,6 +12,7 @@ const STORED = {
   systemPrompt: "You are min-agent, a concise and careful assistant.",
   contextLimit: 0,
   toolDiscovery: "ondemand",
+  reasoningEffort: "off",
   taskModels: {},
   pricing: { inputPer1M: 0, outputPer1M: 0 },
   voiceBaseUrl: "",
@@ -59,7 +60,12 @@ describe("saveConfig", () => {
    */
   it("drops the derived hasApiKey a screen spreads in from config()", async () => {
     const { api, of } = recording();
-    const view: LlmConfigView = { ...STORED, toolDiscovery: "ondemand", hasApiKey: false };
+    const view: LlmConfigView = {
+      ...STORED,
+      toolDiscovery: "ondemand",
+      reasoningEffort: "off",
+      hasApiKey: false,
+    };
 
     await api.saveConfig({ ...view, apiKey: "" });
 
