@@ -7,7 +7,7 @@ import { llmConfigSchema, REASONING_EFFORTS } from "../shared/types.ts";
  *
  * The thing that makes the setting safe to have — a request refused because of it being sent
  * again without it, remembered against the model that refused rather than the endpoint it sits
- * on — is agent-core's `negotiate` since 2.1.0, and is tested there. `sendNegotiated` in
+ * on — is agent-core's `negotiate` since 2.1.0, and is tested there. `sendTurn` in
  * tests/negotiate.test.ts covers min-agent naming the model, which is what reaches that level.
  */
 
