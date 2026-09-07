@@ -1,3 +1,4 @@
+import { errorMessage } from "@cubicecho/agent-core";
 import type { StreamEvent, TurnStats } from "../shared/types.ts";
 import { runTurn } from "./agent.ts";
 import { getSession } from "./store.ts";
@@ -74,7 +75,7 @@ export async function* runTurnEvents(args: TurnArgs): AsyncGenerator<TurnEvent> 
     .catch((error: unknown) => {
       // A turn the reader stopped is not a failure, and the reader already knows.
       if (controller.signal.aborted) return;
-      push({ type: "error", message: error instanceof Error ? error.message : String(error) });
+      push({ type: "error", message: errorMessage(error) });
     })
     .finally(() => {
       done = true;
