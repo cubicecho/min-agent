@@ -159,7 +159,7 @@ release still goes out to GHCR. A run of chores publishes nothing.
 Two pieces of the runner are not in this repo. `@cubicecho/agent-core` holds the parts that do
 not know what the agent is *for* — making a tool schema a strict server will accept, getting
 definitions in front of a model without paying for all of them, the one-shot calls that support
-a turn, the pooled client, and the rules about retrying. `@cubicecho/mcp-pool` holds the MCP
+a turn, the pooled client, and the rules about retrying. `@cubicecho/agent-mcp-pool` holds the MCP
 connections. Both were forked three ways across this server, `kanban_server` and `task_server`
 before they were packages, and all three had been fixing the same bugs separately.
 

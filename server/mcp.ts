@@ -1,8 +1,8 @@
-import { McpPool } from "@cubicecho/mcp-pool";
+import { McpPool } from "@cubicecho/agent-mcp-pool";
 import type { McpServerConfig, McpServerState } from "../shared/types.ts";
 
 /**
- * min-agent's MCP servers, as `@cubicecho/mcp-pool` holds them.
+ * min-agent's MCP servers, as `@cubicecho/agent-mcp-pool` holds them.
  *
  * The pool is the shared thing — connecting, reconnecting, qualifying tool names, running a
  * call — and this is the half that is min-agent's own: a server here is identified by the id
