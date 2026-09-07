@@ -536,7 +536,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
         {activeModel ? null : (
           <View className="mx-auto mb-2 w-full max-w-3xl flex-row items-center gap-3">
             <Muted className="flex-1">No model selected, so a turn has nothing to run on.</Muted>
-            <SettingsLink tab="agent">Pick a model</SettingsLink>
+            <SettingsLink tab="model">Pick a model</SettingsLink>
           </View>
         )}
         <View className="w-full max-w-3xl flex-row items-end gap-2 self-center">
@@ -598,7 +598,7 @@ function Nothing({ configured }: { configured: boolean }) {
       <Text className="text-center text-sm text-muted-foreground">
         Point min-agent at an OpenAI-compatible server and pick a model, and this becomes a chat.
       </Text>
-      <SettingsLink tab="agent">Set up a model</SettingsLink>
+      <SettingsLink tab="model">Set up a model</SettingsLink>
     </View>
   );
 }

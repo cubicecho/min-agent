@@ -4,11 +4,14 @@ import { useState } from "react";
 import { View } from "react-native";
 import { AgentPanel } from "@/components/settings/agent-panel.tsx";
 import { AppsPanel } from "@/components/settings/apps-panel.tsx";
+import { ConfigDraftProvider } from "@/components/settings/config-form.tsx";
 import { DevicePanel } from "@/components/settings/device-panel.tsx";
 import { DirtyProvider, useDirtyPanels } from "@/components/settings/dirty.tsx";
 import { McpPanel } from "@/components/settings/mcp-panel.tsx";
+import { ModelPanel } from "@/components/settings/model-panel.tsx";
 import { ServerPanel } from "@/components/settings/server-panel.tsx";
 import { SETTINGS_TABS, type SettingsTab } from "@/components/settings/tabs.ts";
+import { VoicePanel } from "@/components/settings/voice-panel.tsx";
 import { type TabMark, Tabs } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
 
@@ -30,6 +33,10 @@ import { api } from "@/lib/client.ts";
  * and unmounting one threw its draft away without ever saying so. What is kept is a mounted
  * component and its queries, not a snapshot: the cost of that is a hidden panel that polls,
  * which is why each is told whether it is the one on screen.
+ *
+ * Model, Agent and Voice are the exception to a panel owning its draft: they are three views
+ * of one settings row, so the draft is held by `ConfigDraftProvider` here instead. See
+ * `components/settings/config-form.tsx` for why it cannot be three of them.
  */
 
 /** What every panel is handed: whether it is the tab currently on screen. */
@@ -45,7 +52,9 @@ export type PanelProps = { active: boolean };
 const MCP_WATCH = 30_000;
 
 const PANELS: Record<SettingsTab, (props: PanelProps) => React.JSX.Element | null> = {
+  model: ModelPanel,
   agent: AgentPanel,
+  voice: VoicePanel,
   mcp: McpPanel,
   apps: AppsPanel,
   server: ServerPanel,
@@ -60,7 +69,7 @@ export default function SettingsScreen() {
   // the state; the state is what the row reads. Were the param the source of truth, a tab
   // would be dead on any platform where the URL is not the address bar.
   const { tab } = useLocalSearchParams<{ tab?: string }>();
-  const [active, setActive] = useState<SettingsTab>(isTab(tab) ? tab : "agent");
+  const [active, setActive] = useState<SettingsTab>(isTab(tab) ? tab : "model");
   // Mounted so far. A panel is only built when it is first asked for, and never taken down.
   const [visited, setVisited] = useState<SettingsTab[]>([active]);
 
@@ -88,17 +97,19 @@ export default function SettingsScreen() {
     <View className="flex-1 bg-background">
       <Tabs tabs={SETTINGS_TABS} value={active} marks={marks} onChange={open} />
       <DirtyProvider value={report}>
-        {visited.map((key) => {
-          const Panel = PANELS[key];
-          const shown = key === active;
-          // `display: none` rather than a conditional render: the panel keeps its state, its
-          // scroll position and its queries, and costs no layout while it is off screen.
-          return (
-            <View key={key} className="flex-1" style={shown ? undefined : { display: "none" }}>
-              <Panel active={shown} />
-            </View>
-          );
-        })}
+        <ConfigDraftProvider>
+          {visited.map((key) => {
+            const Panel = PANELS[key];
+            const shown = key === active;
+            // `display: none` rather than a conditional render: the panel keeps its state, its
+            // scroll position and its queries, and costs no layout while it is off screen.
+            return (
+              <View key={key} className="flex-1" style={shown ? undefined : { display: "none" }}>
+                <Panel active={shown} />
+              </View>
+            );
+          })}
+        </ConfigDraftProvider>
       </DirtyProvider>
     </View>
   );

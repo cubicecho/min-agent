@@ -271,6 +271,60 @@ export const Field = ({
   </View>
 );
 
+/**
+ * A number box you can actually type a decimal into.
+ *
+ * A form holds numbers, and a box that ran every keystroke back through `Number` could not
+ * hold a half-typed one: "0." parses to 0, re-renders as "0", and the dot is gone the moment
+ * it is typed. Every settings field was whole-number-only for that reason. So the text being
+ * typed lives here and the caller only hears the values that parse.
+ *
+ * `integer` is for the values a schema keeps whole — token counts and loop limits — and
+ * rounds on the way out; the default is a float, which is what a temperature and a price need.
+ */
+export const NumberInput = ({
+  value,
+  onChangeValue,
+  integer,
+  ...props
+}: Omit<InputProps, "value" | "onChangeText" | "onBlur"> & {
+  value: number;
+  onChangeValue: (value: number) => void;
+  integer?: boolean;
+}) => {
+  const [text, setText] = useState(() => String(value));
+  const [seen, setSeen] = useState(value);
+
+  // A value that moved anywhere but in this box — a save reading the row back — replaces
+  // what is typed. Adjusting state while rendering is React's own answer to state derived
+  // from a prop; an effect would paint the stale text first.
+  if (value !== seen) {
+    setSeen(value);
+    setText(String(value));
+  }
+
+  return (
+    <Input
+      keyboardType={integer ? "number-pad" : "decimal-pad"}
+      {...props}
+      value={text}
+      onChangeText={(next) => {
+        setText(next);
+        // An empty box reads as 0; anything that is not a number yet — "1e", a lone "-" —
+        // is left as typed and the caller keeps the last value that was one.
+        const parsed = next.trim() === "" ? 0 : Number(next);
+        if (!Number.isFinite(parsed)) return;
+        const rounded = integer ? Math.round(parsed) : parsed;
+        setSeen(rounded);
+        onChangeValue(rounded);
+      }}
+      // Leaving the field settles what is in it back to the number that was stored, so a
+      // trailing dot or a rounded-away fraction stops claiming otherwise.
+      onBlur={() => setText(String(value))}
+    />
+  );
+};
+
 /* ------------------------------------------------------------------- badge, misc */
 
 const badgeVariants = cva("shrink-0 self-start rounded-full px-2 py-0.5", {
