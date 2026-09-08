@@ -83,31 +83,17 @@ export const catalog = () => pool.catalog();
  * still uses it wrongly: it learns the same rule by making the call, reading the error and trying
  * again, at a round trip a lesson and nothing carried into the next turn.
  *
- * Read off `pool.client()` rather than `pool.state()` because the pool does not report it
- * (cubicecho/agent-mcp-pool#70) — the handshake already put the string in the SDK client, and this
- * asks that client for its copy rather than dialling anything. `client()` *would* connect a server
- * sitting at `idle`, which would make building a system prompt spawn child processes; it cannot
- * here, because this pool is built neither `lazy` nor with an `idleTimeoutMs`, so a server is idle
- * only before the first reconcile and `ready` below is every server this can reach either way.
+ * Synchronous since pool 2.5.0 reports it on `state()` (cubicecho/agent-mcp-pool#70). It went
+ * through `pool.client()` before, which is the call path's own door and dials a server sitting at
+ * `idle` — safe here only because this pool is built neither `lazy` nor with an `idleTimeoutMs`,
+ * which is a long way to reach for a string the handshake had already returned.
  */
-export async function instructions(): Promise<{ label: string; text: string }[]> {
-  const found = await Promise.all(
-    pool
-      .state()
-      .filter((server) => server.status === "ready")
-      .map(async ({ id, label }) => {
-        // A server that dropped between the snapshot and here contributes nothing and is not this
-        // turn's problem: the tools it was offering left the same snapshot, and the turn is about
-        // to be built without either. It is `state()` that owes the operator the error.
-        try {
-          return { label, text: ((await pool.client(id)).getInstructions() ?? "").trim() };
-        } catch {
-          return { label, text: "" };
-        }
-      }),
-  );
-  return found.filter((server) => server.text);
-}
+export const instructions = () =>
+  pool
+    .state()
+    .flatMap(({ label, instructions: text }) =>
+      text?.trim() ? [{ label, text: text.trim() }] : [],
+    );
 
 /** Runs one tool call and returns text for a tool result. */
 export const call = (qualifiedName: string, input: unknown) => pool.call(qualifiedName, input);

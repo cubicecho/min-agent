@@ -389,9 +389,9 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // until it is larger than eager mode's — which is the situation on-demand loading exists to
   // avoid, and which sends the model wandering into unrelated tools.
   const used = new Set<string>();
-  // Fetched once for the turn: a server's instructions are fixed for the life of its connection,
+  // Read once for the turn: a server's instructions are fixed for the life of its connection,
   // and the prompt below is rebuilt on every step.
-  const guidance = instructionsPrompt(await mcp.instructions());
+  const guidance = instructionsPrompt(mcp.instructions());
   // Recomputed each iteration: `loaded` grows as the turn runs, and the catalogue has to stop
   // advertising a tool the moment the model can actually call it.
   //
