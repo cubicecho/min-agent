@@ -296,6 +296,8 @@ export interface ContextBreakdown {
    */
   /** The name-only tool list appended to the system prompt when tools load on demand. */
   catalogue?: number;
+  /** The connected MCP servers' own instructions, appended to the system prompt. */
+  guidance?: number;
   /** The folded head of a long transcript, as the summary that replaced it. */
   summary?: number;
   /** Earlier turns' tool calls and their results — usually the largest thing in a transcript. */
