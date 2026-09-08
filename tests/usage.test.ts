@@ -35,6 +35,7 @@ describe("splitContext", () => {
     // rows are drawn from what is non-zero, not from what is present.
     expect(splitContext(chars, 1000)).toEqual({
       system: 100,
+      guidance: 0,
       catalogue: 0,
       tools: 200,
       summary: 0,
@@ -91,6 +92,21 @@ describe("measureRequest", () => {
     expect(split.system).toBe("You are helpful.".length);
     expect(split.catalogue).toBe("\n\nTools: read, write".length);
     expect(split.tools).toBe(0);
+  });
+
+  it("keeps the servers' instructions out of the catalogue's share", () => {
+    const guidance = "# MCP server instructions\n\n## GitHub\n\nsearch before you read";
+    const split = measureRequest({
+      system: `You are helpful.\n\n${guidance}\n\nTools: read, write`,
+      systemPrompt: "You are helpful.",
+      guidance,
+      tools: [],
+      history: [say("user", "hello")],
+      turnLength: 1,
+    });
+    expect(split.guidance).toBe(guidance.length);
+    // The catalogue is still the unnamed remainder, and the two separators are part of it.
+    expect(split.catalogue).toBe("\n\n".length * 2 + "Tools: read, write".length);
   });
 
   it("splits tool traffic away from what was said, in both halves", () => {

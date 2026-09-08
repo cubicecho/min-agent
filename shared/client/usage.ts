@@ -96,6 +96,7 @@ export function latestStats(messages: StoredMessage[]): TurnStats | null {
  */
 const PARTS = [
   "system",
+  "guidance",
   "catalogue",
   "tools",
   "summary",
@@ -107,6 +108,7 @@ const PARTS = [
 
 export const BREAKDOWN_LABEL: Record<keyof ContextBreakdown, string> = {
   system: "System prompt",
+  guidance: "Server instructions",
   catalogue: "Tool catalogue",
   tools: "Tool schemas",
   summary: "Compacted summary",
@@ -155,13 +157,16 @@ const toolSize = (message: SizableMessage): number => {
  * transcript, what has been said, and — usually the answer — what the tools handed back.
  *
  * `system` is what was actually sent and `systemPrompt` the configured part of it, so the
- * catalogue is the difference rather than a second thing to keep in step. `turnLength` is how
- * many of the trailing messages belong to this turn; `compacted` says whether the first is a
- * summary standing in for the messages it replaced.
+ * catalogue is the difference rather than a second thing to keep in step — less `guidance`, the
+ * other block the caller appends, which is passed rather than differenced because two unnamed
+ * remainders cannot be told apart. `turnLength` is how many of the trailing messages belong to
+ * this turn; `compacted` says whether the first is a summary standing in for the messages it
+ * replaced.
  */
 export function measureRequest(request: {
   system: string;
   systemPrompt: string;
+  guidance?: string;
   tools: unknown[];
   history: SizableMessage[];
   turnLength: number;
@@ -175,9 +180,12 @@ export function measureRequest(request: {
     messages.reduce((total, message) => total + of(message), 0);
   const said = (message: SizableMessage) => Math.max(0, size(message) - toolSize(message));
 
+  const guidance = request.guidance?.length ?? 0;
+
   return {
     system: request.systemPrompt.length,
-    catalogue: Math.max(0, request.system.length - request.systemPrompt.length),
+    guidance,
+    catalogue: Math.max(0, request.system.length - request.systemPrompt.length - guidance),
     tools: request.tools.length ? size(request.tools) : 0,
     summary: request.compacted && history.length ? size(history[0]) : 0,
     history: sum(earlier, said),
