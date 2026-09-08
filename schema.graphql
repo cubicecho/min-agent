@@ -2148,6 +2148,22 @@ type Query {
   """Every configured MCP server, with its live connection state and tools."""
   mcpStatus: [McpServerState!]!
 
+  """
+  The prompts the connected servers offer, for a picker. Empty when none of them does; a server that cannot be listed is omitted rather than failing the query.
+  """
+  mcpPrompts: [McpPrompt!]!
+
+  """
+  One prompt expanded with the given arguments, flattened to the single string a composer draft is. A multi-message prompt comes back with its roles labelled.
+  """
+  mcpPrompt(
+    server: String!
+    name: String!
+
+    """The prompt's arguments by name. Absent is the same as none."""
+    args: JSON
+  ): String!
+
   """Answers only once the settings are loaded and the schema is up."""
   health: Health!
 
@@ -2320,6 +2336,25 @@ enum McpTransport {
 type McpTool {
   name: String!
   description: String!
+}
+
+"""
+A prompt a connected server offers. `server` and `name` together identify it: `name` is unique only within its server.
+"""
+type McpPrompt {
+  server: String!
+  serverLabel: String!
+  name: String!
+  title: String
+  description: String
+  arguments: [McpPromptArgument!]!
+}
+
+"""One blank in a prompt template, as the server declared it."""
+type McpPromptArgument {
+  name: String!
+  description: String
+  required: Boolean!
 }
 
 type Health {
