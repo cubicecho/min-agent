@@ -56,6 +56,13 @@ import {
 } from "./compaction.ts";
 import { endpoint, loadLlmConfig } from "./config.ts";
 import * as mcp from "./mcp.ts";
+import {
+  LIST_RESOURCES,
+  list as listResources,
+  READ_RESOURCE,
+  RESOURCE_TOOLS,
+  read as readResource,
+} from "./mcp-resources.ts";
 import { addMessage, patchMessage, updateSession } from "./store.ts";
 
 /** What the configured endpoint serves, id-sorted, with whatever window it declares. */
@@ -382,6 +389,10 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // definitions it needs as the turn runs; `loaded` grows between iterations.
   const catalog = mcp.catalog();
   const onDemand = config.toolDiscovery === "ondemand" && catalog.length > 0;
+  // Whether `list_resources` and `read_resource` are worth declaring at all. Read once: a server
+  // does not gain the capability mid-turn, and a turn that offers a tool on one step and not the
+  // next is a turn the model cannot plan across.
+  const offersResources = mcp.resourceServers().length > 0;
   const carried = session.loadedTools ?? [];
   const loaded = new Set(carried);
   // Only tools the model actually *called* carry over to the next turn. Everything else it
@@ -477,13 +488,17 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     // rest. Taking the menu away for one step removes the choice, and everything comes back on
     // the step after, so it can still reach for anything it turns out to need.
     const routed = preselected.length > 0 && iteration === 0;
-    const declared = sanitizeTools(
-      routed
+    // Two more schemas, and only where a connected server offers resources at all. Out of the
+    // routed first step for the reason the catalogue is: that step is a shortlist, and anything
+    // else in front of the model there is one more thing to shop for. They come back on the next.
+    const declared = sanitizeTools([
+      ...(!routed && offersResources ? RESOURCE_TOOLS : []),
+      ...(routed
         ? mcp.tools(preselected)
         : onDemand
           ? [LOAD_TOOLS_DEFINITION, ...mcp.tools([...loaded])]
-          : mcp.tools(),
-    );
+          : mcp.tools()),
+    ]);
 
     const system = systemPromptFor(!routed);
     // Hoisted out of `open` because a rejected request is retried below with the same
@@ -706,6 +721,15 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
             for (const name of resolved.matched) loaded.add(name);
             content = loadResult(resolved, catalog);
             isError = resolved.matched.length === 0;
+          } else if (call.name === LIST_RESOURCES) {
+            content = await listResources();
+          } else if (call.name === READ_RESOURCE) {
+            // Named rather than positional in the schema, so an empty one is a model that filled
+            // the call in wrongly — worth saying so, since the uri is the whole of the request.
+            const uri = typeof args.uri === "string" ? args.uri.trim() : "";
+            if (!uri)
+              throw new Error("read_resource needs a uri; pass the one list_resources gave.");
+            content = await readResource(uri);
           } else {
             // A model that skips `load_tools` and calls a catalogued tool straight from its
             // name is right about what it wants; load it and run it rather than erroring.

@@ -95,6 +95,30 @@ export const instructions = () =>
       text?.trim() ? [{ label, text: text.trim() }] : [],
     );
 
+/**
+ * The connected servers that declared a `resources` capability, in configuration order.
+ *
+ * `capabilities` is what the server said in the handshake, reported on `state()` since pool
+ * 2.5.0. Asking a server that never claimed the capability is an error round trip per server per
+ * turn, and — worse for a model — an error it has to read and discount before it can conclude
+ * anything about what is actually available.
+ */
+export const resourceServers = () =>
+  pool
+    .state()
+    .filter((server) => server.status === "ready" && server.capabilities?.resources)
+    .map(({ id, label }) => ({ id, label }));
+
+/**
+ * The connected MCP client for one server.
+ *
+ * The pool's own last mile is shaped for a tool call, and `resources/read` is not one; this is
+ * the door it documents for the rest of the protocol. It bypasses the scope check `call()` makes,
+ * which is a guard against a model reaching a server the run was not scoped to — min-agent does
+ * not scope runs, so there is nothing here for it to bypass.
+ */
+export const client = (id: string) => pool.client(id);
+
 /** Runs one tool call and returns text for a tool result. */
 export const call = (qualifiedName: string, input: unknown) => pool.call(qualifiedName, input);
 
