@@ -527,6 +527,23 @@ export type JsonPathFilter = {
   startsWith?: InputMaybe<Scalars['String']['input']>;
 };
 
+/** A prompt a connected server offers. `server` and `name` together identify it: `name` is unique only within its server. */
+export type McpPrompt = {
+  arguments: Array<McpPromptArgument>;
+  description?: Maybe<Scalars['String']['output']>;
+  name: Scalars['String']['output'];
+  server: Scalars['String']['output'];
+  serverLabel: Scalars['String']['output'];
+  title?: Maybe<Scalars['String']['output']>;
+};
+
+/** One blank in a prompt template, as the server declared it. */
+export type McpPromptArgument = {
+  description?: Maybe<Scalars['String']['output']>;
+  name: Scalars['String']['output'];
+  required: Scalars['Boolean']['output'];
+};
+
 export type McpServer = {
   args: Scalars['JSON']['output'];
   command: Scalars['String']['output'];
@@ -1254,6 +1271,10 @@ export type Query = {
   hasApiKey: Scalars['Boolean']['output'];
   /** Answers only once the settings are loaded and the schema is up. */
   health: Health;
+  /** One prompt expanded with the given arguments, flattened to the single string a composer draft is. A multi-message prompt comes back with its roles labelled. */
+  mcpPrompt: Scalars['String']['output'];
+  /** The prompts the connected servers offer, for a picker. Empty when none of them does; a server that cannot be listed is omitted rather than failing the query. */
+  mcpPrompts: Array<McpPrompt>;
   mcpServer?: Maybe<McpServer>;
   mcpServers: Array<McpServer>;
   mcpServersAggregate: McpServerAggregate;
@@ -1303,6 +1324,13 @@ export type QueryEmbedsGroupByArgs = {
   groupBy: Array<EmbedGroupByColumn>;
   having?: InputMaybe<EmbedHaving>;
   where?: InputMaybe<EmbedFilters>;
+};
+
+
+export type QueryMcpPromptArgs = {
+  args?: InputMaybe<Scalars['JSON']['input']>;
+  name: Scalars['String']['input'];
+  server: Scalars['String']['input'];
 };
 
 
@@ -2222,6 +2250,20 @@ export type ReconnectMcpServerMutationVariables = Exact<{
 
 export type ReconnectMcpServerMutation = { reconnectMcpServer: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown }, tools: Array<{ name: string, description: string }> }> };
 
+export type McpPromptsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type McpPromptsQuery = { mcpPrompts: Array<{ server: string, serverLabel: string, name: string, title?: string | null, description?: string | null, arguments: Array<{ name: string, description?: string | null, required: boolean }> }> };
+
+export type McpPromptQueryVariables = Exact<{
+  server: Scalars['String']['input'];
+  name: Scalars['String']['input'];
+  args?: InputMaybe<Scalars['JSON']['input']>;
+}>;
+
+
+export type McpPromptQuery = { mcpPrompt: string };
+
 export type SessionSummaryFragment = { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, compaction?: unknown | null, messageCount: number };
 
 export type MessageRowFragment = { id: string, idx: number, role: MessagesRoleEnum, content?: unknown | null, reasoningContent?: string | null, toolCalls?: unknown | null, toolCallId?: string | null, stats?: unknown | null, followups?: unknown | null };
@@ -2477,6 +2519,27 @@ export const ReconnectMcpServerDocument = new TypedDocumentString(`
     description
   }
 }`) as unknown as TypedDocumentString<ReconnectMcpServerMutation, ReconnectMcpServerMutationVariables>;
+export const McpPromptsDocument = new TypedDocumentString(`
+    query McpPrompts {
+  mcpPrompts {
+    server
+    serverLabel
+    name
+    title
+    description
+    arguments {
+      name
+      description
+      required
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<McpPromptsQuery, McpPromptsQueryVariables>;
+export const McpPromptDocument = new TypedDocumentString(`
+    query McpPrompt($server: String!, $name: String!, $args: JSON) {
+  mcpPrompt(server: $server, name: $name, args: $args)
+}
+    `) as unknown as TypedDocumentString<McpPromptQuery, McpPromptQueryVariables>;
 export const SessionsDocument = new TypedDocumentString(`
     query Sessions {
   sessions {

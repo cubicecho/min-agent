@@ -4,6 +4,8 @@ import {
   DeleteSessionDocument,
   type EmbedInput,
   EmbedsDocument,
+  McpPromptDocument,
+  McpPromptsDocument,
   type McpServerInput,
   type McpStateFragment,
   McpStatusDocument,
@@ -28,6 +30,7 @@ import type {
   EmbedConfig,
   LlmConfig,
   LlmConfigView,
+  McpPrompt,
   McpServerConfig,
   McpServerState,
   ModelInfo,
@@ -231,6 +234,19 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
 
     reconnectMcp: async (id: string) =>
       (await request(ReconnectMcpServerDocument, { id })).reconnectMcpServer.map(mcpState),
+
+    /** The prompts the connected servers offer, for the composer's picker. */
+    mcpPrompts: async () => (await request(McpPromptsDocument)).mcpPrompts as McpPrompt[],
+
+    /**
+     * One prompt expanded, as text for a composer draft.
+     *
+     * `args` is `JSON` on the wire because a prompt's arguments are whatever the server declared
+     * — the names are not known until it is listed, which is the same reason `env` and `headers`
+     * cross as JSON.
+     */
+    mcpPrompt: async (server: string, name: string, args: Record<string, string>) =>
+      (await request(McpPromptDocument, { server, name, args })).mcpPrompt,
 
     /**
      * The other apps given a place in the sidebar. `mode` is a GraphQL enum, which is a string
