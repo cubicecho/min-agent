@@ -2,7 +2,7 @@ import { Feather } from "@react-native-vector-icons/feather";
 import type { LivePart } from "@shared/client/live.ts";
 import { messageText } from "@shared/client/transcript.ts";
 import { statsLine } from "@shared/client/usage.ts";
-import type { LlmConfig, StoredMessage, TurnStats } from "@shared/types.ts";
+import type { HookNote, LlmConfig, StoredMessage, TurnStats } from "@shared/types.ts";
 import { memo, type ReactNode, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { MarkdownBody } from "@/components/markdown.tsx";
@@ -206,6 +206,31 @@ const Stats = ({ stats, pricing }: { stats: TurnStats; pricing?: LlmConfig["pric
 );
 
 /**
+ * What one of the MCP servers' hooks did for a turn: the context it added, or why it did not.
+ * Quieter than a tool panel, because the model did not ask for any of it.
+ */
+const HookLine = ({ hook }: { hook: HookNote }) => (
+  <View className="flex-row items-center gap-1.5 px-1">
+    <Feather
+      name={hook.error ? "alert-circle" : "zap"}
+      size={11}
+      color={hook.error ? colors.destructive : colors.mutedForeground}
+    />
+    <Text
+      className={cn(
+        "flex-1 text-[11px]",
+        hook.error ? "text-destructive" : "text-muted-foreground/70",
+      )}
+      numberOfLines={1}
+    >
+      {hook.error
+        ? `${hook.source} · ${hook.hookId} failed: ${hook.error}`
+        : `${hook.source} · added ~${hook.tokens ?? 0} tokens`}
+    </Text>
+  </View>
+);
+
+/**
  * Everything already on disk.
  *
  * Split out and memoised because it is the expensive half and the half that does not change:
@@ -322,6 +347,9 @@ const StoredMessages = memo(function StoredMessages({
                 {item.stats ? <Stats stats={item.stats} pricing={pricing} /> : null}
               </View>
             ) : null}
+            {(item.stats?.hooks ?? []).map((hook) => (
+              <HookLine key={`${hook.event}-${hook.source}-${hook.hookId}`} hook={hook} />
+            ))}
             {item.followups?.length && onFollowup && index === messages.length - 1 ? (
               <Followups items={item.followups} onPick={onFollowup} />
             ) : null}
@@ -343,6 +371,7 @@ const LiveRow = memo(function LiveRow({ part }: { part: LivePart }) {
       <ToolCall name={part.name} input={part.input} result={part.result} isError={part.isError} />
     );
   }
+  if (part.kind === "hook") return <HookLine hook={part.hook} />;
   // Thinking that is arriving right now is worth watching; stored thinking is not.
   if (part.kind === "reasoning") return <Reasoning defaultOpen>{part.text}</Reasoning>;
   return (

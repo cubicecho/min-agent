@@ -1,3 +1,4 @@
+import type { HookEvent } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { z } from "zod";
 import type { ModelTask } from "./model-tasks.ts";
@@ -144,6 +145,57 @@ export const modelForTask = (config: LlmConfig, task: ModelTask) =>
 /** What the API hands the browser — never the key itself. */
 export type LlmConfigView = Omit<LlmConfig, "apiKey"> & { hasApiKey: boolean };
 
+/**
+ * The points in a session a server's hooks can be bound to, as the pool names them.
+ *
+ * Written out rather than imported: this module is bundled into the app, and the pool is a
+ * server package that Metro cannot resolve from `mobile/`. The `satisfies` holds the copy to
+ * the pool's type, so an event the pool renames fails the typecheck here.
+ *
+ * `sessionEnd` is accepted so a row copied from kanban_server or task_server saves, but
+ * min-agent never fires it — a chat does not end, it is only left. See `HOOK_EVENTS_FIRED`.
+ */
+export const HOOK_EVENTS = [
+  "sessionStart",
+  "beforeTurn",
+  "afterTurn",
+  "beforeCompact",
+  "sessionEnd",
+  "sessionDelete",
+] as const satisfies readonly HookEvent[];
+
+/** The events min-agent actually fires, which is what the hook editor offers. */
+export const HOOK_EVENTS_FIRED = [
+  "sessionStart",
+  "beforeTurn",
+  "afterTurn",
+  "beforeCompact",
+  "sessionDelete",
+] as const satisfies readonly HookEvent[];
+
+/** The events whose output can reach the model: the only two that run before the request. */
+export const INJECT_EVENTS: readonly HookEvent[] = ["sessionStart", "beforeTurn"];
+
+/**
+ * One of a server's own tools, called by min-agent at a point in a session rather than by the
+ * model. The shape is the pool's `ToolHook`; the rules no shape can say — a placeholder the
+ * event does not offer, `inject` on an event that runs too late — are the pool's
+ * `validateHooks`, which `saveMcpServers` runs.
+ */
+export const toolHookSchema = z.object({
+  id: z.string(),
+  on: z.enum(HOOK_EVENTS),
+  /** The server's own name for the tool, not the `<id>__<tool>` the model sees. */
+  tool: z.string(),
+  /** JSON, with `{{prompt}}`-style placeholders filled from the event. */
+  args: z.unknown().optional(),
+  inject: z.boolean().optional(),
+  maxTokens: z.number().optional(),
+  timeoutMs: z.number().optional(),
+  enabled: z.boolean().optional(),
+});
+export type ToolHookConfig = z.infer<typeof toolHookSchema>;
+
 export const mcpServerSchema = z
   .object({
     id: z
@@ -159,6 +211,9 @@ export const mcpServerSchema = z
     // streamable http
     url: z.string().default(""),
     headers: z.record(z.string(), z.string()).default({}),
+    /** Tools only hooks may call. The model is never offered them and cannot call them. */
+    hiddenTools: z.array(z.string()).default([]),
+    hooks: z.array(toolHookSchema).default([]),
   })
   .superRefine((server, ctx) => {
     if (server.transport === "stdio" && !server.command) {
@@ -329,6 +384,26 @@ export interface TurnStats extends TokenUsage {
   contextLimit?: number;
   /** Where `promptTokens` went, when the server reported enough for the shares to mean anything. */
   breakdown?: ContextBreakdown;
+  /** What the MCP servers' hooks added to the turn or failed at. Quiet successes are not noted. */
+  hooks?: HookNote[];
+}
+
+/**
+ * One hook's line under a turn: the context it added, or why it added nothing.
+ *
+ * Kept on `TurnStats` rather than a column of its own, because it is the same kind of thing — a
+ * fact about how the turn was put together, known only once it ran — and `stats` is already JSON
+ * end to end, from the column to the GraphQL scalar to the client.
+ */
+export interface HookNote {
+  event: HookEvent;
+  /** The server's label, which is what the line names. */
+  source: string;
+  hookId: string;
+  /** Estimated tokens of context it added to the request. */
+  tokens?: number;
+  /** Why it added nothing: it failed, timed out, or had no value for a placeholder. */
+  error?: string;
 }
 
 export interface ModelInfo {
@@ -397,7 +472,8 @@ export interface McpServerState {
   config: McpServerConfig;
   status: McpStatus;
   error?: string;
-  tools: { name: string; description: string }[];
+  /** `hidden` tools are the row's `hiddenTools`: listed here, offered to hooks, never to the model. */
+  tools: { name: string; description: string; hidden: boolean }[];
 }
 
 /** Server-sent events emitted while a turn is running. */
@@ -408,6 +484,9 @@ export type StreamEvent =
   | { type: "tool_result"; toolUseId: string; content: string; isError: boolean }
   | { type: "title"; title: string }
   | { type: "stats"; stats: TurnStats }
+  // A hook that injected context or failed. The before-turn ones arrive ahead of the first
+  // token; an afterTurn failure can arrive after `done`, like the follow-up chips.
+  | { type: "hook"; hook: HookNote }
   | { type: "done" }
   // Follow-up chips are written after `done`, so a turn that produces them keeps the stream
   // open a moment past the answer. A client that ignores this event still gets them on the

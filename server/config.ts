@@ -1,4 +1,5 @@
 import type { Endpoint } from "@cubicecho/agent-core";
+import { validateHooks } from "@cubicecho/agent-mcp-pool";
 import { asc, eq } from "drizzle-orm";
 import {
   type EmbedConfig,
@@ -133,6 +134,25 @@ export const endpoint = (config = cached): Endpoint => ({
   requestTimeoutSeconds: 0,
 });
 
+/**
+ * What a server list needs beyond each row's shape: unique ids, and hooks the pool will run.
+ *
+ * `validateHooks` is the pool's, and it runs here rather than in `mcpServerSchema` because that
+ * schema is bundled into the app, which cannot load the pool. What it catches — a `{{reply}}` on
+ * `beforeTurn`, where there is no reply yet — would otherwise be a hook skipped on every turn
+ * with nothing but a server log to say why. Every problem goes back at once, one per line, so
+ * fixing one does not reveal the next on the following save.
+ */
+export function assertMcpServers(list: McpServerConfig[]) {
+  if (new Set(list.map((server) => server.id)).size !== list.length) {
+    throw new UserError("duplicate server id");
+  }
+  const problems = list.flatMap((server) =>
+    validateHooks(server.hooks).map((problem) => `${server.id}: ${problem}`),
+  );
+  if (problems.length) throw new UserError(problems.join("\n"));
+}
+
 export async function loadMcpServers(): Promise<McpServerConfig[]> {
   const rows = await db.select().from(mcpServers).orderBy(asc(mcpServers.position));
   return rows.map((row) => mcpServerSchema.parse(row));
@@ -147,9 +167,7 @@ export async function loadMcpServers(): Promise<McpServerConfig[]> {
  */
 export async function saveMcpServers(list: McpServerConfig[]): Promise<McpServerConfig[]> {
   const parsed = list.map((server) => mcpServerSchema.parse(server));
-  if (new Set(parsed.map((server) => server.id)).size !== parsed.length) {
-    throw new UserError("duplicate server id");
-  }
+  assertMcpServers(parsed);
 
   await db.transaction(async (tx) => {
     await tx.delete(mcpServers);

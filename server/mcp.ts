@@ -1,4 +1,9 @@
-import { McpPool } from "@cubicecho/agent-mcp-pool";
+import {
+  type HookContext,
+  type HookEvent,
+  McpPool,
+  type RunHooksOptions,
+} from "@cubicecho/agent-mcp-pool";
 import type { McpServerConfig, McpServerState } from "../shared/types.ts";
 import { VERSION } from "./paths.ts";
 
@@ -119,8 +124,20 @@ export const resourceServers = () =>
  */
 export const client = (id: string) => pool.client(id);
 
-/** Runs one tool call and returns text for a tool result. */
+/**
+ * Runs one tool call and returns text for a tool result.
+ *
+ * This is the model's door, so it never passes `hidden`: a row's `hiddenTools` are refused here
+ * as tools that do not exist, which is the whole of how they are kept from the model.
+ */
 export const call = (qualifiedName: string, input: unknown) => pool.call(qualifiedName, input);
+
+/**
+ * Runs every enabled server's hooks for one event. Never rejects; see `server/hooks.ts`, which
+ * is the only caller.
+ */
+export const runHooks = (event: HookEvent, context: HookContext, options?: RunHooksOptions) =>
+  pool.runHooks(event, context, options);
 
 /**
  * Closes every connection, for a process on its way out.

@@ -13,6 +13,7 @@ subscription Turn($sessionId: String!, $prompt: String!, $model: String) {
     isError
     title
     stats
+    hook
     items
     message
   }

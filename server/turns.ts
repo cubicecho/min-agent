@@ -1,5 +1,5 @@
 import { errorMessage } from "@cubicecho/agent-core";
-import type { StreamEvent, TurnStats } from "../shared/types.ts";
+import type { HookNote, StreamEvent, TurnStats } from "../shared/types.ts";
 import { runTurn } from "./agent.ts";
 import { getSession } from "./store.ts";
 
@@ -26,6 +26,7 @@ export interface TurnEvent {
   stats?: TurnStats;
   items?: string[];
   message?: string;
+  hook?: HookNote;
 }
 
 const flatten = (event: StreamEvent, seq: number): TurnEvent => ({ seq, ...event });

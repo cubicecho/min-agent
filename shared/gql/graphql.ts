@@ -535,6 +535,8 @@ export type McpServer = {
   enabled: Scalars['Boolean']['output'];
   env: Scalars['JSON']['output'];
   headers: Scalars['JSON']['output'];
+  hiddenTools: Scalars['JSON']['output'];
+  hooks: Scalars['JSON']['output'];
   id: Scalars['String']['output'];
   label: Scalars['String']['output'];
   position: Scalars['Int']['output'];
@@ -567,6 +569,9 @@ export type McpServerConfig = {
   enabled: Scalars['Boolean']['output'];
   env: Scalars['JSON']['output'];
   headers: Scalars['JSON']['output'];
+  hiddenTools: Array<Scalars['String']['output']>;
+  /** The server's own tools, called at points in a session. See `ToolHookConfig`. */
+  hooks: Scalars['JSON']['output'];
   id: Scalars['String']['output'];
   label: Scalars['String']['output'];
   transport: McpTransport;
@@ -597,6 +602,8 @@ export type McpServerCountNonNullAggregate = {
   enabled: Scalars['Int']['output'];
   env: Scalars['Int']['output'];
   headers: Scalars['Int']['output'];
+  hiddenTools: Scalars['Int']['output'];
+  hooks: Scalars['Int']['output'];
   id: Scalars['Int']['output'];
   label: Scalars['Int']['output'];
   position: Scalars['Int']['output'];
@@ -610,6 +617,8 @@ export type McpServerCountNonNullHaving = {
   enabled?: InputMaybe<AggregateNumberFilter>;
   env?: InputMaybe<AggregateNumberFilter>;
   headers?: InputMaybe<AggregateNumberFilter>;
+  hiddenTools?: InputMaybe<AggregateNumberFilter>;
+  hooks?: InputMaybe<AggregateNumberFilter>;
   id?: InputMaybe<AggregateNumberFilter>;
   label?: InputMaybe<AggregateNumberFilter>;
   position?: InputMaybe<AggregateNumberFilter>;
@@ -624,6 +633,8 @@ export enum McpServerDistinctColumn {
   Enabled = 'enabled',
   Env = 'env',
   Headers = 'headers',
+  HiddenTools = 'hiddenTools',
+  Hooks = 'hooks',
   Id = 'id',
   Label = 'label',
   Position = 'position',
@@ -643,6 +654,8 @@ export type McpServerFilters = {
   enabled?: InputMaybe<BooleanFilter>;
   env?: InputMaybe<JsonFilter>;
   headers?: InputMaybe<JsonFilter>;
+  hiddenTools?: InputMaybe<JsonFilter>;
+  hooks?: InputMaybe<JsonFilter>;
   id?: InputMaybe<StringFilter>;
   label?: InputMaybe<StringFilter>;
   position?: InputMaybe<IntFilter>;
@@ -701,6 +714,8 @@ export type McpServerInput = {
   enabled?: InputMaybe<Scalars['Boolean']['input']>;
   env?: InputMaybe<Scalars['JSON']['input']>;
   headers?: InputMaybe<Scalars['JSON']['input']>;
+  hiddenTools?: InputMaybe<Array<Scalars['String']['input']>>;
+  hooks?: InputMaybe<Scalars['JSON']['input']>;
   id: Scalars['String']['input'];
   label?: InputMaybe<Scalars['String']['input']>;
   transport?: InputMaybe<McpTransport>;
@@ -739,6 +754,8 @@ export type McpServerOrderBy = {
   enabled?: InputMaybe<InnerOrder>;
   env?: InputMaybe<InnerOrder>;
   headers?: InputMaybe<InnerOrder>;
+  hiddenTools?: InputMaybe<InnerOrder>;
+  hooks?: InputMaybe<InnerOrder>;
   id?: InputMaybe<InnerOrder>;
   label?: InputMaybe<InnerOrder>;
   position?: InputMaybe<InnerOrder>;
@@ -819,6 +836,8 @@ export type McpServersTransportEnumFilter = {
 
 export type McpTool = {
   description: Scalars['String']['output'];
+  /** In the row's `hiddenTools`: callable by its hooks, never offered to the model. */
+  hidden: Scalars['Boolean']['output'];
   name: Scalars['String']['output'];
 };
 
@@ -2125,6 +2144,8 @@ export type SubscriptionTurnArgs = {
 /** Something a turn did while it was running — a token, a tool call, its final cost. `type` discriminates; the fields that do not belong to it are null. */
 export type TurnEvent = {
   content?: Maybe<Scalars['String']['output']>;
+  /** A `HookNote`: what one hook added, or why not. */
+  hook?: Maybe<Scalars['JSON']['output']>;
   id?: Maybe<Scalars['String']['output']>;
   input?: Maybe<Scalars['String']['output']>;
   isError?: Maybe<Scalars['Boolean']['output']>;
@@ -2137,7 +2158,7 @@ export type TurnEvent = {
   text?: Maybe<Scalars['String']['output']>;
   title?: Maybe<Scalars['String']['output']>;
   toolUseId?: Maybe<Scalars['String']['output']>;
-  /** reasoning_delta | text_delta | tool_use | tool_result | title | stats | done | followups | error. */
+  /** reasoning_delta | text_delta | tool_use | tool_result | title | stats | hook | done | followups | error. */
   type: Scalars['String']['output'];
 };
 
@@ -2201,26 +2222,26 @@ export type SaveEmbedsMutationVariables = Exact<{
 
 export type SaveEmbedsMutation = { saveEmbeds: Array<{ id: string, label: string, url: string, icon: string, mode: EmbedsModeEnum, enabled: boolean }> };
 
-export type McpStateFragment = { status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown }, tools: Array<{ name: string, description: string }> };
+export type McpStateFragment = { status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> };
 
 export type McpStatusQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type McpStatusQuery = { mcpStatus: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown }, tools: Array<{ name: string, description: string }> }> };
+export type McpStatusQuery = { mcpStatus: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
 
 export type SaveMcpServersMutationVariables = Exact<{
   servers: Array<McpServerInput> | McpServerInput;
 }>;
 
 
-export type SaveMcpServersMutation = { saveMcpServers: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown }, tools: Array<{ name: string, description: string }> }> };
+export type SaveMcpServersMutation = { saveMcpServers: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
 
 export type ReconnectMcpServerMutationVariables = Exact<{
   id: Scalars['String']['input'];
 }>;
 
 
-export type ReconnectMcpServerMutation = { reconnectMcpServer: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown }, tools: Array<{ name: string, description: string }> }> };
+export type ReconnectMcpServerMutation = { reconnectMcpServer: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
 
 export type SessionSummaryFragment = { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, compaction?: unknown | null, messageCount: number };
 
@@ -2297,7 +2318,7 @@ export type TurnSubscriptionVariables = Exact<{
 }>;
 
 
-export type TurnSubscription = { turn: { seq: number, type: string, text?: string | null, id?: string | null, name?: string | null, input?: string | null, toolUseId?: string | null, content?: string | null, isError?: boolean | null, title?: string | null, stats?: unknown | null, items?: Array<string> | null, message?: string | null } };
+export type TurnSubscription = { turn: { seq: number, type: string, text?: string | null, id?: string | null, name?: string | null, input?: string | null, toolUseId?: string | null, content?: string | null, isError?: boolean | null, title?: string | null, stats?: unknown | null, hook?: unknown | null, items?: Array<string> | null, message?: string | null } };
 
 export class TypedDocumentString<TResult, TVariables>
   extends String
@@ -2339,12 +2360,15 @@ export const McpStateFragmentDoc = new TypedDocumentString(`
     env
     url
     headers
+    hiddenTools
+    hooks
   }
   status
   error
   tools {
     name
     description
+    hidden
   }
 }
     `, {"fragmentName":"McpState"}) as unknown as TypedDocumentString<McpStateFragment, unknown>;
@@ -2419,12 +2443,15 @@ export const McpStatusDocument = new TypedDocumentString(`
     env
     url
     headers
+    hiddenTools
+    hooks
   }
   status
   error
   tools {
     name
     description
+    hidden
   }
 }`) as unknown as TypedDocumentString<McpStatusQuery, McpStatusQueryVariables>;
 export const SaveMcpServersDocument = new TypedDocumentString(`
@@ -2444,12 +2471,15 @@ export const SaveMcpServersDocument = new TypedDocumentString(`
     env
     url
     headers
+    hiddenTools
+    hooks
   }
   status
   error
   tools {
     name
     description
+    hidden
   }
 }`) as unknown as TypedDocumentString<SaveMcpServersMutation, SaveMcpServersMutationVariables>;
 export const ReconnectMcpServerDocument = new TypedDocumentString(`
@@ -2469,12 +2499,15 @@ export const ReconnectMcpServerDocument = new TypedDocumentString(`
     env
     url
     headers
+    hiddenTools
+    hooks
   }
   status
   error
   tools {
     name
     description
+    hidden
   }
 }`) as unknown as TypedDocumentString<ReconnectMcpServerMutation, ReconnectMcpServerMutationVariables>;
 export const SessionsDocument = new TypedDocumentString(`
@@ -2628,6 +2661,7 @@ export const TurnDocument = new TypedDocumentString(`
     isError
     title
     stats
+    hook
     items
     message
   }
