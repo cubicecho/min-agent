@@ -328,6 +328,12 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
           // not the chat is still on screen: it is the stored transcript being refreshed.
           if (event.type === "followups")
             void queryClient.invalidateQueries({ queryKey: ["session", turnId] });
+          // The same goes for a hook that reports after the answer, once the turn has settled
+          // and there is no live tail left to put it on: the stored turn has it.
+          if (event.type === "hook" && settled) {
+            void queryClient.invalidateQueries({ queryKey: ["session", turnId] });
+            return;
+          }
           if (event.type === "done") {
             if (config.data?.speakReplies && showing.current === turnId)
               read = speech.speak(answer);

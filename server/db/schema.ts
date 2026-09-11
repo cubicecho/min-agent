@@ -14,6 +14,7 @@ import type {
   StoredMessage,
   TokenUsage,
   ToolCall,
+  ToolHookConfig,
   TurnStats,
 } from "../../shared/types.ts";
 
@@ -118,6 +119,10 @@ export const mcpServers = table("mcp_servers", {
   env: jsonb().$type<Record<string, string>>().notNull().default({}),
   url: text().notNull().default(""),
   headers: jsonb().$type<Record<string, string>>().notNull().default({}),
+  /** Tools only this row's hooks may call; the model is never offered them. */
+  hiddenTools: jsonb().$type<string[]>().notNull().default([]),
+  /** This server's own tools, called by min-agent at points in a session. See `ToolHookConfig`. */
+  hooks: jsonb().$type<ToolHookConfig[]>().notNull().default([]),
   /** The order the UI lists them in, which is the order they were added. */
   position: integer().notNull().default(0),
 });

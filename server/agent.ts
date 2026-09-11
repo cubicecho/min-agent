@@ -55,6 +55,15 @@ import {
   transcriptFor,
 } from "./compaction.ts";
 import { endpoint, loadLlmConfig } from "./config.ts";
+import {
+  gather,
+  HOST,
+  notify,
+  requestIndex,
+  turnIndex,
+  turnMessages,
+  withContext,
+} from "./hooks.ts";
 import * as mcp from "./mcp.ts";
 import {
   LIST_RESOURCES,
@@ -119,13 +128,24 @@ async function compact(
   const previous = session.compaction
     ? `Notes so far:\n${session.compaction.summary}\n\nContinue them with this exchange:\n\n`
     : "";
-  const summary = await ask(
-    endpoint(config),
-    model,
-    SUMMARY_PROMPT,
-    previous + transcriptFor(session.messages, from, through),
-    { maxTokens: 1024, signal, onNotice: notice },
-  );
+  // A memory server gets what is about to be folded away while the summary is written. Beside
+  // it, not ahead of it: nothing is deleted, only what is sent changes, so filing it is not a
+  // rescue worth making the turn wait for.
+  const [summary] = await Promise.all([
+    ask(
+      endpoint(config),
+      model,
+      SUMMARY_PROMPT,
+      previous + transcriptFor(session.messages, from, through),
+      { maxTokens: 1024, signal, onNotice: notice },
+    ),
+    notify("beforeCompact", {
+      session: { id: session.id },
+      host: HOST,
+      compacting: turnMessages(session, from, through),
+      range: { from, through },
+    }),
+  ]);
   if (!summary) return "";
 
   session.compaction = { summary, through, at: new Date().toISOString() };
@@ -415,12 +435,22 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       .join("\n\n")
       .trim();
 
-  // Two small-model calls have to land before the first token is asked for, and neither depends
-  // on the other, so they overlap. Compaction goes before the user's message is appended, so the
-  // summary covers settled history and the question that prompted it stays verbatim.
+  // What the servers' hooks are told about this turn. The index is counted before the question
+  // is appended, so it is this turn's own.
+  const hookContext = {
+    session: { id: session.id },
+    host: HOST,
+    prompt,
+    turn: { index: turnIndex(session.messages) },
+  };
+
+  // Two small-model calls and the hooks have to land before the first token is asked for, and
+  // none depends on another, so they overlap. Compaction goes before the user's message is
+  // appended, so the summary covers settled history and the question that prompted it stays
+  // verbatim. A session's first turn is also its start.
   const compactionModel = contextLimit ? modelForTask(config, "compaction") : "";
   const preselectModel = onDemand ? modelForTask(config, "toolSelect") : "";
-  const [, preselected = []] = await Promise.all([
+  const [, preselected = [], gathered] = await Promise.all([
     compactionModel
       ? tryAsk(
           "compaction",
@@ -433,6 +463,11 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
           onNotice: notice,
         })
       : undefined,
+    gather(
+      session.messages.length === 0 ? ["sessionStart", "beforeTurn"] : ["beforeTurn"],
+      hookContext,
+      { signal, emit },
+    ),
   ]);
 
   session.model = chosenModel;
@@ -503,7 +538,13 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     const system = systemPromptFor(!routed);
     // Hoisted out of `open` because a rejected request is retried below with the same
     // transcript, and because the split measured from it has to be the one that was sent.
-    const history = forApi(session);
+    // The hooks' context rides on this turn's question for every step of the turn, and is
+    // counted as the turn's own input, which it is.
+    const history = withContext(
+      forApi(session),
+      requestIndex(turnStart, session.compaction),
+      gathered.context,
+    );
 
     // The tail of the request is this turn's own messages: the question, and whatever the
     // model has done about it so far. `forApi` only ever replaces the head with a summary,
@@ -672,6 +713,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
           : {}),
         ...(contextLimit ? { contextLimit } : {}),
         ...(breakdown ? { breakdown } : {}),
+        ...(gathered.notes.length ? { hooks: gathered.notes } : {}),
       };
       assistant.stats = stats;
       if (onDemand) session.loadedTools = carryOver(carried, used);
@@ -685,11 +727,40 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       // home.
       emit({ type: "done" });
 
+      // Both of these land after the answer and write to the same row. Each write carries
+      // everything known at the moment it runs, and they are chained, so the one that finishes
+      // second cannot put back a row without the first one's change.
+      let writing = Promise.resolve();
+      const persist = () => {
+        writing = writing.then(() =>
+          patchMessage(assistantRow, {
+            stats,
+            ...(assistant.followups ? { followups: assistant.followups } : {}),
+          }),
+        );
+        return writing;
+      };
+
+      const body = typeof assistant.content === "string" ? assistant.content : "";
+      // The turn is answered, so the servers are told about it. Only a failure is noted, and
+      // it is stored with the turn's stats so the line is still there after a reload. Said
+      // once it is stored, as the chips are: the turn has settled on the client by now, and
+      // what it does with the event is read the stored message back.
+      const remembered = notify("afterTurn", {
+        ...hookContext,
+        reply: body,
+        turn: { ...hookContext.turn, messages: turnMessages(session, turnStart) },
+      }).then(async (notes) => {
+        if (!notes.length) return;
+        stats.hooks = [...(stats.hooks ?? []), ...notes];
+        await persist();
+        for (const hook of notes) emit({ type: "hook", hook });
+      });
+
       // After the answer, not before: it is on screen and being read by the time this runs, so
       // the second it costs is spent where nobody is waiting on it. The chips are read back off
       // the stored message too, so they survive a reload without a second delivery path.
       const followupModel = modelForTask(config, "followups");
-      const body = typeof assistant.content === "string" ? assistant.content : "";
       if (followupModel && body) {
         const followups = await tryAsk(
           "followups",
@@ -698,10 +769,11 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         );
         if (followups?.length) {
           assistant.followups = followups;
-          await patchMessage(assistantRow, { stats, followups });
+          await persist();
           emit({ type: "followups", items: followups });
         }
       }
+      await remembered;
       return stats;
     }
 

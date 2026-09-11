@@ -26,6 +26,7 @@ import {
 import { db } from "../db/client.ts";
 import { settings } from "../db/schema.ts";
 import { surfaced } from "../errors.ts";
+import { sessionDeleted } from "../hooks.ts";
 import * as mcp from "../mcp.ts";
 import * as mcpPrompts from "../mcp-prompts.ts";
 import { truncateSession } from "../store.ts";
@@ -92,6 +93,16 @@ const { entities } = buildSchema(db, {
         await refreshLlmConfig(tx);
       },
     },
+    // Deleting a chat is the generated `deleteSessionSingle`, which never passes through
+    // `store.ts`, so this is the one place that sees it happen. `rows` are the deleted rows as
+    // the database returned them. Not awaited: a memory server forgetting a session is its own
+    // business, and a slow one must not hold the sidebar's delete open.
+    sessions: {
+      after: ({ operation, rows }) => {
+        if (operation !== "delete") return;
+        for (const row of rows as { id: string }[]) void sessionDeleted(row.id);
+      },
+    },
   },
 });
 
@@ -100,6 +111,10 @@ const McpToolType = new GraphQLObjectType({
   fields: {
     name: { type: new GraphQLNonNull(GraphQLString) },
     description: { type: new GraphQLNonNull(GraphQLString) },
+    hidden: {
+      type: new GraphQLNonNull(GraphQLBoolean),
+      description: "In the row's `hiddenTools`: callable by its hooks, never offered to the model.",
+    },
   },
 });
 
@@ -121,6 +136,11 @@ const McpServerConfigType = new GraphQLObjectType({
     env: { type: new GraphQLNonNull(GraphQLJSON) },
     url: { type: new GraphQLNonNull(GraphQLString) },
     headers: { type: new GraphQLNonNull(GraphQLJSON) },
+    hiddenTools: { type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(GraphQLString))) },
+    hooks: {
+      type: new GraphQLNonNull(GraphQLJSON),
+      description: "The server's own tools, called at points in a session. See `ToolHookConfig`.",
+    },
   },
 });
 
@@ -136,6 +156,8 @@ const McpServerInput = new GraphQLInputObjectType({
     env: { type: GraphQLJSON },
     url: { type: GraphQLString },
     headers: { type: GraphQLJSON },
+    hiddenTools: { type: new GraphQLList(new GraphQLNonNull(GraphQLString)) },
+    hooks: { type: GraphQLJSON },
   },
 });
 
@@ -214,8 +236,8 @@ const TurnEventType = new GraphQLObjectType({
     type: {
       type: new GraphQLNonNull(GraphQLString),
       description:
-        "reasoning_delta | text_delta | tool_use | tool_result | title | stats | done | " +
-        "followups | error.",
+        "reasoning_delta | text_delta | tool_use | tool_result | title | stats | hook | " +
+        "done | followups | error.",
     },
     text: { type: GraphQLString },
     id: { type: GraphQLString },
@@ -226,6 +248,7 @@ const TurnEventType = new GraphQLObjectType({
     isError: { type: GraphQLBoolean },
     title: { type: GraphQLString },
     stats: { type: GraphQLJSON },
+    hook: { type: GraphQLJSON, description: "A `HookNote`: what one hook added, or why not." },
     items: { type: new GraphQLList(new GraphQLNonNull(GraphQLString)) },
     message: { type: GraphQLString },
   },

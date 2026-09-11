@@ -1,5 +1,12 @@
 import { Feather } from "@react-native-vector-icons/feather";
-import type { McpServerConfig, McpServerState, McpStatus } from "@shared/types.ts";
+import {
+  HOOK_EVENTS_FIRED,
+  INJECT_EVENTS,
+  type McpServerConfig,
+  type McpServerState,
+  type McpStatus,
+  type ToolHookConfig,
+} from "@shared/types.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
@@ -13,9 +20,11 @@ import {
   Input,
   Loading,
   Muted,
+  NumberInput,
   Screen,
   Select,
   Switch,
+  Textarea,
 } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
 import { colors } from "@/lib/theme.ts";
@@ -81,8 +90,151 @@ const blank = (taken: McpServerConfig[]): McpServerConfig => {
     env: {},
     url: "",
     headers: {},
+    hiddenTools: [],
+    hooks: [],
   };
 };
+
+const EVENT_OPTIONS = HOOK_EVENTS_FIRED.map((event) => ({ label: event, value: event }));
+
+/** A hook's arguments as they are typed: pretty JSON, or nothing for a tool that takes none. */
+const argsText = (args: unknown) => (args === undefined ? "" : JSON.stringify(args, null, 2));
+
+/** The next `hook-N` this row has not used, for the same reason `blank` counts servers. */
+const nextHookId = (hooks: ToolHookConfig[]) => {
+  let n = hooks.length + 1;
+  while (hooks.some((hook) => hook.id === `hook-${n}`)) n += 1;
+  return `hook-${n}`;
+};
+
+/**
+ * One hook: when it runs, which of the server's tools it calls, and with what.
+ *
+ * The arguments are typed as JSON and kept as text here, because text on its way to being
+ * valid JSON is most of what is in the box while someone is typing it. Only a parse that
+ * works reaches the draft, and one that does not is reported up so that Save can wait.
+ */
+function HookEditor({
+  hook,
+  tools,
+  onChange,
+  onRemove,
+  onBroken,
+}: {
+  hook: ToolHookConfig;
+  /** The server's tools, when it is connected. A server that is not yet is typed by hand. */
+  tools: string[];
+  onChange: (hook: ToolHookConfig) => void;
+  onRemove: () => void;
+  onBroken: (broken: boolean) => void;
+}) {
+  const [text, setText] = useState(() => argsText(hook.args));
+  const [problem, setProblem] = useState("");
+  const injects = INJECT_EVENTS.includes(hook.on);
+  const update = (patch: Partial<ToolHookConfig>) => onChange({ ...hook, ...patch });
+
+  const typeArgs = (value: string) => {
+    setText(value);
+    try {
+      const args = value.trim() ? JSON.parse(value) : undefined;
+      setProblem("");
+      onBroken(false);
+      update({ args });
+    } catch (error) {
+      setProblem((error as Error).message);
+      onBroken(true);
+    }
+  };
+
+  return (
+    <View className="gap-2 rounded-lg border border-border bg-card p-3">
+      <View className="flex-row items-center gap-2">
+        <View className="flex-1">
+          <Input
+            value={hook.id}
+            onChangeText={(id) => update({ id })}
+            autoCapitalize="none"
+            autoCorrect={false}
+            accessibilityLabel="Hook id"
+          />
+        </View>
+        <Switch value={hook.enabled !== false} onValueChange={(enabled) => update({ enabled })} />
+        <Button
+          variant="ghost"
+          size="icon"
+          icon="x"
+          accessibilityLabel={`Remove hook ${hook.id}`}
+          onPress={onRemove}
+        />
+      </View>
+      <Field label="When">
+        <Select
+          value={hook.on}
+          options={EVENT_OPTIONS}
+          onChange={(on) => {
+            const event = on as ToolHookConfig["on"];
+            // Context can only be added ahead of a request, so it goes when the hook moves off one.
+            update(
+              INJECT_EVENTS.includes(event)
+                ? { on: event }
+                : { on: event, inject: undefined, maxTokens: undefined },
+            );
+          }}
+        />
+      </Field>
+      <Field label="Tool">
+        {tools.length ? (
+          <Select
+            value={hook.tool}
+            options={tools.map((tool) => ({ label: tool, value: tool }))}
+            onChange={(tool) => update({ tool })}
+          />
+        ) : (
+          <Input
+            value={hook.tool}
+            onChangeText={(tool) => update({ tool })}
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="The tool's own name, without the id prefix"
+          />
+        )}
+      </Field>
+      <Field
+        label="Arguments"
+        hint="JSON. {{prompt}}, {{reply}}, {{session.id}}, {{turn.messages}}, {{compacting}} fill in at run time."
+      >
+        <Textarea
+          value={text}
+          onChangeText={typeArgs}
+          rows={4}
+          autoCapitalize="none"
+          autoCorrect={false}
+          className="font-mono text-xs"
+        />
+      </Field>
+      {problem ? <Text className="text-xs text-destructive">{problem}</Text> : null}
+      {injects ? (
+        <>
+          <View className="flex-row items-center gap-3">
+            <Switch value={Boolean(hook.inject)} onValueChange={(inject) => update({ inject })} />
+            <Text className="text-sm text-popover-foreground">
+              Add what it returns to the request
+            </Text>
+          </View>
+          {hook.inject ? (
+            <Field label="At most this many tokens" hint="1000 when left alone.">
+              <NumberInput
+                value={hook.maxTokens ?? 1000}
+                onChangeValue={(maxTokens) => update({ maxTokens })}
+                integer
+              />
+            </Field>
+          ) : null}
+        </>
+      ) : null}
+    </View>
+  );
+}
 
 /** Which row the dialog is editing: an index into the list, or a new row at the end. */
 type Editing = { index: number | null; value: McpServerConfig };
@@ -130,6 +282,7 @@ function Row({
           </Text>
           <StatusBadge status={status} />
           {tools.length ? <Muted>{tools.length} tool(s)</Muted> : null}
+          {config.hooks.length ? <Muted>{config.hooks.length} hook(s)</Muted> : null}
         </View>
         <Text
           className={`text-xs ${status === "error" ? "text-destructive" : "text-muted-foreground"}`}
@@ -184,6 +337,11 @@ function Editor({
   const [draft, setDraft] = useState(initial);
   const [armed, setArmed] = useState(false);
   const existing = Boolean(state);
+  // A key per hook that outlives edits to its id, and which of them hold JSON that does not
+  // parse yet. Save waits on the second: the draft still has the last arguments that did.
+  const [hookKeys, setHookKeys] = useState(() => initial.hooks.map((_, i) => i));
+  const [broken, setBroken] = useState<ReadonlySet<number>>(new Set());
+  const toolNames = state?.tools.map((tool) => tool.name) ?? [];
 
   // Puts a dot on the tab while there is a server typed and not yet saved behind it.
   useReportDirty("mcp", JSON.stringify(draft) !== JSON.stringify(initial));
@@ -195,7 +353,46 @@ function Editor({
     return () => clearTimeout(timer);
   }, [armed]);
 
-  const update = (patch: Partial<McpServerConfig>) => setDraft({ ...draft, ...patch });
+  // Functional, because a hook's editor reports a parse and a change in the same breath.
+  const update = (patch: Partial<McpServerConfig>) => setDraft((prev) => ({ ...prev, ...patch }));
+
+  const toggleHidden = (name: string, hidden: boolean) =>
+    update({
+      hiddenTools: hidden
+        ? [...draft.hiddenTools, name]
+        : draft.hiddenTools.filter((tool) => tool !== name),
+    });
+
+  const setHook = (index: number, hook: ToolHookConfig) =>
+    setDraft((prev) => ({
+      ...prev,
+      hooks: prev.hooks.map((item, i) => (i === index ? hook : item)),
+    }));
+
+  const markBroken = (key: number, isBroken: boolean) =>
+    setBroken((prev) => {
+      if (prev.has(key) === isBroken) return prev;
+      const next = new Set(prev);
+      if (isBroken) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+
+  const addHook = () => {
+    setHookKeys((keys) => [...keys, Math.max(-1, ...keys) + 1]);
+    update({
+      hooks: [
+        ...draft.hooks,
+        { id: nextHookId(draft.hooks), on: "beforeTurn", tool: toolNames[0] ?? "" },
+      ],
+    });
+  };
+
+  const removeHook = (index: number) => {
+    markBroken(hookKeys[index], false);
+    setHookKeys((keys) => keys.filter((_, i) => i !== index));
+    update({ hooks: draft.hooks.filter((_, i) => i !== index) });
+  };
 
   return (
     <Dialog
@@ -222,7 +419,7 @@ function Editor({
           <Button variant="outline" onPress={onCancel}>
             Cancel
           </Button>
-          <Button icon="save" busy={busy} onPress={() => onSave(draft)}>
+          <Button icon="save" busy={busy} disabled={broken.size > 0} onPress={() => onSave(draft)}>
             Save
           </Button>
         </>
@@ -246,8 +443,27 @@ function Editor({
             </Button>
           </View>
           {state.error ? <Text className="text-xs text-destructive">{state.error}</Text> : null}
+          {/*
+            Off hides a tool from the model and leaves it to this server's hooks: a memory
+            server's `remember` is for the hooks to call after every turn, not for the model
+            to decide on.
+          */}
+          {state.tools.map((tool) => (
+            <View key={tool.name} className="flex-row items-center gap-3">
+              <Switch
+                value={!draft.hiddenTools.includes(tool.name)}
+                onValueChange={(offered) => toggleHidden(tool.name, !offered)}
+              />
+              <Text
+                className={`flex-1 text-xs ${draft.hiddenTools.includes(tool.name) ? "text-muted-foreground line-through" : "text-card-foreground"}`}
+                numberOfLines={1}
+              >
+                {tool.name}
+              </Text>
+            </View>
+          ))}
           {state.tools.length ? (
-            <Muted>{state.tools.map((tool) => tool.name).join(", ")}</Muted>
+            <Muted>Switched off: only this server's hooks can call it.</Muted>
           ) : null}
         </View>
       ) : null}
@@ -318,6 +534,29 @@ function Editor({
       <View className="flex-row items-center gap-3">
         <Switch value={draft.enabled} onValueChange={(enabled) => update({ enabled })} />
         <Text className="text-sm text-popover-foreground">Connect to it</Text>
+      </View>
+
+      <View className="gap-2">
+        <Text className="text-sm font-medium text-foreground">Hooks</Text>
+        <Muted>
+          This server's tools, called by min-agent at points in a chat rather than by the model. A
+          hook that fails is noted under the reply and never stops the turn.
+        </Muted>
+        {draft.hooks.map((hook, index) => (
+          <HookEditor
+            key={hookKeys[index]}
+            hook={hook}
+            tools={toolNames}
+            onChange={(next) => setHook(index, next)}
+            onRemove={() => removeHook(index)}
+            onBroken={(isBroken) => markBroken(hookKeys[index], isBroken)}
+          />
+        ))}
+        <View className="flex-row">
+          <Button variant="outline" size="sm" icon="plus" onPress={addHook}>
+            Add hook
+          </Button>
+        </View>
       </View>
 
       <ErrorNote error={error} />

@@ -199,6 +199,8 @@ type McpServer {
   env: JSON!
   url: String!
   headers: JSON!
+  hiddenTools: JSON!
+  hooks: JSON!
   position: Int!
 
   """
@@ -261,6 +263,8 @@ type McpServerCountNonNullAggregate {
   env: Int!
   url: Int!
   headers: Int!
+  hiddenTools: Int!
+  hooks: Int!
   position: Int!
 }
 
@@ -1341,6 +1345,8 @@ input McpServerFilters {
   env: JSONFilter
   url: StringFilter
   headers: JSONFilter
+  hiddenTools: JSONFilter
+  hooks: JSONFilter
   position: IntFilter
 
   """At least one branch matches; ANDed with any sibling fields"""
@@ -1437,6 +1443,8 @@ input McpServerOrderBy {
   env: InnerOrder
   url: InnerOrder
   headers: InnerOrder
+  hiddenTools: InnerOrder
+  hooks: InnerOrder
   position: InnerOrder
 }
 
@@ -1478,6 +1486,8 @@ input McpServerCountNonNullHaving {
   env: AggregateNumberFilter
   url: AggregateNumberFilter
   headers: AggregateNumberFilter
+  hiddenTools: AggregateNumberFilter
+  hooks: AggregateNumberFilter
   position: AggregateNumberFilter
 }
 
@@ -2224,6 +2234,8 @@ enum McpServerDistinctColumn {
   env
   url
   headers
+  hiddenTools
+  hooks
   position
 }
 
@@ -2326,6 +2338,12 @@ type McpServerConfig {
   env: JSON!
   url: String!
   headers: JSON!
+  hiddenTools: [String!]!
+
+  """
+  The server's own tools, called at points in a session. See `ToolHookConfig`.
+  """
+  hooks: JSON!
 }
 
 enum McpTransport {
@@ -2336,6 +2354,11 @@ enum McpTransport {
 type McpTool {
   name: String!
   description: String!
+
+  """
+  In the row's `hiddenTools`: callable by its hooks, never offered to the model.
+  """
+  hidden: Boolean!
 }
 
 """
@@ -2418,6 +2441,8 @@ input McpServerInput {
   env: JSON
   url: String
   headers: JSON
+  hiddenTools: [String!]
+  hooks: JSON
 }
 
 """
@@ -2458,7 +2483,7 @@ type TurnEvent {
   seq: Int!
 
   """
-  reasoning_delta | text_delta | tool_use | tool_result | title | stats | done | followups | error.
+  reasoning_delta | text_delta | tool_use | tool_result | title | stats | hook | done | followups | error.
   """
   type: String!
   text: String
@@ -2470,6 +2495,9 @@ type TurnEvent {
   isError: Boolean
   title: String
   stats: JSON
+
+  """A `HookNote`: what one hook added, or why not."""
+  hook: JSON
   items: [String!]
   message: String
 }

@@ -1,8 +1,9 @@
-import type { StreamEvent } from "../types.ts";
+import type { HookNote, StreamEvent } from "../types.ts";
 
 /** One piece of an in-flight assistant turn, in arrival order. `key` is stable for React. */
 export type LivePart =
   | { kind: "reasoning" | "text"; key: string; text: string }
+  | { kind: "hook"; key: string; hook: HookNote }
   | {
       kind: "tool";
       key: string;
@@ -43,6 +44,8 @@ export function applyEvent(parts: LivePart[], event: StreamEvent): LivePart[] {
           ? { ...part, result: event.content, isError: event.isError }
           : part,
       );
+    case "hook":
+      return [...parts, { kind: "hook", key: String(parts.length), hook: event.hook }];
     default:
       return parts;
   }
@@ -50,4 +53,8 @@ export function applyEvent(parts: LivePart[], event: StreamEvent): LivePart[] {
 
 /** Characters generated so far this turn — a stand-in for a token count while streaming. */
 export const liveCharCount = (parts: LivePart[]) =>
-  parts.reduce((total, part) => (part.kind === "tool" ? total : total + part.text.length), 0);
+  parts.reduce(
+    (total, part) =>
+      part.kind === "text" || part.kind === "reasoning" ? total + part.text.length : total,
+    0,
+  );

@@ -284,6 +284,69 @@ Both are capability-gated on the handshake, which the pool reports on `state()` 
 Asking a server that never claimed the capability costs an error round trip per server per
 surface, and neither button nor tool appears when nothing offers one.
 
+### Hooks
+
+A server row can also name some of its own tools for min-agent to call at points in a chat,
+instead of leaving it to the model to decide to. It's the same idea as Claude Code's hooks. The
+difference is that a hook here is a tool call on a server that is already connected, never a
+command on this machine. So editing the settings still can't run anything the servers don't
+already offer.
+
+| Event | When | What `{{…}}` can use | Can add context |
+| --- | --- | --- | --- |
+| `sessionStart` | ahead of a chat's first turn | `prompt` | yes |
+| `beforeTurn` | ahead of every turn | `prompt`, `turn.index` | yes |
+| `afterTurn` | once a turn is answered | `prompt`, `reply`, `turn.index`, `turn.messages` | no |
+| `beforeCompact` | as the head of a chat is summarised | `compacting`, `range.from`, `range.through` | no |
+| `sessionDelete` | when a chat is deleted | — | no |
+
+Every event also has `session.id`, `host` (`min-agent`) and `now`.
+- An argument that is exactly `"{{path}}"` receives the value itself, so `turn.messages` arrives
+  as an array.
+- A placeholder inside a longer string is filled in as text.
+- A hook whose value is missing is skipped.
+- A hook that asks for something its event never has, such as `{{reply}}` on `beforeTurn`, is
+  refused when you save.
+
+`sessionEnd` exists in the pool but min-agent never fires it, because a chat here never ends:
+it's only left.
+
+A hook with `inject` set adds what the tool returns to the request, as a
+`<context source="…">` block ahead of that turn's question. The limits:
+- Each block is capped at the hook's `maxTokens` (default 1000), and all of them together at
+  2000.
+- Each hook on an injecting event gets 3 seconds.
+- The context is never stored, so it isn't remembered as something you said, and it isn't sent
+  again on the next turn.
+
+A hook that fails or times out costs the turn its context, never the turn itself. Under the reply,
+a line says what each hook added or why it failed. A failed `afterTurn` line is kept with the
+turn.
+
+**Hide from the model** (the switch beside each tool) takes a tool out of what the model is
+offered, and refuses the model's calls to it, while this row's hooks can still call it. That is
+what makes a memory server work without the model's help. This is
+[zeromem](https://github.com/cubicecho/mcp-zeromem):
+
+```jsonc
+"hiddenTools": ["zeromem_remember", "zeromem_ingest", "zeromem_forget_session"],
+"hooks": [
+  { "id": "recall", "on": "beforeTurn", "tool": "zeromem_recall", "inject": true, "maxTokens": 800,
+    "args": { "query": "{{prompt}}", "exclude_session": "min-agent:{{session.id}}", "format": "text" } },
+  { "id": "remember", "on": "afterTurn", "tool": "zeromem_remember",
+    "args": { "session_id": "min-agent:{{session.id}}", "turns": "{{turn.messages}}" } },
+  { "id": "save-before-compact", "on": "beforeCompact", "tool": "zeromem_remember",
+    "args": { "session_id": "min-agent:{{session.id}}", "turns": "{{compacting}}" } },
+  { "id": "forget", "on": "sessionDelete", "tool": "zeromem_forget_session",
+    "args": { "session_id": "min-agent:{{session.id}}", "confirm": true } }
+]
+```
+
+What `turn.messages` and `compacting` contain:
+- Only what the user and the assistant said. Tool calls and their results are left out.
+- Each message has a `uuid` built from the chat, its position and its text, so the same message
+  sent twice (after its turn, then again when it is compacted) is the same memory.
+
 ### On-demand tool loading
 
 A tool definition is mostly JSON Schema, and eagerly sending every one of them on every request is

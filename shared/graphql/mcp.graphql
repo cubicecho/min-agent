@@ -9,12 +9,15 @@ fragment McpState on McpServerState {
     env
     url
     headers
+    hiddenTools
+    hooks
   }
   status
   error
   tools {
     name
     description
+    hidden
   }
 }
 
