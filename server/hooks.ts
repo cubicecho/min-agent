@@ -104,37 +104,29 @@ export function withContext(
 /** The most context all of a request's hooks can add between them. */
 const CONTEXT_TOKENS = 2000;
 
-/** A block's text without the `<context source="…">` line above it and the close below it. */
-const blockBody = (block: string) =>
-  block.slice(block.indexOf("\n") + 1, block.length - "\n</context>".length);
-
 /**
  * The context a set of outcomes adds, and what the chat says about each: the context it added,
  * or why it added none. A hook that worked and added nothing says nothing. A remember that
  * succeeded is not news.
  *
- * The blocks are built one outcome at a time, still by the pool's `contextBlocks`, because the
- * note keeps the text each added so the chat can show it. Given the budget left, one outcome
- * is cut exactly as it would be in the whole list, and the blocks join the same way.
+ * The note keeps the text each hook added, as the pool cut it, so the chat can show exactly what
+ * the model was given.
  */
 function assemble(outcomes: readonly HookOutcome[]): Gathered {
-  const blocks: string[] = [];
+  const blocks = contextBlocks(outcomes, { maxTokens: CONTEXT_TOKENS });
   const notes: HookNote[] = [];
-  let remaining = CONTEXT_TOKENS;
   for (const outcome of outcomes) {
     const base = { event: outcome.event, source: outcome.label, hookId: outcome.hookId };
     if (!outcome.ok) {
       notes.push({ ...base, error: outcome.error ?? "failed" });
       continue;
     }
-    const one = contextBlocks([outcome], { maxTokens: remaining });
-    const added = one.injected[0];
-    if (!added) continue;
-    remaining -= added.tokens;
-    blocks.push(one.text);
-    notes.push({ ...base, tokens: added.tokens, text: blockBody(one.text) });
+    const added = blocks.injected.find(
+      (item) => item.serverId === outcome.serverId && item.hookId === outcome.hookId,
+    );
+    if (added) notes.push({ ...base, tokens: added.tokens, text: added.text });
   }
-  return { context: blocks.join("\n\n"), notes };
+  return { context: blocks.text, notes };
 }
 
 /** What `gather` found for a request. */
