@@ -96,26 +96,32 @@ export const instructions = () =>
     );
 
 /**
- * The connected servers that declared a `resources` capability, in configuration order.
+ * The connected servers that declared a given capability, in configuration order.
  *
  * `capabilities` is what the server said in the handshake, reported on `state()` since pool
  * 2.5.0. Asking a server that never claimed the capability is an error round trip per server per
- * turn, and — worse for a model — an error it has to read and discount before it can conclude
- * anything about what is actually available.
+ * surface, and — worse for a model — an error it has to read and discount before it can
+ * conclude anything about what is actually available.
  */
-export const resourceServers = () =>
+const serversOffering = (capability: "resources" | "prompts") =>
   pool
     .state()
-    .filter((server) => server.status === "ready" && server.capabilities?.resources)
+    .filter((server) => server.status === "ready" && server.capabilities?.[capability])
     .map(({ id, label }) => ({ id, label }));
+
+/** The servers whose resources `list_resources` and `read_resource` reach. */
+export const resourceServers = () => serversOffering("resources");
+
+/** The servers whose prompts the composer's picker offers. */
+export const promptServers = () => serversOffering("prompts");
 
 /**
  * The connected MCP client for one server.
  *
- * The pool's own last mile is shaped for a tool call, and `resources/read` is not one; this is
- * the door it documents for the rest of the protocol. It bypasses the scope check `call()` makes,
- * which is a guard against a model reaching a server the run was not scoped to — min-agent does
- * not scope runs, so there is nothing here for it to bypass.
+ * The pool's own last mile is shaped for a tool call, and `resources/read` and `prompts/get` are
+ * not one; this is the door it documents for the rest of the protocol. It bypasses the scope
+ * check `call()` makes, which is a guard against a model reaching a server the run was not scoped
+ * to — min-agent does not scope runs, so there is nothing here for it to bypass.
  */
 export const client = (id: string) => pool.client(id);
 

@@ -27,6 +27,7 @@ import { db } from "../db/client.ts";
 import { settings } from "../db/schema.ts";
 import { surfaced } from "../errors.ts";
 import * as mcp from "../mcp.ts";
+import * as mcpPrompts from "../mcp-prompts.ts";
 import { truncateSession } from "../store.ts";
 import { runTurnEvents, type TurnArgs } from "../turns.ts";
 
@@ -230,6 +231,33 @@ const TurnEventType = new GraphQLObjectType({
   },
 });
 
+const McpPromptArgumentType = new GraphQLObjectType({
+  name: "McpPromptArgument",
+  description: "One blank in a prompt template, as the server declared it.",
+  fields: {
+    name: { type: new GraphQLNonNull(GraphQLString) },
+    description: { type: GraphQLString },
+    required: { type: new GraphQLNonNull(GraphQLBoolean) },
+  },
+});
+
+const McpPromptType = new GraphQLObjectType({
+  name: "McpPrompt",
+  description:
+    "A prompt a connected server offers. `server` and `name` together identify it: `name` is " +
+    "unique only within its server.",
+  fields: {
+    server: { type: new GraphQLNonNull(GraphQLString) },
+    serverLabel: { type: new GraphQLNonNull(GraphQLString) },
+    name: { type: new GraphQLNonNull(GraphQLString) },
+    title: { type: GraphQLString },
+    description: { type: GraphQLString },
+    arguments: {
+      type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(McpPromptArgumentType))),
+    },
+  },
+});
+
 const mcpList = new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(McpServerStateType)));
 
 export const schema = new GraphQLSchema({
@@ -246,6 +274,29 @@ export const schema = new GraphQLSchema({
         type: mcpList,
         description: "Every configured MCP server, with its live connection state and tools.",
         resolve: () => mcp.state(),
+      },
+      mcpPrompts: {
+        type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(McpPromptType))),
+        description:
+          "The prompts the connected servers offer, for a picker. Empty when none of them does; " +
+          "a server that cannot be listed is omitted rather than failing the query.",
+        resolve: () => mcpPrompts.list(),
+      },
+      mcpPrompt: {
+        type: new GraphQLNonNull(GraphQLString),
+        description:
+          "One prompt expanded with the given arguments, flattened to the single string a " +
+          "composer draft is. A multi-message prompt comes back with its roles labelled.",
+        args: {
+          server: { type: new GraphQLNonNull(GraphQLString) },
+          name: { type: new GraphQLNonNull(GraphQLString) },
+          args: {
+            type: GraphQLJSON,
+            description: "The prompt's arguments by name. Absent is the same as none.",
+          },
+        },
+        resolve: (_root, { server, name, args }) =>
+          mcpPrompts.get(server, name, (args ?? {}) as Record<string, string>),
       },
       health: {
         type: new GraphQLNonNull(HealthType),
