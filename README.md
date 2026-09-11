@@ -320,8 +320,8 @@ A hook with `inject` set adds what the tool returns to the request, as a
   again on the next turn.
 
 A hook that fails or times out costs the turn its context, never the turn itself. Under the reply,
-a line says what each hook added or why it failed. A failed `afterTurn` line is kept with the
-turn.
+a line says what each hook added or why it failed. Context opens like thinking does, to show
+exactly what the model was given. A failed `afterTurn` line is kept with the turn.
 
 **Hide from the model** (the switch beside each tool) takes a tool out of what the model is
 offered, and refuses the model's calls to it, while this row's hooks can still call it. That is

@@ -207,28 +207,40 @@ const Stats = ({ stats, pricing }: { stats: TurnStats; pricing?: LlmConfig["pric
 
 /**
  * What one of the MCP servers' hooks did for a turn: the context it added, or why it did not.
- * Quieter than a tool panel, because the model did not ask for any of it.
+ *
+ * Context opens like thinking does, since it is what the model read ahead of the question. A
+ * failure, or a note stored before notes kept their text, is a line: there is nothing to open.
  */
-const HookLine = ({ hook }: { hook: HookNote }) => (
-  <View className="flex-row items-center gap-1.5 px-1">
-    <Feather
-      name={hook.error ? "alert-circle" : "zap"}
-      size={11}
-      color={hook.error ? colors.destructive : colors.mutedForeground}
-    />
-    <Text
-      className={cn(
-        "flex-1 text-[11px]",
-        hook.error ? "text-destructive" : "text-muted-foreground/70",
-      )}
-      numberOfLines={1}
+const HookLine = ({ hook }: { hook: HookNote }) =>
+  hook.text ? (
+    <Details
+      icon="zap"
+      title={`${hook.source} · added ~${hook.tokens ?? 0} tokens`}
+      tone="dashed"
+      summary={preview(hook.text)}
     >
-      {hook.error
-        ? `${hook.source} · ${hook.hookId} failed: ${hook.error}`
-        : `${hook.source} · added ~${hook.tokens ?? 0} tokens`}
-    </Text>
-  </View>
-);
+      <Text className="text-xs text-muted-foreground">{hook.text}</Text>
+    </Details>
+  ) : (
+    <View className="flex-row items-center gap-1.5 px-1">
+      <Feather
+        name={hook.error ? "alert-circle" : "zap"}
+        size={11}
+        color={hook.error ? colors.destructive : colors.mutedForeground}
+      />
+      <Text
+        className={cn(
+          "flex-1 text-[11px]",
+          hook.error ? "text-destructive" : "text-muted-foreground/70",
+        )}
+        numberOfLines={1}
+      >
+        {hook.error
+          ? `${hook.source} · ${hook.hookId} failed: ${hook.error}`
+          : `${hook.source} · added ~${hook.tokens ?? 0} tokens`}
+      </Text>
+    </View>
+  );
 
 /**
  * Everything already on disk.
