@@ -402,6 +402,11 @@ export interface HookNote {
   hookId: string;
   /** Estimated tokens of context it added to the request. */
   tokens?: number;
+  /**
+   * The context it added, as the model read it: after the cap, without the `<context>` tags.
+   * At most the 2000 tokens a request's hooks share, so it is stored with the turn.
+   */
+  text?: string;
   /** Why it added nothing: it failed, timed out, or had no value for a placeholder. */
   error?: string;
 }

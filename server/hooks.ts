@@ -101,27 +101,40 @@ export function withContext(
   return history.map((item, at) => (at === index ? { ...message, content } : item));
 }
 
+/** The most context all of a request's hooks can add between them. */
+const CONTEXT_TOKENS = 2000;
+
+/** A block's text without the `<context source="…">` line above it and the close below it. */
+const blockBody = (block: string) =>
+  block.slice(block.indexOf("\n") + 1, block.length - "\n</context>".length);
+
 /**
- * What the chat says about a set of outcomes: the context each added, or why it added none.
- * A hook that worked and added nothing says nothing. A remember that succeeded is not news.
+ * The context a set of outcomes adds, and what the chat says about each: the context it added,
+ * or why it added none. A hook that worked and added nothing says nothing. A remember that
+ * succeeded is not news.
+ *
+ * The blocks are built one outcome at a time, still by the pool's `contextBlocks`, because the
+ * note keeps the text each added so the chat can show it. Given the budget left, one outcome
+ * is cut exactly as it would be in the whole list, and the blocks join the same way.
  */
-function notesFor(
-  outcomes: readonly HookOutcome[],
-  injected: readonly { serverId: string; hookId: string; tokens: number }[],
-): HookNote[] {
+function assemble(outcomes: readonly HookOutcome[]): Gathered {
+  const blocks: string[] = [];
   const notes: HookNote[] = [];
+  let remaining = CONTEXT_TOKENS;
   for (const outcome of outcomes) {
     const base = { event: outcome.event, source: outcome.label, hookId: outcome.hookId };
     if (!outcome.ok) {
       notes.push({ ...base, error: outcome.error ?? "failed" });
       continue;
     }
-    const added = injected.find(
-      (item) => item.serverId === outcome.serverId && item.hookId === outcome.hookId,
-    );
-    if (added) notes.push({ ...base, tokens: added.tokens });
+    const one = contextBlocks([outcome], { maxTokens: remaining });
+    const added = one.injected[0];
+    if (!added) continue;
+    remaining -= added.tokens;
+    blocks.push(one.text);
+    notes.push({ ...base, tokens: added.tokens, text: blockBody(one.text) });
   }
-  return notes;
+  return { context: blocks.join("\n\n"), notes };
 }
 
 /** What `gather` found for a request. */
@@ -151,10 +164,9 @@ export async function gather(
       events.map((event) => mcp.runHooks(event, context, { signal, onNotice: notice })),
     )
   ).flat();
-  const blocks = contextBlocks(outcomes);
-  const notes = notesFor(outcomes, blocks.injected);
-  for (const hook of notes) emit?.({ type: "hook", hook });
-  return { context: blocks.text, notes };
+  const gathered = assemble(outcomes);
+  for (const hook of gathered.notes) emit?.({ type: "hook", hook });
+  return gathered;
 }
 
 /**
@@ -168,7 +180,8 @@ export async function notify(
   context: HookContext,
   emit?: (event: StreamEvent) => void,
 ): Promise<HookNote[]> {
-  const notes = notesFor(await mcp.runHooks(event, context, { onNotice: notice }), []);
+  // Nothing on these events injects, so the notes are only ever failures.
+  const { notes } = assemble(await mcp.runHooks(event, context, { onNotice: notice }));
   for (const hook of notes) emit?.({ type: "hook", hook });
   return notes;
 }

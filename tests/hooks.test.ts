@@ -1,4 +1,4 @@
-import type { HookOutcome } from "@cubicecho/agent-mcp-pool";
+import { contextBlocks, type HookOutcome } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { McpServerConfig, Session, StoredMessage } from "../shared/types.ts";
@@ -147,9 +147,37 @@ describe("gather", () => {
     expect(gathered.context).toContain("likes tea");
     expect(gathered.notes).toEqual([
       { event: "sessionStart", source: "Memory", hookId: "hello", error: "timed out" },
-      { event: "beforeTurn", source: "Memory", hookId: "recall", tokens: expect.any(Number) },
+      {
+        event: "beforeTurn",
+        source: "Memory",
+        hookId: "recall",
+        tokens: expect.any(Number),
+        text: "likes tea",
+      },
     ]);
     expect(emitted).toEqual(gathered.notes.map((hook) => ({ type: "hook", hook })));
+  });
+
+  it("adds what the pool would, and keeps each hook's share of it as cut", async () => {
+    const long = "x ".repeat(3000);
+    const outcomes = [
+      outcome({ hookId: "a", inject: true, text: long, maxTokens: 1200 }),
+      outcome({ hookId: "b", inject: true, text: long, maxTokens: 1200 }),
+      outcome({ hookId: "c", inject: true, text: "nothing left for this" }),
+    ];
+    runHooks.mockResolvedValue(outcomes);
+    const pool = contextBlocks(outcomes);
+
+    const gathered = await gather(["beforeTurn"], { session: { id: "s1" } });
+
+    expect(gathered.context).toBe(pool.text);
+    expect(gathered.notes.map((note) => note.tokens)).toEqual(
+      pool.injected.map((item) => item.tokens),
+    );
+    for (const note of gathered.notes) {
+      expect(note.text?.endsWith("…")).toBe(true);
+      expect(gathered.context).toContain(`">\n${note.text}\n</context>`);
+    }
   });
 
   it("says nothing about a hook that worked and added nothing", async () => {
