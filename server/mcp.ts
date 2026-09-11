@@ -161,10 +161,11 @@ export const shutdown = () => pool.shutdown();
  * dialled yet still has somewhere to draw its form — without a second copy of the rows here to
  * go stale.
  *
- * The config is narrowed on the way back out: the pool's row type widens `args`, `env` and
- * `headers` to `| null` for consumers whose columns are nullable, and min-agent's zod schema
- * defaults all three. What comes back is the row this module passed in, so the narrower type is
- * the true one.
+ * The config is narrowed on the way back out. Since 3.0 the pool's row is a union of a stdio arm
+ * and an http arm, each widening its fields (`args` and `env`, or `headers`) to `| null` for
+ * consumers whose columns are nullable. min-agent's row is one flat shape carrying both arms'
+ * fields, which its zod schema defaults. What comes back is the row this module passed in, so the
+ * narrower type is the true one.
  *
  * `secrets` because the MCP tab is an edit form: it opens on the row this returns and saves the
  * row back, so a redacted `env` would not read as "not shown" but be written over the key that
