@@ -26,6 +26,7 @@ import {
   View,
 } from "react-native";
 import { MessageView } from "@/components/message-view.tsx";
+import { PromptPicker, useMcpPrompts } from "@/components/prompt-picker.tsx";
 import { SessionsPanel, SessionsScreen } from "@/components/session-list.tsx";
 import { SettingsLink } from "@/components/settings/link.tsx";
 import {
@@ -101,6 +102,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   // through the transcript mid-turn used to be impossible: every delta yanked the view down.
   const [pinned, setPinned] = useState(true);
   const [tokensOpen, setTokensOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const prompts = useMcpPrompts();
   const abort = useRef<AbortController | null>(null);
   const scroller = useRef<ScrollView>(null);
   /**
@@ -555,6 +558,19 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
             className="min-h-11 max-h-40 flex-1 py-2.5"
           />
           {/*
+            Absent where no server offers a prompt, for the same reason as the microphone below:
+            a button that opens an empty list is a button that teaches you not to press it.
+          */}
+          {prompts.data?.length ? (
+            <Button
+              variant="secondary"
+              size="icon-lg"
+              icon="book-open"
+              accessibilityLabel="Insert an MCP prompt"
+              onPress={() => setPicking(true)}
+            />
+          ) : null}
+          {/*
             Absent rather than disabled where neither engine can run — a device build with no
             transcription model configured, or Firefox. There is nothing to press it for, and
             the phone keyboard already has a microphone key of its own.
@@ -588,6 +604,18 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
           )}
         </View>
       </View>
+
+      {/*
+        Expanded into the draft rather than sent: a template is a starting point, and the one
+        thing the person picking it knows that the server does not is what they meant to ask.
+      */}
+      <PromptPicker
+        visible={picking}
+        onClose={() => setPicking(false)}
+        onInsert={(text) =>
+          setDraft((held) => (held.trim() ? `${held.trimEnd()}\n\n${text}` : text))
+        }
+      />
     </View>
   );
 }

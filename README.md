@@ -11,7 +11,7 @@ Everything below the quick start is reference — read it when you want that pie
 
 - [Quick start](#quick-start) · [Production](#production) · [Docker](#docker) — running it
 - [Layout](#layout) · [The database](#the-database) · [The API](#the-api) · [Scripts](#scripts) — finding your way around
-- [MCP servers](#mcp-servers) — wiring up tools, and how they are loaded without blowing the prompt budget
+- [MCP servers](#mcp-servers) — wiring up tools, resources and prompts, and how tools are loaded without blowing the prompt budget
 - [Task models](#task-models) — pointing a small fast model at titling, compaction, tool preselection and follow-ups
 - [Turn statistics](#turn-statistics) — what the numbers under each reply mean, and what the tokens went on
 - [Voice](#voice) — speaking a message and having replies read back, on the device, through a model, or through a Wyoming server
@@ -207,6 +207,8 @@ query    health          is the server up, and what is it pointed at
 query    models          asks the configured provider to list its models
 query    hasApiKey       whether a key is set, without returning it
 query    mcpStatus       each configured server with its live connection state and tools
+query    mcpPrompts      the prompts the connected servers offer, for the composer's picker
+query    mcpPrompt       one of them expanded with its arguments, as text for a draft
 mutation setApiKey       write-only, so the key never comes back out over the API
 mutation saveMcpServers  replaces the whole set and reconnects
 mutation reconnectMcpServer
@@ -256,6 +258,31 @@ the exception that saves in place, because turning a server off is the one edit 
 without opening anything. A server that falls over while you are on another tab puts a dot on
 the MCP tab — the settings shell polls `mcpStatus` slowly on its own for that, which is all the
 dot costs.
+
+### Resources and prompts
+
+A server offers more than tools, and the two other surfaces reach the app in opposite
+directions — because the protocol means them differently.
+
+**Resources** are the context a server holds rather than the actions it takes: a file, a table's
+schema, a page of docs. They arrive as two tools, `list_resources` and `read_resource`, declared
+only where a connected server claimed the capability. Not as a listing in the system prompt,
+where the tool catalogue goes: a tool catalogue is bounded by what the operator configured, and a
+resource list is bounded by whatever the server happens to hold — a filesystem server pointed at
+a repository answers with the repository. `read_resource` takes a uri and finds the server
+itself, so a uri lifted out of a `[resource_link ...]` in a tool result is readable without a
+listing first.
+
+**Prompts** are the server author's phrasing of a job their server is good at, parameterised.
+The protocol calls them user-controlled, so they go to the person rather than to the model: a
+button in the composer opens a picker, you fill in whatever blanks the template declares, and
+the expansion lands in the draft where you can edit it before sending. A prompt that expands to
+several messages is flattened with its roles labelled, which is lossy — the composer sends one
+user message — and is the honest version of a limitation min-agent would otherwise hide.
+
+Both are capability-gated on the handshake, which the pool reports on `state()` since 2.5.0.
+Asking a server that never claimed the capability costs an error round trip per server per
+surface, and neither button nor tool appears when nothing offers one.
 
 ### Hooks
 

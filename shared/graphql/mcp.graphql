@@ -38,3 +38,22 @@ mutation ReconnectMcpServer($id: String!) {
     ...McpState
   }
 }
+
+query McpPrompts {
+  mcpPrompts {
+    server
+    serverLabel
+    name
+    title
+    description
+    arguments {
+      name
+      description
+      required
+    }
+  }
+}
+
+query McpPrompt($server: String!, $name: String!, $args: JSON) {
+  mcpPrompt(server: $server, name: $name, args: $args)
+}

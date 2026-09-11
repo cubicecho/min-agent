@@ -476,6 +476,29 @@ export interface McpServerState {
   tools: { name: string; description: string; hidden: boolean }[];
 }
 
+/** One blank in a prompt template, as the server declared it. */
+export interface McpPromptArgument {
+  name: string;
+  description?: string;
+  required: boolean;
+}
+
+/**
+ * One prompt a connected server offers, addressed by the server it came from.
+ *
+ * `name` is unique within a server and nothing more: two servers may both offer `summarize`, so
+ * the pair is the identifier and `server` travels with every row rather than being recoverable
+ * from the name the way a qualified tool name is.
+ */
+export interface McpPrompt {
+  server: string;
+  serverLabel: string;
+  name: string;
+  title?: string;
+  description?: string;
+  arguments: McpPromptArgument[];
+}
+
 /** Server-sent events emitted while a turn is running. */
 export type StreamEvent =
   | { type: "reasoning_delta"; text: string }
