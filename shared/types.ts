@@ -1,4 +1,4 @@
-import type { HookEvent } from "@cubicecho/agent-mcp-pool";
+import type { HookEvent, McpStatus } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { z } from "zod";
 import type { ModelTask } from "./model-tasks.ts";
@@ -464,14 +464,10 @@ export interface Session {
 export type SessionSummary = Omit<Session, "messages"> & { messageCount: number };
 
 /**
- * Mirrors `McpStatus` in `@cubicecho/agent-mcp-pool`, which is where these are decided.
- *
- * `idle` is registered-but-not-connected: a success state, not a failure — the pool has the row
- * and there is simply no child right now. min-agent runs the pool eagerly, so nothing here
- * reports it today; it is in the union because the pool's type has it and narrowing on the way
- * out would be this module asserting something the dependency does not promise.
+ * `idle` is registered-but-not-connected: a success state, not a failure. min-agent runs the pool
+ * eagerly, so nothing here reports it today, but the union is the pool's and not narrowed here.
  */
-export type McpStatus = "disabled" | "idle" | "connecting" | "ready" | "error";
+export type { McpStatus };
 
 export interface McpServerState {
   config: McpServerConfig;
