@@ -42,11 +42,20 @@ import { VERSION } from "./paths.ts";
  * yet: it would be a column, a GraphQL field and a form input, and the row here is deliberately
  * the small one (no `cwd`, no `idleTimeoutMs` either). Worth doing when a server that slow turns
  * up; until then 15s stands for all of them.
+ *
+ * `callTimeoutMs` since pool 3.0, which is the first version that bounds a tool call at all; before
+ * it every call took the SDK's 60s. That number was wrong in both directions. A search or a build
+ * that legitimately runs past a minute was cut off, and a wedged tool still held the turn for the
+ * whole minute with nothing the reader could do. The second half is now the turn's signal's job —
+ * stopping a turn abandons its calls — so what is left for the timeout is a tool that wedges while
+ * nobody is watching, and two minutes is generous to real work without leaving a turn hung for good.
+ * It is not reset by progress notifications: a server that keeps talking is still cut off.
  */
 const pool = new McpPool({
   clientName: "min-agent",
   clientVersion: VERSION,
   connectTimeoutMs: 15_000,
+  callTimeoutMs: 120_000,
 });
 
 /**
@@ -135,8 +144,12 @@ export const client = (id: string) => pool.client(id);
  *
  * This is the model's door, so it never passes `hidden`: a row's `hiddenTools` are refused here
  * as tools that do not exist, which is the whole of how they are kept from the model.
+ *
+ * `signal` is the turn's: a reader who stops the turn has no use for the answers it was waiting on,
+ * and without it a slow tool kept running — and kept the turn's `finally` waiting — until it was done.
  */
-export const call = (qualifiedName: string, input: unknown) => pool.call(qualifiedName, input);
+export const call = (qualifiedName: string, input: unknown, signal?: AbortSignal) =>
+  pool.call(qualifiedName, input, { signal });
 
 /**
  * Runs every enabled server's hooks for one event. Never rejects; see `server/hooks.ts`, which

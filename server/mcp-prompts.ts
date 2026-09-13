@@ -1,3 +1,4 @@
+import { resultText } from "@cubicecho/agent-mcp-pool";
 import type { McpPrompt } from "../shared/types.ts";
 import { client, promptServers } from "./mcp.ts";
 
@@ -73,9 +74,9 @@ export async function get(
   }
 
   const { messages } = await (await client(server)).getPrompt({ name, arguments: args });
-  if (messages.length === 1) return messageText(messages[0].content).trim();
+  if (messages.length === 1) return messageText(messages[0].content);
   return messages
-    .map((message) => `${message.role}: ${messageText(message.content).trim()}`)
+    .map((message) => `${message.role}: ${messageText(message.content)}`)
     .join("\n\n")
     .trim();
 }
@@ -84,20 +85,8 @@ export async function get(
  * One message's content as text, with what has none named rather than dropped.
  *
  * A prompt message carries the same content blocks a tool result does, minus the list: an image
- * a server pasted in, a file it embedded. The placeholder is what the pool's `resultText` settled
- * on — a person reading the draft can see that something was there and that it did not survive
- * the trip through a text box, rather than finding a gap.
+ * a server pasted in, a file it embedded. So it is flattened by the pool's own `resultText` as a
+ * one-block result — a person reading the draft sees the same placeholder a model reads in a tool
+ * result, and a `resource_link` keeps the uri and name that make it worth following.
  */
-function messageText(content: {
-  type?: string;
-  text?: string;
-  uri?: string;
-  resource?: { text?: string; uri?: string };
-}): string {
-  if (typeof content.text === "string") return content.text;
-  if (typeof content.resource?.text === "string") return content.resource.text;
-  const uri = content.resource?.uri ?? content.uri;
-  return uri
-    ? `[${content.type ?? "unknown"} content at ${uri}]`
-    : `[${content.type ?? "unknown"} content]`;
-}
+const messageText = (content: unknown) => resultText({ content: [content] });

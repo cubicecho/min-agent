@@ -33,6 +33,7 @@ import {
   timeoutMs,
   tryAsk,
 } from "@cubicecho/agent-core";
+import { McpPoolError } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { measureRequest, splitContext } from "../shared/client/usage.ts";
 import {
@@ -510,10 +511,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // Measured on the way out, in characters, because nothing on the way back reports it: a
   // completion says how many prompt tokens it read and nothing about where they came from.
   let lastRequest: ContextBreakdown | null = null;
-  // Identical call -> identical result. Replaying it from here ends the repeat loops a model
-  // falls into when a tool disappoints it, without spending another MCP round trip. What is
-  // stored is the in-flight promise rather than the settled string, so two identical calls
-  // arriving together in one round trip share a single MCP call instead of racing each other.
+  // Identical call -> identical result, for the turn. See `callOnce`.
   const answered = new Map<string, Promise<string>>();
 
   for (let iteration = 0; iteration < config.maxToolIterations; iteration++) {
@@ -809,17 +807,9 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
               loaded.add(call.name);
             used.add(call.name);
 
-            const key = `${call.name}\u0000${call.args}`;
-            const previous = answered.get(key);
-            if (previous === undefined) {
-              const inFlight = mcp.call(call.name, args);
-              answered.set(key, inFlight);
-              // A call that failed is not an answer. Forget it so a retry is a real retry.
-              inFlight.catch(() => answered.delete(key));
-              content = await inFlight;
-            } else {
-              content = `${await previous}\n\n(Identical call already made this turn; the result is unchanged. Use it rather than calling again.)`;
-            }
+            content = await callOnce(answered, `${call.name}\u0000${call.args}`, () =>
+              mcp.call(call.name, args, signal),
+            );
           }
         } catch (error) {
           content = errorMessage(error);
@@ -838,6 +828,53 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   }
 
   throw new Error(`Stopped after ${config.maxToolIterations} tool iterations.`);
+}
+
+/** A tool that ran and failed, as opposed to a call that could not be made. */
+const isToolError = (error: unknown) =>
+  error instanceof McpPoolError && error.code === "tool-error";
+
+/**
+ * Makes a tool call at most once per turn for the same name and arguments, replaying the answer
+ * to a repeat. A model that a tool disappoints often asks again, word for word, and replaying the
+ * answer with a note ends that loop without spending another MCP round trip.
+ *
+ * The in-flight promise is what is kept rather than the settled string, so two identical calls in
+ * one round trip share a single MCP call instead of racing each other.
+ *
+ * A call that could not be made is not an answer: a server in backoff, a connect that failed, a
+ * timeout, a stop. It is forgotten so a retry is a real retry. A tool that ran and rejected its
+ * arguments *is* an answer — the same arguments get the same one — so it is kept and replayed like
+ * a result. Telling the two apart is what the pool's `tool-error` code is for.
+ *
+ * @param answered The turn's calls so far, by `key`.
+ * @param key The tool's name and its raw arguments.
+ * @param run Makes the call, when it has not been made.
+ */
+export async function callOnce(
+  answered: Map<string, Promise<string>>,
+  key: string,
+  run: () => Promise<string>,
+): Promise<string> {
+  const previous = answered.get(key);
+  if (previous === undefined) {
+    const inFlight = run();
+    answered.set(key, inFlight);
+    inFlight.catch((error: unknown) => {
+      if (!isToolError(error)) answered.delete(key);
+    });
+    return inFlight;
+  }
+  try {
+    return `${await previous}\n\n(Identical call already made this turn; the result is unchanged. Use it rather than calling again.)`;
+  } catch (error) {
+    // Only a tool's own rejection is certain to repeat. Anything else reached this caller because
+    // it was sharing a call still in flight, and is forgotten already.
+    if (!isToolError(error)) throw error;
+    throw new Error(
+      `${errorMessage(error)}\n\n(Identical call already failed this turn; it will fail the same way again. Change the arguments or try something else.)`,
+    );
+  }
 }
 
 const add = (a: TokenUsage | undefined, b: TokenUsage): TokenUsage => ({
