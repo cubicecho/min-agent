@@ -1,4 +1,5 @@
 import type { HookEvent, McpStatus } from "@cubicecho/agent-mcp-pool";
+import { HOOK_EVENTS, INJECT_EVENTS } from "@cubicecho/agent-mcp-pool/hooks";
 import type OpenAI from "openai";
 import { z } from "zod";
 import type { ModelTask } from "./model-tasks.ts";
@@ -145,36 +146,21 @@ export const modelForTask = (config: LlmConfig, task: ModelTask) =>
 /** What the API hands the browser — never the key itself. */
 export type LlmConfigView = Omit<LlmConfig, "apiKey"> & { hasApiKey: boolean };
 
+/*
+ * The points in a session a server's hooks can be bound to, and the two whose output can reach
+ * the model, from the pool's `/hooks` entry — the one that imports no `node:` module or SDK, so
+ * Metro can bundle it. `mobile/` lists the pool as its own dependency because Metro resolves
+ * packages from `mobile/node_modules` only.
+ */
+export { HOOK_EVENTS, INJECT_EVENTS };
+
 /**
- * The points in a session a server's hooks can be bound to, as the pool names them.
- *
- * Written out rather than imported: this module is bundled into the app, and the pool is a
- * server package that Metro cannot resolve from `mobile/`. The `satisfies` holds the copy to
- * the pool's type, so an event the pool renames fails the typecheck here.
+ * The events min-agent actually fires, which is what the hook editor offers.
  *
  * `sessionEnd` is accepted so a row copied from kanban_server or task_server saves, but
- * min-agent never fires it — a chat does not end, it is only left. See `HOOK_EVENTS_FIRED`.
+ * min-agent never fires it — a chat does not end, it is only left.
  */
-export const HOOK_EVENTS = [
-  "sessionStart",
-  "beforeTurn",
-  "afterTurn",
-  "beforeCompact",
-  "sessionEnd",
-  "sessionDelete",
-] as const satisfies readonly HookEvent[];
-
-/** The events min-agent actually fires, which is what the hook editor offers. */
-export const HOOK_EVENTS_FIRED = [
-  "sessionStart",
-  "beforeTurn",
-  "afterTurn",
-  "beforeCompact",
-  "sessionDelete",
-] as const satisfies readonly HookEvent[];
-
-/** The events whose output can reach the model: the only two that run before the request. */
-export const INJECT_EVENTS: readonly HookEvent[] = ["sessionStart", "beforeTurn"];
+export const HOOK_EVENTS_FIRED = HOOK_EVENTS.filter((event) => event !== "sessionEnd");
 
 /**
  * One of a server's own tools, called by min-agent at a point in a session rather than by the

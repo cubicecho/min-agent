@@ -130,7 +130,7 @@ function HookEditor({
 }) {
   const [text, setText] = useState(() => argsText(hook.args));
   const [problem, setProblem] = useState("");
-  const injects = INJECT_EVENTS.includes(hook.on);
+  const injects = INJECT_EVENTS.has(hook.on);
   const update = (patch: Partial<ToolHookConfig>) => onChange({ ...hook, ...patch });
 
   const typeArgs = (value: string) => {
@@ -175,7 +175,7 @@ function HookEditor({
             const event = on as ToolHookConfig["on"];
             // Context can only be added ahead of a request, so it goes when the hook moves off one.
             update(
-              INJECT_EVENTS.includes(event)
+              INJECT_EVENTS.has(event)
                 ? { on: event }
                 : { on: event, inject: undefined, maxTokens: undefined },
             );
