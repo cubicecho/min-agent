@@ -3,6 +3,7 @@ import {
   type HookEvent,
   McpPool,
   type RunHooksOptions,
+  serversWith,
 } from "@cubicecho/agent-mcp-pool";
 import type { McpServerConfig, McpServerState } from "../shared/types.ts";
 import { VERSION } from "./paths.ts";
@@ -109,25 +110,19 @@ export const instructions = () =>
       text?.trim() ? [{ label, text: text.trim() }] : [],
     );
 
-/**
- * The connected servers that declared a given capability, in configuration order.
- *
- * `capabilities` is what the server said in the handshake, reported on `state()` since pool
- * 2.5.0. Asking a server that never claimed the capability is an error round trip per server per
- * surface, and — worse for a model — an error it has to read and discount before it can
- * conclude anything about what is actually available.
+/*
+ * The connected servers that declared a capability, in configuration order — via the pool's
+ * `serversWith`. Asking a server that never claimed the capability is an error round trip per
+ * server per surface, and — worse for a model — an error it has to read and discount before it
+ * can conclude anything about what is actually available.
  */
-const serversOffering = (capability: "resources" | "prompts") =>
-  pool
-    .state()
-    .filter((server) => server.status === "ready" && server.capabilities?.[capability])
-    .map(({ id, label }) => ({ id, label }));
+const idAndLabel = ({ id, label }: { id: string; label: string }) => ({ id, label });
 
 /** The servers whose resources `list_resources` and `read_resource` reach. */
-export const resourceServers = () => serversOffering("resources");
+export const resourceServers = () => serversWith(pool.state(), "resources").map(idAndLabel);
 
 /** The servers whose prompts the composer's picker offers. */
-export const promptServers = () => serversOffering("prompts");
+export const promptServers = () => serversWith(pool.state(), "prompts").map(idAndLabel);
 
 /**
  * The connected MCP client for one server.
