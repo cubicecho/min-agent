@@ -157,6 +157,6 @@ describe("get", () => {
 
     const expansion = await get("docs", "look", {});
     expect(expansion).toContain("user: A");
-    expect(expansion).toContain("[image content]");
+    expect(expansion).toContain("[image image/png");
   });
 });
