@@ -4,6 +4,7 @@ import {
   type CatalogServer,
   ContextOverflow,
   capabilitiesFor,
+  carryOver,
   catalogPrompt,
   clean,
   compact as compactTokens,
@@ -18,7 +19,6 @@ import {
   listModels as listEndpointModels,
   listLines,
   loadResult,
-  MAX_CARRIED,
   modelCapabilitiesFor,
   PRESELECT_SYSTEM,
   parseJson,
@@ -764,7 +764,10 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         ...(gathered.notes.length ? { hooks: gathered.notes } : {}),
       };
       assistant.stats = stats;
-      if (onDemand && !proxied) session.loadedTools = carryOver(carried, loaded, used);
+      // What was called, in the order it was loaded, and only what was loaded: a name the model
+      // made up is called, and fails, but is nothing to declare next turn.
+      if (onDemand && !proxied)
+        session.loadedTools = carryOver(carried, new Set(loaded.filter((name) => used.has(name))));
       await titling;
       await patchMessage(assistantRow, { stats });
       if (onDemand && !proxied)
@@ -891,36 +894,6 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   }
 
   throw new Error(`Stopped after ${config.maxToolIterations} tool iterations.`);
-}
-
-/**
- * The tools to start the next turn with: last turn's, in the order they were declared, and after
- * them whatever this turn loaded and actually called, in the order it was loaded.
- *
- * agent-core's `carryOver` moves each tool used to the end, which reorders the tool array between
- * turns — and the tool array is near the head of the prompt, so the next turn re-prefilled the
- * whole transcript from the first moved definition on. Kept in place, the next turn's array is
- * this turn's with only the unused guesses gone. Those still go: keeping them would grow the
- * array turn over turn, which is what on-demand loading exists to avoid. Past `MAX_CARRIED` the
- * oldest unused fall off the front, a miss paid only when the cap is reached.
- *
- * @param carried What this turn started with, in declared order.
- * @param loaded Everything this turn declared, `carried` first, in load order.
- * @param used What this turn called.
- * @param max How many to carry.
- */
-export function carryOver(
-  carried: readonly string[],
-  loaded: readonly string[],
-  used: ReadonlySet<string>,
-  max = MAX_CARRIED,
-): string[] {
-  const next = [...carried, ...loaded.filter((name) => used.has(name) && !carried.includes(name))];
-  while (next.length > Math.max(1, max)) {
-    const oldest = next.findIndex((name) => !used.has(name));
-    next.splice(oldest === -1 ? 0 : oldest, 1);
-  }
-  return next;
 }
 
 /** A tool that ran and failed, as opposed to a call that could not be made. */
