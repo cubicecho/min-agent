@@ -32,7 +32,7 @@ export type Draft = {
   systemPrompt: string;
   pricing: { inputPer1M: number; outputPer1M: number };
   contextLimit: number;
-  toolDiscovery: "eager" | "ondemand";
+  toolDiscovery: "eager" | "ondemand" | "proxy";
   reasoningEffort: ReasoningEffort;
   taskModels: Record<string, string>;
   voiceBaseUrl: string;

@@ -114,12 +114,16 @@ export function AgentPanel() {
 
             <Field
               label="MCP tools"
-              hint="On demand puts a name-only catalogue in the system prompt and lets the model pull in the schemas it needs mid-turn. Much cheaper with many tools; costs one extra round trip on the turns that use them."
+              hint="On demand puts a name-only catalogue in the system prompt and lets the model pull in the schemas it needs mid-turn. Much cheaper with many tools; costs one extra round trip on the turns that use them. Proxied does the same without changing the tool list, so a load keeps the server's prompt cache; the model calls each tool through one fixed tool, which smaller models get wrong more often."
             >
               <Select
                 value={draft.toolDiscovery}
                 options={[
                   { label: "On demand — load definitions as needed", value: "ondemand" },
+                  {
+                    label: "Proxied — load as needed, call through one tool, keep the cache",
+                    value: "proxy",
+                  },
                   { label: "Eager — send every definition every time", value: "eager" },
                 ]}
                 onChange={(value) => set("toolDiscovery", value as Draft["toolDiscovery"])}

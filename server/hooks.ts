@@ -8,7 +8,7 @@ import {
 } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { messageText } from "../shared/client/transcript.ts";
-import type { Compaction, HookNote, Session, StoredMessage, StreamEvent } from "../shared/types.ts";
+import type { HookNote, Session, StoredMessage, StreamEvent } from "../shared/types.ts";
 import * as mcp from "./mcp.ts";
 
 /**
@@ -63,42 +63,37 @@ export function turnMessages(session: Session, from: number, to?: number): HookM
 export const turnIndex = (messages: readonly StoredMessage[], before = messages.length) =>
   messages.slice(0, before).filter((message) => message.role === "user").length;
 
-/**
- * Where a turn's question sits in the request `forApi` builds. Once a compaction has folded the
- * head into one summary message, that is no longer where it sits in the session.
- */
-export const requestIndex = (turnStart: number, compaction?: Compaction) =>
-  compaction ? turnStart - compaction.through + 1 : turnStart;
-
 /** Said once, above the blocks, so the model reads them as background and not as instructions. */
 const PREFACE =
   "The <context> blocks below were added by min-agent's MCP servers for this message. They " +
   "are background the user did not write and may not be relevant. The user's message follows them.";
 
 /**
- * The request, with the hooks' context added to this turn's question.
+ * A question as the model is sent it: the hooks' context ahead of what the user typed.
  *
  * It goes on the question, not in the system prompt, because it is about the question. It also
  * keeps the system prompt fixed: a prompt that changed every turn would miss the prompt cache
- * every turn. Nothing here is written back to the session. What is stored is what the user
- * typed, so the context is never remembered as something they said.
+ * every turn. The context is stored beside the question rather than in it (`hook_context`), so
+ * it is never remembered as something the user said — and it is sent with that question on every
+ * later request too, not only on its own turn. A past question that lost its context changed
+ * the request from there on, and the answer after it and all its tool traffic were prefilled
+ * again on every turn.
  *
- * @param index Where the question is in `history`. See `requestIndex`.
- * @returns A new array. `history` and its messages are left as they were.
+ * @param message The question as the user typed it.
+ * @param context The hooks' context. Empty returns `message` as it is.
+ * @returns A new message. `message` is left as it was.
  */
 export function withContext(
-  history: OpenAI.ChatCompletionMessageParam[],
-  index: number,
-  context: string,
-): OpenAI.ChatCompletionMessageParam[] {
-  const message = history[index];
-  if (!context || message?.role !== "user") return history;
+  message: OpenAI.ChatCompletionUserMessageParam,
+  context: string | undefined,
+): OpenAI.ChatCompletionUserMessageParam {
+  if (!context) return message;
   const preface = `${PREFACE}\n\n${context}\n\n`;
   const content: OpenAI.ChatCompletionUserMessageParam["content"] =
     typeof message.content === "string"
       ? `${preface}${message.content}`
       : [{ type: "text", text: preface }, ...message.content];
-  return history.map((item, at) => (at === index ? { ...message, content } : item));
+  return { ...message, content };
 }
 
 /** The most context all of a request's hooks can add between them. */

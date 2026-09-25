@@ -869,6 +869,7 @@ export type Message = {
   /** Opaque cursor of this row's position in the query's ordering. Pass it as `after` to resume from here. Only set on rows returned by a list query. */
   cursor?: Maybe<Scalars['String']['output']>;
   followups?: Maybe<Scalars['JSON']['output']>;
+  hookContext?: Maybe<Scalars['String']['output']>;
   id: Scalars['String']['output'];
   idx: Scalars['Int']['output'];
   reasoningContent?: Maybe<Scalars['String']['output']>;
@@ -905,6 +906,7 @@ export type MessageAvgHaving = {
 
 export type MessageCountDistinctAggregate = {
   createdAt: Scalars['Int']['output'];
+  hookContext: Scalars['Int']['output'];
   id: Scalars['Int']['output'];
   idx: Scalars['Int']['output'];
   reasoningContent: Scalars['Int']['output'];
@@ -915,6 +917,7 @@ export type MessageCountDistinctAggregate = {
 
 export type MessageCountDistinctHaving = {
   createdAt?: InputMaybe<AggregateNumberFilter>;
+  hookContext?: InputMaybe<AggregateNumberFilter>;
   id?: InputMaybe<AggregateNumberFilter>;
   idx?: InputMaybe<AggregateNumberFilter>;
   reasoningContent?: InputMaybe<AggregateNumberFilter>;
@@ -927,6 +930,7 @@ export type MessageCountNonNullAggregate = {
   content: Scalars['Int']['output'];
   createdAt: Scalars['Int']['output'];
   followups: Scalars['Int']['output'];
+  hookContext: Scalars['Int']['output'];
   id: Scalars['Int']['output'];
   idx: Scalars['Int']['output'];
   reasoningContent: Scalars['Int']['output'];
@@ -941,6 +945,7 @@ export type MessageCountNonNullHaving = {
   content?: InputMaybe<AggregateNumberFilter>;
   createdAt?: InputMaybe<AggregateNumberFilter>;
   followups?: InputMaybe<AggregateNumberFilter>;
+  hookContext?: InputMaybe<AggregateNumberFilter>;
   id?: InputMaybe<AggregateNumberFilter>;
   idx?: InputMaybe<AggregateNumberFilter>;
   reasoningContent?: InputMaybe<AggregateNumberFilter>;
@@ -956,6 +961,7 @@ export enum MessageDistinctColumn {
   Content = 'content',
   CreatedAt = 'createdAt',
   Followups = 'followups',
+  HookContext = 'hookContext',
   Id = 'id',
   Idx = 'idx',
   ReasoningContent = 'reasoningContent',
@@ -976,6 +982,7 @@ export type MessageFilters = {
   content?: InputMaybe<JsonFilter>;
   createdAt?: InputMaybe<DateTimeFilter>;
   followups?: InputMaybe<JsonFilter>;
+  hookContext?: InputMaybe<StringFilter>;
   id?: InputMaybe<StringFilter>;
   idx?: InputMaybe<IntFilter>;
   reasoningContent?: InputMaybe<StringFilter>;
@@ -1002,6 +1009,7 @@ export type MessageGroupBy = {
 /** Columns of Message that a query can group by */
 export enum MessageGroupByColumn {
   CreatedAt = 'createdAt',
+  HookContext = 'hookContext',
   Id = 'id',
   Idx = 'idx',
   ReasoningContent = 'reasoningContent',
@@ -1013,6 +1021,7 @@ export enum MessageGroupByColumn {
 /** The grouped column values of one Message group. A column the query did not group by is null. */
 export type MessageGroupKeys = {
   createdAt?: Maybe<Scalars['DateTime']['output']>;
+  hookContext?: Maybe<Scalars['String']['output']>;
   id?: Maybe<Scalars['String']['output']>;
   idx?: Maybe<Scalars['Int']['output']>;
   reasoningContent?: Maybe<Scalars['String']['output']>;
@@ -1044,6 +1053,7 @@ export type MessageListRelationFilter = {
 
 export type MessageMaxAggregate = {
   createdAt?: Maybe<Scalars['DateTime']['output']>;
+  hookContext?: Maybe<Scalars['String']['output']>;
   id?: Maybe<Scalars['String']['output']>;
   idx?: Maybe<Scalars['Int']['output']>;
   reasoningContent?: Maybe<Scalars['String']['output']>;
@@ -1058,6 +1068,7 @@ export type MessageMaxHaving = {
 
 export type MessageMinAggregate = {
   createdAt?: Maybe<Scalars['DateTime']['output']>;
+  hookContext?: Maybe<Scalars['String']['output']>;
   id?: Maybe<Scalars['String']['output']>;
   idx?: Maybe<Scalars['Int']['output']>;
   reasoningContent?: Maybe<Scalars['String']['output']>;
@@ -1074,6 +1085,7 @@ export type MessageOrderBy = {
   content?: InputMaybe<InnerOrder>;
   createdAt?: InputMaybe<InnerOrder>;
   followups?: InputMaybe<InnerOrder>;
+  hookContext?: InputMaybe<InnerOrder>;
   id?: InputMaybe<InnerOrder>;
   idx?: InputMaybe<InnerOrder>;
   reasoningContent?: InputMaybe<InnerOrder>;
@@ -2060,7 +2072,9 @@ export enum SettingsToolDiscoveryEnum {
   /** Value: eager */
   Eager = 'eager',
   /** Value: ondemand */
-  Ondemand = 'ondemand'
+  Ondemand = 'ondemand',
+  /** Value: proxy */
+  Proxy = 'proxy'
 }
 
 export type SettingsToolDiscoveryEnumFilter = {

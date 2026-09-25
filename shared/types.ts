@@ -65,9 +65,11 @@ export const llmConfigSchema = z.object({
   contextLimit: z.number().int().min(0).default(0),
   /**
    * "eager" sends every MCP tool definition on every request. "ondemand" sends a name-only
-   * catalogue and lets the model pull in the schemas it needs, mid-turn.
+   * catalogue and lets the model pull in the schemas it needs, mid-turn. "proxy" does the same
+   * with a tool array that never changes — definitions come back as `load_tools` results and run
+   * through `call_tool` — so a load does not cost the prompt cache.
    */
-  toolDiscovery: z.enum(["eager", "ondemand"]).default("ondemand"),
+  toolDiscovery: z.enum(["eager", "ondemand", "proxy"]).default("ondemand"),
   /**
    * How hard the model should think before it answers, as `reasoning_effort` on the request.
    * `off` — the default — leaves the parameter off it entirely. See `REASONING_EFFORTS`.
@@ -366,6 +368,11 @@ export interface TurnStats extends TokenUsage {
   toolCalls: number;
   /** Prompt + completion of the final round trip: what the next turn starts from. */
   contextTokens?: number;
+  /**
+   * The final round trip's prompt alone: what the next turn's first request should find in the
+   * prompt cache, since the reply is not always sent back the way it was generated.
+   */
+  lastPromptTokens?: number;
   /** The model's window, when the server reports one or you set it in Config. */
   contextLimit?: number;
   /** Where `promptTokens` went, when the server reported enough for the shares to mean anything. */
@@ -409,6 +416,8 @@ export interface ModelInfo {
  */
 export type StoredMessage = OpenAI.ChatCompletionMessageParam & {
   reasoning_content?: string;
+  /** What the servers' hooks added to a user message. Ours; see `withContext`. */
+  hook_context?: string;
   /** Attached to the last assistant message of a turn. */
   stats?: TurnStats;
   /** Questions worth asking next. Attached to the same message as `stats`. */

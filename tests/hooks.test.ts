@@ -7,9 +7,7 @@ const runHooks = vi.fn();
 
 vi.mock("../server/mcp.ts", () => ({ runHooks }));
 
-const { gather, notify, requestIndex, turnIndex, turnMessages, withContext } = await import(
-  "../server/hooks.ts"
-);
+const { gather, notify, turnIndex, turnMessages, withContext } = await import("../server/hooks.ts");
 const { assertMcpServers } = await import("../server/config.ts");
 
 /**
@@ -83,49 +81,26 @@ describe("turnIndex", () => {
 });
 
 describe("withContext", () => {
-  const history: OpenAI.ChatCompletionMessageParam[] = [
-    { role: "system", content: "be brief" },
-    { role: "user", content: "earlier" },
-    { role: "assistant", content: "ok" },
-    { role: "user", content: "now" },
-  ];
+  const question: OpenAI.ChatCompletionUserMessageParam = { role: "user", content: "now" };
 
-  it("puts the context ahead of this turn's question, and only on the request", () => {
-    const sent = withContext(history, 3, '<context source="Memory">likes tea</context>');
-    const question = sent[3].content as string;
-    expect(question).toContain('<context source="Memory">likes tea</context>');
-    expect(question.endsWith("now")).toBe(true);
-    expect(sent[1]).toBe(history[1]);
-    expect(history[3].content).toBe("now");
+  it("puts the context ahead of the question, and leaves the stored one alone", () => {
+    const sent = withContext(question, '<context source="Memory">likes tea</context>');
+    expect(sent.content).toContain('<context source="Memory">likes tea</context>');
+    expect((sent.content as string).endsWith("now")).toBe(true);
+    expect(question.content).toBe("now");
   });
 
   it("adds a part to a question that is already a list of parts", () => {
-    const parts = [
-      ...history.slice(0, 3),
-      { role: "user", content: [{ type: "text", text: "now" }] },
-    ];
-    const sent = withContext(parts as OpenAI.ChatCompletionMessageParam[], 3, "ctx");
-    const content = sent[3].content as { type: string; text: string }[];
-    expect(content).toHaveLength(2);
-    expect(content[0].text).toContain("ctx");
-    expect(content[1].text).toBe("now");
+    const sent = withContext({ role: "user", content: [{ type: "text", text: "now" }] }, "ctx");
+    const parts = sent.content as OpenAI.ChatCompletionContentPartText[];
+    expect(parts).toHaveLength(2);
+    expect(parts[0].text).toContain("ctx");
+    expect(parts[1].text).toBe("now");
   });
 
-  it("leaves the request alone when there is nothing to add or nowhere to put it", () => {
-    expect(withContext(history, 3, "")).toBe(history);
-    expect(withContext(history, 2, "ctx")).toBe(history);
-    expect(withContext(history, 9, "ctx")).toBe(history);
-  });
-});
-
-describe("requestIndex", () => {
-  it("is the session's index while nothing has been compacted", () => {
-    expect(requestIndex(6)).toBe(6);
-  });
-
-  it("allows for the head folded into one summary message", () => {
-    // Messages 0..3 became one summary: session index 6 is sent as index 3.
-    expect(requestIndex(6, { through: 4, summary: "..." } as never)).toBe(3);
+  it("returns the question as it is when there is no context", () => {
+    expect(withContext(question, "")).toBe(question);
+    expect(withContext(question, undefined)).toBe(question);
   });
 });
 

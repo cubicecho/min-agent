@@ -1,0 +1,1 @@
+ALTER TABLE "messages" ADD COLUMN "hook_context" text;
