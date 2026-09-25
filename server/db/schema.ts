@@ -185,6 +185,12 @@ export const messages = table(
      * here so the panel survives a reload. Stripped again before the history is replayed.
      */
     reasoningContent: text(),
+    /**
+     * What the servers' hooks added to this question, on a `user` row. Kept apart from `content`,
+     * which is what the user typed, and sent ahead of it on every later request too: dropped from
+     * a past question, the request changes there and the prompt cache is lost from it on.
+     */
+    hookContext: text(),
     /** What the assistant asked to call, when it did. */
     toolCalls: jsonb().$type<ToolCall[]>(),
     /** Which call this row is the result of, on a `tool` message. */

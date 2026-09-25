@@ -366,6 +366,11 @@ export interface TurnStats extends TokenUsage {
   toolCalls: number;
   /** Prompt + completion of the final round trip: what the next turn starts from. */
   contextTokens?: number;
+  /**
+   * The final round trip's prompt alone: what the next turn's first request should find in the
+   * prompt cache, since the reply is not always sent back the way it was generated.
+   */
+  lastPromptTokens?: number;
   /** The model's window, when the server reports one or you set it in Config. */
   contextLimit?: number;
   /** Where `promptTokens` went, when the server reported enough for the shares to mean anything. */
@@ -409,6 +414,8 @@ export interface ModelInfo {
  */
 export type StoredMessage = OpenAI.ChatCompletionMessageParam & {
   reasoning_content?: string;
+  /** What the servers' hooks added to a user message. Ours; see `withContext`. */
+  hook_context?: string;
   /** Attached to the last assistant message of a turn. */
   stats?: TurnStats;
   /** Questions worth asking next. Attached to the same message as `stats`. */

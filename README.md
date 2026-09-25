@@ -316,8 +316,11 @@ A hook with `inject` set adds what the tool returns to the request, as a
 - Each block is capped at the hook's `maxTokens` (default 1000), and all of them together at
   2000.
 - Each hook on an injecting event gets 3 seconds.
-- The context is never stored, so it isn't remembered as something you said, and it isn't sent
-  again on the next turn.
+- The context is stored beside the question, not in it, so it isn't remembered as something you
+  said. It is sent ahead of that question on every later turn too. Dropping it from a past
+  question would change the request from there on, and the prompt cache would miss for
+  everything after it on every turn. What it costs the window is folded away by compaction like
+  the rest of the history.
 
 A hook that fails or times out costs the turn its context, never the turn itself. Under the reply,
 a line says what each hook added or why it failed. Context opens like thinking does, to show

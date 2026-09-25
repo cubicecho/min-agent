@@ -56,15 +56,7 @@ import {
   transcriptFor,
 } from "./compaction.ts";
 import { endpoint, loadLlmConfig } from "./config.ts";
-import {
-  gather,
-  HOST,
-  notify,
-  requestIndex,
-  turnIndex,
-  turnMessages,
-  withContext,
-} from "./hooks.ts";
+import { gather, HOST, notify, turnIndex, turnMessages, withContext } from "./hooks.ts";
 import * as mcp from "./mcp.ts";
 import {
   LIST_RESOURCES,
@@ -153,6 +145,15 @@ async function compact(
   await updateSession(session.id, { compaction: session.compaction });
   console.log(`[agent] compacted ${through} message(s) at ${used}/${contextLimit} tokens`);
   return summary;
+}
+
+/** The last turn's final prompt, which the next turn's first request should find cached. */
+function latestPromptTokens(session: Session): number {
+  for (let i = session.messages.length - 1; i >= 0; i--) {
+    const { stats } = session.messages[i];
+    if (stats) return stats.lastPromptTokens ?? 0;
+  }
+  return 0;
 }
 
 /** What the last turn actually cost, which is the best estimate of what the next one will. */
@@ -265,24 +266,24 @@ async function suggestFollowups(
 }
 
 /**
- * Drops our own `reasoning_content` and `stats` before the history goes back over the wire —
- * they are display artifacts, and strict servers reject unknown message fields.
+ * The transcript as the server should see it: private bookkeeping stripped, each question sent
+ * with the context its hooks added, and — once a session has been compacted — the folded head
+ * replaced by its summary.
+ *
+ * `reasoning_content`, `stats` and `followups` are display artifacts, and strict servers reject
+ * unknown message fields. The context is sent on every question that had one, the old as well as
+ * the new, so a request is the one before it with only its tail added. See `withContext`.
  */
-/**
- * The transcript as the server should see it: private bookkeeping stripped, and — once a
- * session has been compacted — the folded head replaced by its summary.
- */
-function forApi(session: Session): OpenAI.ChatCompletionMessageParam[] {
+export function forApi(session: Session): OpenAI.ChatCompletionMessageParam[] {
   const { compaction } = session;
   const messages = compaction
     ? [compactionMessage(compaction), ...session.messages.slice(compaction.through)]
     : session.messages;
   return messages.map((message) => {
-    if (!("reasoning_content" in message) && !("stats" in message)) return message;
-    const copy = { ...message } as StoredMessage;
-    delete copy.reasoning_content;
-    delete copy.stats;
-    return copy as OpenAI.ChatCompletionMessageParam;
+    const { reasoning_content, stats, followups, hook_context, ...sent } = message as StoredMessage;
+    return sent.role === "user"
+      ? withContext(sent, hook_context)
+      : (sent as OpenAI.ChatCompletionMessageParam);
   });
 }
 
@@ -453,6 +454,9 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // none depends on another, so they overlap. Compaction goes before the user's message is
   // appended, so the summary covers settled history and the question that prompted it stays
   // verbatim. A session's first turn is also its start.
+  // Read before a compaction can move it: a fold rewrites the history, and the miss after one is
+  // expected rather than worth a warning.
+  const foldedThrough = session.compaction?.through;
   const compactionModel = contextLimit ? modelForTask(config, "compaction") : "";
   const preselectModel = onDemand ? modelForTask(config, "toolSelect") : "";
   const [, preselected = [], gathered] = await Promise.all([
@@ -476,11 +480,16 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   ]);
 
   session.model = chosenModel;
-  session.messages.push({ role: "user", content: prompt });
+  const question: StoredMessage = {
+    role: "user",
+    content: prompt,
+    ...(gathered.context ? { hook_context: gathered.context } : {}),
+  };
+  session.messages.push(question);
   // Where this turn begins, so the request can be split into what was already there and what
   // this question added — the tool traffic it goes on to produce lands after it too.
   const turnStart = session.messages.length - 1;
-  await addMessage(session.id, session.messages.length - 1, { role: "user", content: prompt });
+  await addMessage(session.id, session.messages.length - 1, question);
   for (const name of preselected) load(name);
 
   // The truncated first line goes up immediately so the sidebar is never blank, and a model
@@ -517,8 +526,10 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   let lastRequest: ContextBreakdown | null = null;
   // Identical call -> identical result, for the turn. See `callOnce`.
   const answered = new Map<string, Promise<string>>();
-  // The last request's prompt, to tell whether this one found it in the cache.
-  let previousPrompt = 0;
+  // The last request's prompt, to tell whether this one found it in the cache. The first step
+  // is held to the turn before's last, unless a compaction just rewrote the history under it.
+  let previousPrompt =
+    session.compaction?.through === foldedThrough ? latestPromptTokens(session) : 0;
 
   for (let iteration = 0; iteration < config.maxToolIterations; iteration++) {
     // The same head on every step, the first included. A preselection used to get a first step
@@ -533,13 +544,9 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
 
     // Hoisted out of `open` because a rejected request is retried below with the same
     // transcript, and because the split measured from it has to be the one that was sent.
-    // The hooks' context rides on this turn's question for every step of the turn, and is
-    // counted as the turn's own input, which it is.
-    const history = withContext(
-      forApi(session),
-      requestIndex(turnStart, session.compaction),
-      gathered.context,
-    );
+    // The hooks' context rides on this turn's question, and is counted as the turn's own input,
+    // which it is.
+    const history = forApi(session);
 
     // The tail of the request is this turn's own messages: the question, and whatever the
     // model has done about it so far. `forApi` only ever replaces the head with a summary,
@@ -647,9 +654,10 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     turnUsage.promptTokens += lastRoundTrip.promptTokens;
     turnUsage.completionTokens += lastRoundTrip.completionTokens;
     turnUsage.totalTokens += lastRoundTrip.totalTokens;
-    // The head never moves within a turn now, so a request that finds much less than the last
-    // one's prompt in the cache is the server's doing — an eviction, a side task on the same
-    // slot — or a head that moved anyway. Only where the server said what it cached.
+    // Nothing min-agent sends moves a prefix it sent before, a compaction aside, so a request
+    // that finds much less than the last one's prompt in the cache is the server's doing — an
+    // eviction, a side task on the same slot — or a prefix that moved anyway. Only where the
+    // server said what it cached.
     if (turn.usage.uncached !== undefined && turn.usage.cached < previousPrompt * 0.9)
       console.warn(
         `[agent] prompt cache missed: ${turn.usage.cached} of ${turn.usage.prompt} cached, ` +
@@ -715,6 +723,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         ...(lastRoundTrip.totalTokens
           ? { contextTokens: lastRoundTrip.promptTokens + lastRoundTrip.completionTokens }
           : {}),
+        ...(lastRoundTrip.promptTokens ? { lastPromptTokens: lastRoundTrip.promptTokens } : {}),
         ...(contextLimit ? { contextLimit } : {}),
         ...(breakdown ? { breakdown } : {}),
         ...(gathered.notes.length ? { hooks: gathered.notes } : {}),

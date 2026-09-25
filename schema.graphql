@@ -446,6 +446,7 @@ enum MessageDistinctColumn {
   role
   content
   reasoningContent
+  hookContext
   toolCalls
   toolCallId
   stats
@@ -540,6 +541,7 @@ type Message {
   role: MessagesRoleEnum!
   content: JSON
   reasoningContent: String
+  hookContext: String
   toolCalls: JSON
   toolCallId: String
   stats: JSON
@@ -594,6 +596,7 @@ type MessageMinAggregate {
   idx: Int
   role: MessagesRoleEnum
   reasoningContent: String
+  hookContext: String
   toolCallId: String
   createdAt: DateTime
 }
@@ -604,6 +607,7 @@ type MessageMaxAggregate {
   idx: Int
   role: MessagesRoleEnum
   reasoningContent: String
+  hookContext: String
   toolCallId: String
   createdAt: DateTime
 }
@@ -615,6 +619,7 @@ type MessageCountNonNullAggregate {
   role: Int!
   content: Int!
   reasoningContent: Int!
+  hookContext: Int!
   toolCalls: Int!
   toolCallId: Int!
   stats: Int!
@@ -628,6 +633,7 @@ type MessageCountDistinctAggregate {
   idx: Int!
   role: Int!
   reasoningContent: Int!
+  hookContext: Int!
   toolCallId: Int!
   createdAt: Int!
 }
@@ -652,6 +658,7 @@ type MessageGroupKeys {
   idx: Int
   role: MessagesRoleEnum
   reasoningContent: String
+  hookContext: String
   toolCallId: String
   createdAt: DateTime
 }
@@ -1858,6 +1865,7 @@ input MessageFilters {
   role: MessagesRoleEnumFilter
   content: JSONFilter
   reasoningContent: StringFilter
+  hookContext: StringFilter
   toolCalls: JSONFilter
   toolCallId: StringFilter
   stats: JSONFilter
@@ -1958,6 +1966,7 @@ input MessageOrderBy {
   role: InnerOrder
   content: InnerOrder
   reasoningContent: InnerOrder
+  hookContext: InnerOrder
   toolCalls: InnerOrder
   toolCallId: InnerOrder
   stats: InnerOrder
@@ -2003,6 +2012,7 @@ input MessageCountNonNullHaving {
   role: AggregateNumberFilter
   content: AggregateNumberFilter
   reasoningContent: AggregateNumberFilter
+  hookContext: AggregateNumberFilter
   toolCalls: AggregateNumberFilter
   toolCallId: AggregateNumberFilter
   stats: AggregateNumberFilter
@@ -2016,6 +2026,7 @@ input MessageCountDistinctHaving {
   idx: AggregateNumberFilter
   role: AggregateNumberFilter
   reasoningContent: AggregateNumberFilter
+  hookContext: AggregateNumberFilter
   toolCallId: AggregateNumberFilter
   createdAt: AggregateNumberFilter
 }
@@ -2302,6 +2313,7 @@ enum MessageGroupByColumn {
   idx
   role
   reasoningContent
+  hookContext
   toolCallId
   createdAt
 }
