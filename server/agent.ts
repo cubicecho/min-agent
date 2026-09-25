@@ -4,7 +4,6 @@ import {
   type CatalogServer,
   ContextOverflow,
   capabilitiesFor,
-  carryOver,
   catalogPrompt,
   clean,
   compact as compactTokens,
@@ -19,6 +18,7 @@ import {
   listModels as listEndpointModels,
   listLines,
   loadResult,
+  MAX_CARRIED,
   modelCapabilitiesFor,
   PRESELECT_SYSTEM,
   parseJson,
@@ -415,26 +415,30 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // next is a turn the model cannot plan across.
   const offersResources = mcp.resourceServers().length > 0;
   const carried = session.loadedTools ?? [];
-  const loaded = new Set(carried);
+  // In the order each was loaded, which is the order they are declared in. Never a set rebuilt
+  // or re-sorted: a template renders the tool array near the head of the prompt, and a load that
+  // lands in the middle moves every definition after it and loses the cache for the whole history
+  // behind them. Appended, what was declared last request stays a prefix of what is declared now.
+  const loaded: string[] = [...carried];
+  const load = (name: string) => {
+    if (!loaded.includes(name)) loaded.push(name);
+  };
   // Only tools the model actually *called* carry over to the next turn. Everything else it
   // pulled in was a guess, and keeping the guesses would grow the tool array turn over turn
   // until it is larger than eager mode's — which is the situation on-demand loading exists to
   // avoid, and which sends the model wandering into unrelated tools.
   const used = new Set<string>();
-  // Read once for the turn: a server's instructions are fixed for the life of its connection,
-  // and the prompt below is rebuilt on every step.
+  // Read once for the turn: a server's instructions are fixed for the life of its connection.
   const guidance = instructionsPrompt(mcp.instructions());
-  // Recomputed each iteration: `loaded` grows as the turn runs, and the catalogue has to stop
-  // advertising a tool the moment the model can actually call it.
-  //
-  // `withCatalog` is false for the routed first step, which is deliberately given no menu — see
-  // below. The servers' own instructions go in either way: they are about how the tools in front
-  // of the model are meant to be used, and the routed step is the one holding the shortlist.
-  const systemPromptFor = (withCatalog: boolean) =>
-    [config.systemPrompt, guidance, withCatalog && onDemand ? catalogPrompt(catalog, loaded) : ""]
-      .filter(Boolean)
-      .join("\n\n")
-      .trim();
+  // One text for every step of the turn and every turn after it. The system prompt is the head of
+  // the request, so anything here that moves costs the prompt cache for the whole transcript: the
+  // catalogue used to mark what was loaded, and every `load_tools` call re-prefilled the session.
+  // What is loaded is said where it does not move the prefix instead — the tool array, and the
+  // `load_tools` result.
+  const system = [config.systemPrompt, guidance, onDemand ? catalogPrompt(catalog) : ""]
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
 
   // What the servers' hooks are told about this turn. The index is counted before the question
   // is appended, so it is this turn's own.
@@ -477,7 +481,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // this question added — the tool traffic it goes on to produce lands after it too.
   const turnStart = session.messages.length - 1;
   await addMessage(session.id, session.messages.length - 1, { role: "user", content: prompt });
-  for (const name of preselected) loaded.add(name);
+  for (const name of preselected) load(name);
 
   // The truncated first line goes up immediately so the sidebar is never blank, and a model
   // titles it properly in the background if one is configured for the job.
@@ -513,27 +517,20 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   let lastRequest: ContextBreakdown | null = null;
   // Identical call -> identical result, for the turn. See `callOnce`.
   const answered = new Map<string, Promise<string>>();
+  // The last request's prompt, to tell whether this one found it in the cache.
+  let previousPrompt = 0;
 
   for (let iteration = 0; iteration < config.maxToolIterations; iteration++) {
-    // With a preselection in hand the first step gets the shortlist and nothing else — no
-    // catalogue, no `load_tools`. Left with the menu in front of it the model shops: it reloads
-    // what it already has, or picks a sibling of the right tool and works its way through the
-    // rest. Taking the menu away for one step removes the choice, and everything comes back on
-    // the step after, so it can still reach for anything it turns out to need.
-    const routed = preselected.length > 0 && iteration === 0;
-    // Two more schemas, and only where a connected server offers resources at all. Out of the
-    // routed first step for the reason the catalogue is: that step is a shortlist, and anything
-    // else in front of the model there is one more thing to shop for. They come back on the next.
+    // The same head on every step, the first included. A preselection used to get a first step
+    // of its own — the shortlist alone, no catalogue, no `load_tools` — so the model would not
+    // shop the menu; but a head that differs from the next step's is the whole transcript
+    // prefilled twice per turn. The shortlist is loaded like anything else instead, at the end.
+    // `list_resources` and `read_resource` only where a connected server offers resources at all.
     const declared = sanitizeTools([
-      ...(!routed && offersResources ? RESOURCE_TOOLS : []),
-      ...(routed
-        ? mcp.tools(preselected)
-        : onDemand
-          ? [LOAD_TOOLS_DEFINITION, ...mcp.tools([...loaded])]
-          : mcp.tools()),
+      ...(offersResources ? RESOURCE_TOOLS : []),
+      ...(onDemand ? [LOAD_TOOLS_DEFINITION, ...mcp.tools(loaded)] : mcp.tools()),
     ]);
 
-    const system = systemPromptFor(!routed);
     // Hoisted out of `open` because a rejected request is retried below with the same
     // transcript, and because the split measured from it has to be the one that was sent.
     // The hooks' context rides on this turn's question for every step of the turn, and is
@@ -650,6 +647,15 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     turnUsage.promptTokens += lastRoundTrip.promptTokens;
     turnUsage.completionTokens += lastRoundTrip.completionTokens;
     turnUsage.totalTokens += lastRoundTrip.totalTokens;
+    // The head never moves within a turn now, so a request that finds much less than the last
+    // one's prompt in the cache is the server's doing — an eviction, a side task on the same
+    // slot — or a head that moved anyway. Only where the server said what it cached.
+    if (turn.usage.uncached !== undefined && turn.usage.cached < previousPrompt * 0.9)
+      console.warn(
+        `[agent] prompt cache missed: ${turn.usage.cached} of ${turn.usage.prompt} cached, ` +
+          `after a ${previousPrompt}-token request`,
+      );
+    previousPrompt = turn.usage.prompt;
 
     // A call with no name is a fragment the server never finished sending; there is nothing to
     // run and nothing to answer it with. `streamTurn` gives every call an id even when the
@@ -714,7 +720,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         ...(gathered.notes.length ? { hooks: gathered.notes } : {}),
       };
       assistant.stats = stats;
-      if (onDemand) session.loadedTools = carryOver(carried, used);
+      if (onDemand) session.loadedTools = carryOver(carried, loaded, used);
       await titling;
       await patchMessage(assistantRow, { stats });
       if (onDemand) await updateSession(session.id, { loadedTools: session.loadedTools });
@@ -788,8 +794,11 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
           const args = parseArgs(call.args);
           if (call.name === LOAD_TOOLS) {
             const resolved = expandNames(requestedNames(args), catalog);
-            for (const name of resolved.matched) loaded.add(name);
-            content = loadResult(resolved, catalog);
+            // What was declared before this call, so a repeat load is answered "already loaded"
+            // rather than as fresh — the model's cue to call the tool instead of loading again.
+            const before = new Set(loaded);
+            for (const name of resolved.matched) load(name);
+            content = loadResult(resolved, catalog, before);
             isError = resolved.matched.length === 0;
           } else if (call.name === LIST_RESOURCES) {
             content = await listResources();
@@ -803,8 +812,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
           } else {
             // A model that skips `load_tools` and calls a catalogued tool straight from its
             // name is right about what it wants; load it and run it rather than erroring.
-            if (onDemand && !loaded.has(call.name) && inCatalog(catalog, call.name))
-              loaded.add(call.name);
+            if (onDemand && inCatalog(catalog, call.name)) load(call.name);
             used.add(call.name);
 
             content = await callOnce(answered, `${call.name}\u0000${call.args}`, () =>
@@ -828,6 +836,36 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   }
 
   throw new Error(`Stopped after ${config.maxToolIterations} tool iterations.`);
+}
+
+/**
+ * The tools to start the next turn with: last turn's, in the order they were declared, and after
+ * them whatever this turn loaded and actually called, in the order it was loaded.
+ *
+ * agent-core's `carryOver` moves each tool used to the end, which reorders the tool array between
+ * turns — and the tool array is near the head of the prompt, so the next turn re-prefilled the
+ * whole transcript from the first moved definition on. Kept in place, the next turn's array is
+ * this turn's with only the unused guesses gone. Those still go: keeping them would grow the
+ * array turn over turn, which is what on-demand loading exists to avoid. Past `MAX_CARRIED` the
+ * oldest unused fall off the front, a miss paid only when the cap is reached.
+ *
+ * @param carried What this turn started with, in declared order.
+ * @param loaded Everything this turn declared, `carried` first, in load order.
+ * @param used What this turn called.
+ * @param max How many to carry.
+ */
+export function carryOver(
+  carried: readonly string[],
+  loaded: readonly string[],
+  used: ReadonlySet<string>,
+  max = MAX_CARRIED,
+): string[] {
+  const next = [...carried, ...loaded.filter((name) => used.has(name) && !carried.includes(name))];
+  while (next.length > Math.max(1, max)) {
+    const oldest = next.findIndex((name) => !used.has(name));
+    next.splice(oldest === -1 ? 0 : oldest, 1);
+  }
+  return next;
 }
 
 /** A tool that ran and failed, as opposed to a call that could not be made. */

@@ -532,17 +532,23 @@ is what every previous turn looked like. Three framings were tried against a 67-
 | Loaded tools dropped from the listing | Loaded repeatedly — the name appeared to vanish |
 | No catalogue, no `load_tools`, shortlist only | Called the tool |
 
-So preselection does not decorate the catalogue, it *replaces* it — for one step. When the picker
-returns names, step 0 gets those tools and nothing else: no catalogue, no `load_tools`, no menu to
-shop from. The saving is structural rather than persuasive; the model cannot spend a round trip on
-loading because loading is not on offer.
+Preselection used to *replace* the catalogue for one step: step 0 got the shortlist and nothing
+else. It no longer does, because of what that cost the prompt cache. A chat template renders the
+tool array and the system prompt at the head of the request, and a step 0 whose head differed from
+step 1's meant the whole transcript was prefilled twice on every turn that preselected — on a
+local model, seconds per turn that grow with the session.
 
-Everything comes back on step 1, so nothing is lost if the pick was wrong — the model gets the
-full catalogue and loads what it actually wanted, which is exactly where it would have been
-without preselection. A picker that returns `[]` (no tools needed) leaves the normal path alone.
+So the head is the same on every step now. The catalogue is always there and never marks what is
+loaded, and the preselected tools are appended to the tool array the way a `load_tools` call
+appends them. The cost is the first row of the table coming back in a milder form: the model may
+still reach for `load_tools` on a tool it already has. It is answered "already loaded" rather than
+loaded again, so that is a short round trip against the cached prefix rather than a re-prefill of
+the session.
 
 Preselected tools are subject to the same `MAX_PER_LOAD` cap as a `load_tools` call, and like any
-loaded tool they only carry into the next turn if the model actually called one.
+loaded tool they only carry into the next turn if the model actually called one. What carries keeps
+its place in the tool array, with this turn's newly used tools after it, so the next turn's array is
+this one's with only the unused guesses gone.
 
 ### Context compaction
 
