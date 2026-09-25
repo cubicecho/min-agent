@@ -2,6 +2,7 @@ import { Feather } from "@react-native-vector-icons/feather";
 import type { LivePart } from "@shared/client/live.ts";
 import { messageText } from "@shared/client/transcript.ts";
 import { statsLine } from "@shared/client/usage.ts";
+import { shownCall } from "@shared/tool-proxy.ts";
 import type { HookNote, LlmConfig, StoredMessage, TurnStats } from "@shared/types.ts";
 import { memo, type ReactNode, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
@@ -321,11 +322,12 @@ const StoredMessages = memo(function StoredMessages({
             {(item.tool_calls ?? []).map((call) => {
               if (call.type !== "function") return null;
               const result = results.get(call.id);
+              const shown = shownCall(call.function.name, call.function.arguments);
               return (
                 <ToolCall
                   key={call.id}
-                  name={call.function.name}
-                  input={call.function.arguments}
+                  name={shown.name}
+                  input={shown.input}
                   result={result?.content}
                   isError={result?.isError}
                 />

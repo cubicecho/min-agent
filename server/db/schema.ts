@@ -60,9 +60,10 @@ export const settings = table("settings", {
   contextLimit: integer().notNull().default(0),
   /**
    * `eager` sends every MCP tool definition on every request. `ondemand` sends a name-only
-   * catalogue and lets the model pull in the schemas it needs, mid-turn.
+   * catalogue and lets the model pull in the schemas it needs, mid-turn. `proxy` does the same
+   * with a tool array that never changes, so a load does not cost the prompt cache.
    */
-  toolDiscovery: text({ enum: ["eager", "ondemand"] })
+  toolDiscovery: text({ enum: ["eager", "ondemand", "proxy"] })
     .notNull()
     .default("ondemand"),
   /**

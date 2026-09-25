@@ -36,6 +36,7 @@ import {
 import { McpPoolError } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { measureRequest, splitContext } from "../shared/client/usage.ts";
+import { CALL_TOOL, shownCall } from "../shared/tool-proxy.ts";
 import {
   type ContextBreakdown,
   emptyUsage,
@@ -66,6 +67,7 @@ import {
   read as readResource,
 } from "./mcp-resources.ts";
 import { addMessage, patchMessage, updateSession } from "./store.ts";
+import { PROXY_TOOLS, proxiedCall, proxyCatalogPrompt, proxyLoadResult } from "./tool-proxy.ts";
 
 /** What the configured endpoint serves, id-sorted, with whatever window it declares. */
 export async function listModels(): Promise<ModelInfo[]> {
@@ -410,12 +412,17 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // In on-demand mode the model sees a name-only catalogue up front and pulls in the
   // definitions it needs as the turn runs; `loaded` grows between iterations.
   const catalog = mcp.catalog();
-  const onDemand = config.toolDiscovery === "ondemand" && catalog.length > 0;
+  const onDemand = config.toolDiscovery !== "eager" && catalog.length > 0;
+  // On demand, but with a tool array that never changes: definitions come back as `load_tools`
+  // results and run through `call_tool`. See `server/tool-proxy.ts`.
+  const proxied = onDemand && config.toolDiscovery === "proxy";
   // Whether `list_resources` and `read_resource` are worth declaring at all. Read once: a server
   // does not gain the capability mid-turn, and a turn that offers a tool on one step and not the
   // next is a turn the model cannot plan across.
   const offersResources = mcp.resourceServers().length > 0;
-  const carried = session.loadedTools ?? [];
+  // Nothing is carried when proxied: a definition loaded last turn is already in the history, and
+  // one a compaction folded away has to be loadable again rather than answered "already loaded".
+  const carried = proxied ? [] : (session.loadedTools ?? []);
   // In the order each was loaded, which is the order they are declared in. Never a set rebuilt
   // or re-sorted: a template renders the tool array near the head of the prompt, and a load that
   // lands in the middle moves every definition after it and loses the cache for the whole history
@@ -436,10 +443,8 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // catalogue used to mark what was loaded, and every `load_tools` call re-prefilled the session.
   // What is loaded is said where it does not move the prefix instead — the tool array, and the
   // `load_tools` result.
-  const system = [config.systemPrompt, guidance, onDemand ? catalogPrompt(catalog) : ""]
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
+  const catalogue = proxied ? proxyCatalogPrompt(catalog) : onDemand ? catalogPrompt(catalog) : "";
+  const system = [config.systemPrompt, guidance, catalogue].filter(Boolean).join("\n\n").trim();
 
   // What the servers' hooks are told about this turn. The index is counted before the question
   // is appended, so it is this turn's own.
@@ -490,6 +495,32 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // this question added — the tool traffic it goes on to produce lands after it too.
   const turnStart = session.messages.length - 1;
   await addMessage(session.id, session.messages.length - 1, question);
+  // Proxied, a shortlist has nowhere to go but the history: the tool array is fixed, so it is
+  // answered as though the model had loaded it, and the definitions sit after the question.
+  if (proxied && preselected.length) {
+    const id = `preselect-${turnStart}`;
+    const args = JSON.stringify({ names: preselected });
+    const content = proxyLoadResult(
+      expandNames(preselected, catalog),
+      catalog,
+      mcp.tools(preselected),
+      new Set(),
+    );
+    emit({ type: "tool_use", id, name: LOAD_TOOLS, input: args });
+    emit({ type: "tool_result", toolUseId: id, content, isError: false });
+    const exchange: StoredMessage[] = [
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [{ id, type: "function", function: { name: LOAD_TOOLS, arguments: args } }],
+      },
+      { role: "tool", tool_call_id: id, content },
+    ];
+    for (const message of exchange) {
+      session.messages.push(message);
+      await addMessage(session.id, session.messages.length - 1, message);
+    }
+  }
   for (const name of preselected) load(name);
 
   // The truncated first line goes up immediately so the sidebar is never blank, and a model
@@ -539,7 +570,11 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     // `list_resources` and `read_resource` only where a connected server offers resources at all.
     const declared = sanitizeTools([
       ...(offersResources ? RESOURCE_TOOLS : []),
-      ...(onDemand ? [LOAD_TOOLS_DEFINITION, ...mcp.tools(loaded)] : mcp.tools()),
+      ...(proxied
+        ? PROXY_TOOLS
+        : onDemand
+          ? [LOAD_TOOLS_DEFINITION, ...mcp.tools(loaded)]
+          : mcp.tools()),
     ]);
 
     // Hoisted out of `open` because a rejected request is retried below with the same
@@ -729,10 +764,11 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         ...(gathered.notes.length ? { hooks: gathered.notes } : {}),
       };
       assistant.stats = stats;
-      if (onDemand) session.loadedTools = carryOver(carried, loaded, used);
+      if (onDemand && !proxied) session.loadedTools = carryOver(carried, loaded, used);
       await titling;
       await patchMessage(assistantRow, { stats });
-      if (onDemand) await updateSession(session.id, { loadedTools: session.loadedTools });
+      if (onDemand && !proxied)
+        await updateSession(session.id, { loadedTools: session.loadedTools });
       emit({ type: "stats", stats });
       // The turn is over at this point and the reader should not be held by what comes after
       // it, so `done` — the composer's cue to unlock — goes out here rather than once the
@@ -796,7 +832,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     // so what is stored still reads the way the model wrote it.
     const outcomes = await Promise.all(
       roundTripCalls.map(async (call) => {
-        emit({ type: "tool_use", id: call.id, name: call.name, input: call.args });
+        emit({ type: "tool_use", id: call.id, ...shownCall(call.name, call.args) });
         let content: string;
         let isError = false;
         try {
@@ -807,8 +843,18 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
             // rather than as fresh — the model's cue to call the tool instead of loading again.
             const before = new Set(loaded);
             for (const name of resolved.matched) load(name);
-            content = loadResult(resolved, catalog, before);
+            content = proxied
+              ? proxyLoadResult(resolved, catalog, mcp.tools(resolved.matched), before)
+              : loadResult(resolved, catalog, before);
             isError = resolved.matched.length === 0;
+          } else if (onDemand && call.name === CALL_TOOL) {
+            // Any on-demand turn, not only a proxied one: a chat switched out of proxied mode
+            // still has `call_tool` in its history, and the model may copy it.
+            const { name, input } = proxiedCall(args, catalog);
+            used.add(name);
+            content = await callOnce(answered, `${name}\u0000${JSON.stringify(input)}`, () =>
+              mcp.call(name, input, signal),
+            );
           } else if (call.name === LIST_RESOURCES) {
             content = await listResources();
           } else if (call.name === READ_RESOURCE) {

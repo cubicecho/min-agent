@@ -362,6 +362,16 @@ whether or not the model touches a single one.
   cost of the schemas — plus one meta-tool, `load_tools`. The model calls it with the names it
   wants (or a wildcard like `router__fs__*`), gets their descriptions back, and the real
   definitions join the request from the next round trip of that same turn onward.
+- **Proxied** is on demand with a tool array that never changes: `load_tools` and `call_tool`.
+  A load answers with the tools' whole definitions as its result, and the model runs one by
+  passing its name and arguments to `call_tool`. A chat template renders the tool array inside
+  the system turn, ahead of the conversation, so in on-demand mode every load changes the head
+  and the server prefills the whole transcript again. On a hybrid model such as Qwen3.6-35B-A3B,
+  which llama.cpp can only rewind to a saved checkpoint, that is usually every token. Proxied, a
+  load only adds to the end. The cost is the indirection: a small model is less reliable
+  calling through `call_tool` than calling a declared tool. A preselected shortlist is added to
+  the history as a `load_tools` call and its result, since the tool array can't take it. Nothing
+  carries over between turns; the definitions loaded on earlier turns are still in the history.
 - **Eager** sends everything every time. Simpler, and right when there are only a few tools.
 
 Measured on the same server, same prompt:

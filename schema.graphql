@@ -29,6 +29,9 @@ enum SettingsToolDiscoveryEnum {
 
   """Value: ondemand"""
   ondemand
+
+  """Value: proxy"""
+  proxy
 }
 
 enum SettingsReasoningEffortEnum {

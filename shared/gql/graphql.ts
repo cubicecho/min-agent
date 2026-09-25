@@ -2072,7 +2072,9 @@ export enum SettingsToolDiscoveryEnum {
   /** Value: eager */
   Eager = 'eager',
   /** Value: ondemand */
-  Ondemand = 'ondemand'
+  Ondemand = 'ondemand',
+  /** Value: proxy */
+  Proxy = 'proxy'
 }
 
 export type SettingsToolDiscoveryEnumFilter = {
