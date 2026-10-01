@@ -1,5 +1,6 @@
 import {
   ask,
+  buildBody,
   type Capabilities,
   type CatalogServer,
   ContextOverflow,
@@ -24,7 +25,6 @@ import {
   parseJson,
   preselectInput,
   preselection,
-  relaxTools,
   requestedNames,
   runTurn as runRoundTrip,
   type StreamTurnOptions,
@@ -598,34 +598,32 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
 
     /**
      * The body, built from whatever the last attempt latched off — which is why it is a callback
-     * and not an object: `relaxTools` has to apply to the schemas that were just sanitised, and
-     * `stream_options` is present or absent rather than adjusted.
+     * and not an object. agent-core's `buildBody` decides every field that negotiates: the
+     * ceiling's two spellings, the temperature, `stream_options`, relaxed schemas, and the
+     * reasoning effort, where a value the model has refused becomes the cheapest one it takes
+     * rather than the same refusal again.
      *
      * `modelCapabilitiesFor` rather than the second argument `runTurn` offers, which is optional
      * because a caller may not have named a model. This one always does, so reading it back is
      * unconditional here and stays that way if the argument is ever dropped by accident.
+     *
+     * The tools go in the order they were declared, not by name: a load appends, and an array
+     * that only grows at its end keeps the prompt cache up to the point it grew.
      */
-    const open = (supports: Capabilities): OpenAI.ChatCompletionCreateParamsStreaming => {
-      const tools = supports.strictSchemas ? declared : relaxTools(declared);
-      const takes = modelCapabilitiesFor(supports, chosenModel);
-      const effort = config.reasoningEffort;
-      return {
-        model: chosenModel,
-        // Two spellings of one ceiling. `max_tokens` is the one every server understands
-        // and the reasoning models are the exception, so it stays the thing we open with.
-        ...(takes.legacyTokenLimit
-          ? { max_tokens: config.maxTokens }
-          : { max_completion_tokens: config.maxTokens }),
-        ...(takes.chosenTemperature ? { temperature: config.temperature } : {}),
-        // `off` is not a value to send: it is the setting saying leave the field out, which
-        // is the only thing a server that has never heard of reasoning will accept.
-        ...(effort !== "off" && takes.reasoningEffort ? { reasoning_effort: effort } : {}),
-        stream: true,
-        ...(supports.usageInStream ? { stream_options: { include_usage: true } } : {}),
-        messages: [{ role: "system", content: system }, ...history],
-        ...(tools.length ? { tools } : {}),
-      };
-    };
+    const open = (supports: Capabilities): OpenAI.ChatCompletionCreateParamsStreaming =>
+      buildBody(
+        {
+          model: chosenModel,
+          maxTokens: config.maxTokens,
+          temperature: config.temperature,
+          reasoningEffort: config.reasoningEffort,
+        },
+        supports,
+        modelCapabilitiesFor(supports, chosenModel),
+        [{ role: "system", content: system }, ...history],
+        declared,
+        false,
+      );
 
     iterations++;
     // Kept outside the round trip because an abort never hands one back: `runTurn` throws, and

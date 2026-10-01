@@ -356,17 +356,17 @@ describe("the request body", () => {
     // The whole request, in the order its fields are serialised.
     expect(requests).toEqual([
       JSON.stringify({
-        model: "m",
         max_tokens: 4096,
         temperature: 0.7,
-        stream: true,
         stream_options: { include_usage: true },
+        model: "m",
         messages: [
           { role: "system", content: "" },
           { role: "user", content: "earlier" },
           { role: "assistant", content: "before" },
           { role: "user", content: "hi" },
         ],
+        stream: true,
         // The pool's order, which is not name order, and the schemas as they were offered.
         tools: [READ, LS, NOW],
       }),
@@ -379,12 +379,12 @@ describe("the request body", () => {
     await run(session(), "hi");
 
     expect(Object.keys(bodies()[0])).toEqual([
-      "model",
       "max_tokens",
       "temperature",
-      "stream",
       "stream_options",
+      "model",
       "messages",
+      "stream",
     ]);
   });
 
@@ -402,13 +402,13 @@ describe("the request body", () => {
     expect(requests).toHaveLength(1);
     const [body] = bodies();
     expect(Object.keys(body)).toEqual([
-      "model",
       "max_tokens",
       "temperature",
       "reasoning_effort",
-      "stream",
       "stream_options",
+      "model",
       "messages",
+      "stream",
       "tools",
     ]);
     expect(body).toEqual({
@@ -474,12 +474,12 @@ describe("the request body", () => {
     expect(stats?.iterations).toBe(1);
     const keys = bodies().map((body) => Object.keys(body).join(" "));
     expect(keys).toEqual([
-      "model max_tokens temperature reasoning_effort stream stream_options messages tools",
-      "model max_tokens temperature reasoning_effort stream stream_options messages tools",
-      "model max_tokens temperature reasoning_effort stream messages tools",
-      "model max_tokens temperature stream messages tools",
-      "model max_completion_tokens temperature stream messages tools",
-      "model max_completion_tokens stream messages tools",
+      "max_tokens temperature reasoning_effort stream_options model messages stream tools",
+      "max_tokens temperature reasoning_effort stream_options model messages stream tools",
+      "max_tokens temperature reasoning_effort model messages stream tools",
+      "max_tokens temperature model messages stream tools",
+      "max_completion_tokens temperature model messages stream tools",
+      "max_completion_tokens model messages stream tools",
     ]);
     // A grammar the server could not build costs the schemas their `pattern`, and nothing else.
     const relaxed = tool("fs__read", "Read a file", { path: { type: "string" } });
@@ -488,21 +488,22 @@ describe("the request body", () => {
   });
 
   /**
-   * Looks wrong, pinned as it is: agent-core latches the refused value and expects the next body
-   * to ask for the cheapest effort the model does take, but the body is built from the setting
-   * alone, so the same request goes out again and the turn fails on the same refusal.
+   * agent-core latches the refused value and the next body asks for the cheapest effort the model
+   * does take. The body used to be built from the setting alone, so the same request went out
+   * again and the turn failed on the same refusal.
    */
-  it("asks for a refused effort value a second time, and fails on it", async () => {
+  it("asks for the cheapest effort the model takes once it has refused the one configured", async () => {
     configure({ reasoningEffort: "minimal" });
     const refusal =
       "Unsupported value: 'reasoning_effort' does not support 'minimal' with this model. " +
       "Supported values are: 'low', 'medium', and 'high'.";
-    script = [refuses(refusal), refuses(refusal), says("hello")];
+    script = [refuses(refusal), says("hello")];
 
-    const { error } = await run(session(), "hi");
+    const { error, stats } = await run(session(), "hi");
 
-    expect(error?.message).toContain("does not support 'minimal'");
-    expect(bodies().map((body) => body.reasoning_effort)).toEqual(["minimal", "minimal"]);
+    expect(error).toBeUndefined();
+    expect(stats?.iterations).toBe(1);
+    expect(bodies().map((body) => body.reasoning_effort)).toEqual(["minimal", "low"]);
   });
 });
 
