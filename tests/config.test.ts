@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { assertLlmConfigPatch, coerceLlmConfig, endpoint } from "../server/config.ts";
+import { graphql } from "graphql";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  assertLlmConfigPatch,
+  coerceLlmConfig,
+  endpoint,
+  refreshLlmConfig,
+} from "../server/config.ts";
+import { schema } from "../server/graphql/schema.ts";
 import { llmConfigSchema, modelForTask } from "../shared/types.ts";
 
 /**
@@ -111,5 +118,90 @@ describe("endpoint", () => {
       if (previous === undefined) delete process.env.OPENAI_API_KEY;
       else process.env.OPENAI_API_KEY = previous;
     }
+  });
+
+  it("prefers the row's key to the environment's", () => {
+    const previous = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "sk-from-env";
+    try {
+      expect(endpoint(llmConfigSchema.parse({ apiKey: "sk-test" })).apiKey).toBe("sk-test");
+    } finally {
+      if (previous === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previous;
+    }
+  });
+
+  /**
+   * Empty, not a placeholder. `@cubicecho/agent-core` fills one in for the SDK where it builds
+   * a client, but its probes for a local server's window send no `Authorization` header at all
+   * when the key is empty — so what this hands over with no key is something a server can see.
+   */
+  it("sends an empty key when neither the row nor the environment holds one", () => {
+    const previous = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    try {
+      expect(endpoint(llmConfigSchema.parse({})).apiKey).toBe("");
+    } finally {
+      if (previous !== undefined) process.env.OPENAI_API_KEY = previous;
+    }
+  });
+});
+
+/**
+ * The two places GraphQL says whether a key is set: the `hasApiKey` query the Config tab reads,
+ * and the same answer inside `health`. Neither touches the database — both read the cached
+ * settings — so the cache is filled here through a reader that hands back a row of our own.
+ */
+describe("hasApiKey", () => {
+  const previous = process.env.OPENAI_API_KEY;
+
+  /**
+   * Puts a row in the settings cache without a database behind it.
+   * @param row What the settings table would have held.
+   * @returns The settings as loaded.
+   */
+  const stored = (row: Record<string, unknown>) =>
+    refreshLlmConfig({
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => [row] }) }) }),
+    } as unknown as Parameters<typeof refreshLlmConfig>[0]);
+
+  /**
+   * Asks both fields in one query.
+   * @returns The `hasApiKey` query's answer and `health`'s.
+   */
+  const asked = async () => {
+    const result = await graphql({ schema, source: "{ hasApiKey health { hasApiKey } }" });
+    expect(result.errors).toBeUndefined();
+    const data = result.data as { hasApiKey: boolean; health: { hasApiKey: boolean } };
+    return { query: data.hasApiKey, health: data.health.hasApiKey };
+  };
+
+  beforeEach(() => {
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  afterEach(() => {
+    if (previous === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previous;
+  });
+
+  afterAll(async () => {
+    await stored({});
+  });
+
+  it("is false when neither the row nor the environment holds a key", async () => {
+    await stored({});
+    expect(await asked()).toEqual({ query: false, health: false });
+  });
+
+  it("is true for a key in the row", async () => {
+    await stored({ apiKey: "sk-test" });
+    expect(await asked()).toEqual({ query: true, health: true });
+  });
+
+  it("is true for a key that is only in the environment", async () => {
+    await stored({});
+    process.env.OPENAI_API_KEY = "sk-from-env";
+    expect(await asked()).toEqual({ query: true, health: true });
   });
 });
