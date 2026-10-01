@@ -1,14 +1,20 @@
 import { REASONING_EFFORTS, type ReasoningEffort } from "@shared/types.ts";
+import { useMutation } from "@tanstack/react-query";
 import { View } from "react-native";
 import {
+  Button,
   Card,
   CardDescription,
   CardTitle,
+  ErrorNote,
   Field,
+  Muted,
   NumberInput,
   Select,
   Textarea,
 } from "@/components/ui.tsx";
+import { api } from "@/lib/client.ts";
+import { useCopy } from "@/lib/copy.ts";
 import type { Draft } from "./config-form.tsx";
 import { ConfigForm } from "./config-form.tsx";
 
@@ -35,6 +41,52 @@ const EFFORT_OPTIONS = REASONING_EFFORTS.map((effort) => ({
 }));
 
 /**
+ * Copies the saved settings out as an agent spec.
+ *
+ * The document is built by the server from the stored row, so it is fetched when the button is
+ * pressed rather than when the panel opens: there is nothing to show until then, and a copy
+ * taken a minute after the panel loaded should not be a minute old. For the same reason the
+ * button is off while anything is unsaved — what would be copied is the row, not the form, and
+ * a button that quietly copied the settings from before your edits would be the wrong one to
+ * trust.
+ *
+ * Fetching first means the write is no longer inside the press by the time it happens, and a
+ * browser that only lends the clipboard to a gesture refuses it. That is said as an error: the
+ * other copy buttons can stay quiet about a refusal because they have nothing to wait for.
+ * @param props.dirty Something on Model, Agent or Voice is unsaved; the three share one row.
+ * @returns The button, its hint, and the error if the fetch or the copy failed.
+ */
+function CopySpec({ dirty }: { dirty: boolean }) {
+  const { copied, copy } = useCopy();
+  const fetched = useMutation({
+    mutationFn: async () => {
+      const ok = await copy(JSON.stringify(await api.spec(), null, 2));
+      if (!ok) throw new Error("The clipboard refused the copy.");
+    },
+  });
+
+  return (
+    <>
+      <View className="flex-row items-center gap-2">
+        <Button
+          variant="outline"
+          icon={copied ? "check" : "copy"}
+          busy={fetched.isPending}
+          disabled={dirty}
+          accessibilityLabel={copied ? "Copied" : "Copy agent spec"}
+          onPress={() => fetched.mutate()}
+        >
+          Copy agent spec
+        </Button>
+        {dirty ? <Muted className="flex-1">Save to copy the current settings.</Muted> : null}
+      </View>
+      <Muted>The API key is never included.</Muted>
+      <ErrorNote error={fetched.error} />
+    </>
+  );
+}
+
+/**
  * How the agent runs a turn: how long it may be, how hard it may work, and what it is told.
  *
  * The provider and its models are next door under Model, and the voice settings under Voice.
@@ -44,7 +96,7 @@ const EFFORT_OPTIONS = REASONING_EFFORTS.map((effort) => ({
 export function AgentPanel() {
   return (
     <ConfigForm tab="agent">
-      {({ draft, set }) => (
+      {({ draft, set, dirty }) => (
         <>
           <Card>
             <CardTitle>Limits</CardTitle>
@@ -141,6 +193,15 @@ export function AgentPanel() {
               onChangeText={(value) => set("systemPrompt", value)}
               className="min-h-36"
             />
+          </Card>
+
+          <Card>
+            <CardTitle>Agent spec</CardTitle>
+            <CardDescription>
+              These settings as one JSON document, in the format other apps built on agent-core
+              read. It covers Model and Voice as well as this panel.
+            </CardDescription>
+            <CopySpec dirty={dirty} />
           </Card>
         </>
       )}
