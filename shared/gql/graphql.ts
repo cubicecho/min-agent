@@ -1326,6 +1326,8 @@ export type Query = {
   settings: Array<Setting>;
   settingsAggregate: SettingAggregate;
   settingsGroupBy: Array<SettingGroupBy>;
+  /** The saved settings as an agent spec: a `cubicecho.agent/1` document another host on `@cubicecho/agent-core` can read. The API key is never part of it. */
+  spec: Scalars['JSON']['output'];
 };
 
 
@@ -2367,6 +2369,11 @@ export type ModelsQueryVariables = Exact<{ [key: string]: never; }>;
 
 export type ModelsQuery = { models: Array<{ id: string, contextLength?: number | null }> };
 
+export type SpecQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type SpecQuery = { spec: unknown };
+
 export type TurnSubscriptionVariables = Exact<{
   sessionId: Scalars['String']['input'];
   prompt: Scalars['String']['input'];
@@ -2724,6 +2731,11 @@ export const ModelsDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<ModelsQuery, ModelsQueryVariables>;
+export const SpecDocument = new TypedDocumentString(`
+    query Spec {
+  spec
+}
+    `) as unknown as TypedDocumentString<SpecQuery, SpecQueryVariables>;
 export const TurnDocument = new TypedDocumentString(`
     subscription Turn($sessionId: String!, $prompt: String!, $model: String) {
   turn(sessionId: $sessionId, prompt: $prompt, model: $model) {

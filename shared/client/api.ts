@@ -20,6 +20,7 @@ import {
   type SessionSummaryFragment,
   SessionsDocument,
   SetApiKeyDocument,
+  SpecDocument,
   TruncateSessionDocument,
   TurnDocument,
   type UpdateSettingInput,
@@ -195,6 +196,13 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
     },
 
     models: async () => ({ models: (await request(ModelsDocument)).models as ModelInfo[] }),
+
+    /**
+     * The saved settings as an agent spec, for copying out.
+     * @returns The document as the server built it. `unknown` on purpose: the app hands it to
+     * the clipboard and has no reason to know its shape.
+     */
+    spec: async (): Promise<unknown> => (await request(SpecDocument)).spec,
 
     sessions: async () => (await request(SessionsDocument)).sessions.map(summary),
 

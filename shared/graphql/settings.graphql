@@ -38,3 +38,9 @@ query Models {
     contextLength
   }
 }
+
+# The saved row as a `cubicecho.agent/1` document. JSON on the wire and to the app, which copies
+# it out and never reads it; the API key is not in it.
+query Spec {
+  spec
+}
