@@ -1,4 +1,4 @@
-import type { Endpoint } from "@cubicecho/agent-core";
+import { type Endpoint, NO_KEY, resolveApiKey } from "@cubicecho/agent-core";
 import { validateHooks } from "@cubicecho/agent-mcp-pool";
 import { asc, eq } from "drizzle-orm";
 import {
@@ -115,8 +115,16 @@ export async function refreshLlmConfig(reader: Reader = db): Promise<LlmConfig> 
 
 export const loadLlmConfig = (): LlmConfig => cached;
 
-/** The key from the settings row, else the environment. */
-export const resolveApiKey = (config = cached) => config.apiKey || process.env.OPENAI_API_KEY || "";
+/**
+ * Whether there is a key at all: one in the settings row, else one in the environment.
+ *
+ * The package's `resolveApiKey` never answers empty — with neither it hands back `NO_KEY`, the
+ * placeholder the SDK is given — so that is what "no key" has to be read from.
+ *
+ * @param config The settings to ask about, the cached row by default.
+ * @returns false when neither the row nor `$OPENAI_API_KEY` holds one.
+ */
+export const hasApiKey = (config = cached): boolean => resolveApiKey(config) !== NO_KEY;
 
 /**
  * The settings, as `@cubicecho/agent-core` wants an endpoint.
@@ -127,12 +135,22 @@ export const resolveApiKey = (config = cached) => config.apiKey || process.env.O
  * falls back to `$OPENAI_API_KEY` — and the timeout is zero because min-agent has never had
  * one: a local model can take a minute over a long answer, and a turn is already cancellable
  * from the client.
+ *
+ * No key goes over as an empty string rather than as the package's `NO_KEY`. Its client treats
+ * the two alike, but its probes for a local server's window send no `Authorization` header for
+ * an empty key and `Bearer agent-core` for the placeholder.
+ *
+ * @param config The settings to adapt, the cached row by default.
+ * @returns The endpoint, with an empty `apiKey` when no key is set.
  */
-export const endpoint = (config = cached): Endpoint => ({
-  baseUrl: config.baseUrl,
-  apiKey: resolveApiKey(config),
-  requestTimeoutSeconds: 0,
-});
+export const endpoint = (config = cached): Endpoint => {
+  const apiKey = resolveApiKey(config);
+  return {
+    baseUrl: config.baseUrl,
+    apiKey: apiKey === NO_KEY ? "" : apiKey,
+    requestTimeoutSeconds: 0,
+  };
+};
 
 /**
  * What a server list needs beyond each row's shape: unique ids, and hooks the pool will run.
