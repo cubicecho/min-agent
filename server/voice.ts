@@ -1,9 +1,10 @@
+import { NO_KEY, resolveApiKey } from "@cubicecho/agent-core";
 import express from "express";
 import OpenAI, { toFile } from "openai";
 import { spokenChunk } from "../shared/client/voice.ts";
 import { type LlmConfig, voiceBaseUrlFor, wyomingAddress } from "../shared/types.ts";
 import { toPcm, wav } from "./audio.ts";
-import { loadLlmConfig, resolveApiKey } from "./config.ts";
+import { loadLlmConfig } from "./config.ts";
 import { synthesize, transcribe } from "./wyoming.ts";
 
 /**
@@ -57,12 +58,18 @@ const EXTENSIONS: Record<string, string> = {
 export const audioExtension = (mime: string): string =>
   EXTENSIONS[mime.split(";")[0]?.trim().toLowerCase() ?? ""] ?? "webm";
 
-/** The audio endpoints, which are the chat server's unless told otherwise. */
-const voiceClient = (config: LlmConfig) =>
-  new OpenAI({
+/**
+ * The audio endpoints, which are the chat server's unless told otherwise.
+ * @param config The settings; read for the voice base URL and the key.
+ * @returns A client sending the resolved key, or `min-agent` where there is none.
+ */
+const voiceClient = (config: LlmConfig) => {
+  const apiKey = resolveApiKey(config);
+  return new OpenAI({
     baseURL: voiceBaseUrlFor(config),
-    apiKey: resolveApiKey(config) || "min-agent",
+    apiKey: apiKey === NO_KEY ? "min-agent" : apiKey,
   });
+};
 
 /**
  * A model that is not configured is not an error anyone should meet as a 500 — it is the

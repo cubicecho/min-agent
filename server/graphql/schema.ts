@@ -16,10 +16,10 @@ import type { EmbedConfig, McpServerConfig } from "../../shared/types.ts";
 import { listModels } from "../agent.ts";
 import {
   assertLlmConfigPatch,
+  hasApiKey,
   loadLlmConfig,
   loadMcpServers,
   refreshLlmConfig,
-  resolveApiKey,
   saveEmbeds,
   saveMcpServers,
 } from "../config.ts";
@@ -330,7 +330,7 @@ export const schema = new GraphQLSchema({
             ok: true,
             baseUrl: config.baseUrl,
             model: config.model,
-            hasApiKey: Boolean(resolveApiKey(config)),
+            hasApiKey: hasApiKey(config),
           };
         },
       },
@@ -339,7 +339,7 @@ export const schema = new GraphQLSchema({
         description:
           "Whether a key is set, without saying what it is. The Config tab shows a filled " +
           "placeholder rather than an empty box; the key itself is excluded from `Setting`.",
-        resolve: () => Boolean(resolveApiKey()),
+        resolve: () => hasApiKey(),
       },
     },
   }),
