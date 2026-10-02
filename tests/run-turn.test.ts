@@ -43,6 +43,7 @@ const mcp = {
   instructions: vi.fn(),
   resourceServers: vi.fn(),
   call: vi.fn(),
+  client: vi.fn(),
   runHooks: vi.fn(),
 };
 
@@ -888,5 +889,361 @@ describe("stopping a turn", () => {
       { role: "assistant", content: "Half an ans" },
     ]);
     expect(patches).toEqual([]);
+  });
+});
+
+/**
+ * What the first pass left out and the loop still decides: the paths #52's swap has to carry that
+ * nothing above holds it to. Pinned the same way — what the code does, odd or not.
+ */
+describe("what the loop decides beyond the common path", () => {
+  /**
+   * @param id The call's id.
+   * @param name The tool it names.
+   * @param args Its arguments, as the model wrote them.
+   * @returns The call as a stored assistant message carries it.
+   */
+  const call = (id: string, name: string, args: string) => ({
+    id,
+    type: "function",
+    function: { name, arguments: args },
+  });
+
+  /**
+   * @param prompt The prompt tokens the closing chunk reports.
+   * @param cached How many of them the server says it found cached.
+   * @returns The usage chunk, in the server's own spelling.
+   */
+  const usage = (prompt: number, cached: number) => ({
+    choices: [],
+    usage: {
+      prompt_tokens: prompt,
+      completion_tokens: 10,
+      total_tokens: prompt + 10,
+      prompt_tokens_details: { cached_tokens: cached },
+    },
+  });
+
+  it("streams reasoning as its own deltas, stores it with the reply, and never sends it back", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    script = [
+      {
+        chunks: [
+          chunk({ reasoning_content: "They want " }),
+          chunk({ reasoning_content: "a listing." }),
+          chunk({ tool_calls: [{ index: 0, ...call("c1", "fs__ls", "{}") }] }),
+          chunk({}, "tool_calls"),
+          USAGE,
+        ],
+      },
+      says("One file."),
+    ];
+
+    const { events } = await run(session(), "what is here");
+
+    expect(events.slice(0, 3)).toEqual([
+      { type: "reasoning_delta", text: "They want " },
+      { type: "reasoning_delta", text: "a listing." },
+      { type: "tool_use", id: "c1", name: "fs__ls", input: "{}" },
+    ]);
+    expect(stored[1]).toEqual({
+      role: "assistant",
+      content: null,
+      reasoning_content: "They want a listing.",
+      tool_calls: [call("c1", "fs__ls", "{}")],
+    });
+    const [, , replayed] = bodies()[1].messages as Record<string, unknown>[];
+    expect(replayed).toEqual({
+      role: "assistant",
+      content: null,
+      tool_calls: [call("c1", "fs__ls", "{}")],
+    });
+  });
+
+  it("answers the resource tools itself, and declares them ahead of everything else", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ);
+    mcp.resourceServers.mockReturnValue([{ id: "fs", label: "Files" }]);
+    mcp.client.mockResolvedValue({
+      listResources: async () => ({ resources: [{ uri: "file:///a", name: "a" }] }),
+      readResource: async ({ uri }: { uri: string }) => ({ contents: [{ uri, text: "hello" }] }),
+    });
+    script = [
+      asks(
+        ["c1", "list_resources", "{}"],
+        ["c2", "read_resource", '{"uri":"file:///a"}'],
+        ["c3", "read_resource", "{}"],
+      ),
+      says("Read."),
+    ];
+
+    const { events, stats } = await run(session(), "what do you have");
+
+    expect(declared(bodies()[0])).toEqual(["list_resources", "read_resource", "fs__read"]);
+    expect(stored.slice(2, 5)).toEqual([
+      { role: "tool", tool_call_id: "c1", content: "Files:\n  file:///a — a" },
+      { role: "tool", tool_call_id: "c2", content: "hello" },
+      {
+        role: "tool",
+        tool_call_id: "c3",
+        content: "read_resource needs a uri; pass the one list_resources gave.",
+      },
+    ]);
+    const results = events.flatMap((event) =>
+      event.type === "tool_result" ? [[event.toolUseId, event.isError]] : [],
+    );
+    expect(results).toHaveLength(3);
+    expect(results).toEqual(
+      expect.arrayContaining([
+        ["c1", false],
+        ["c2", false],
+        ["c3", true],
+      ]),
+    );
+    // Not the pool's to run, and counted as tools the model used all the same.
+    expect(mcp.call).not.toHaveBeenCalled();
+    expect(stats).toMatchObject({ iterations: 2, toolCalls: 3 });
+  });
+
+  it("loads a catalogued tool that is called without being loaded, and carries it", async () => {
+    offer(READ, LS, NOW);
+    mcp.call.mockImplementation(async (name: string) => {
+      if (name === "clock__now") return "12:00";
+      throw new Error(`no such tool: ${name}`);
+    });
+    script = [asks(["c1", "clock__now", "{}"], ["c2", "clock__then", "{}"]), says("Noon.")];
+    const chat = session();
+
+    const { events, stats } = await run(chat, "what time is it");
+
+    expect(bodies().map(declared)).toEqual([["load_tools"], ["load_tools", "clock__now"]]);
+    // A name nothing offers is called, and fails, and is nothing to declare or carry.
+    expect(mcp.call.mock.calls.map(([name]) => name)).toEqual(["clock__now", "clock__then"]);
+    expect(events.filter((event) => event.type === "tool_result")).toEqual([
+      { type: "tool_result", toolUseId: "c1", content: "12:00", isError: false },
+      { type: "tool_result", toolUseId: "c2", content: "no such tool: clock__then", isError: true },
+    ]);
+    expect(chat.loadedTools).toEqual(["clock__now"]);
+    // The last request's split, which counts the definition that call pulled in.
+    expect(stats?.breakdown).toEqual({
+      system: 1,
+      guidance: 0,
+      catalogue: 27,
+      tools: 47,
+      summary: 0,
+      history: 0,
+      historyTools: 0,
+      input: 6,
+      inputTools: 19,
+    });
+  });
+
+  it("answers a repeat load as already loaded, and a load of nothing known as an error", async () => {
+    offer(READ, LS, NOW);
+    script = [
+      asks(
+        ["c1", "load_tools", '{"names":["fs__read","fs__ls"]}'],
+        ["c2", "load_tools", '{"names":["fs__nope"]}'],
+      ),
+      says("Loaded."),
+    ];
+    const chat = session({ loadedTools: ["fs__read"] });
+
+    const { events, stats } = await run(chat, "get ready");
+
+    expect(events.slice(0, 4)).toEqual([
+      { type: "tool_use", id: "c1", name: "load_tools", input: '{"names":["fs__read","fs__ls"]}' },
+      {
+        type: "tool_result",
+        toolUseId: "c1",
+        content:
+          "Loaded 1 tool(s); they are callable on your next step.\n\n" +
+          "fs__ls: List a directory\n\n" +
+          "Already loaded and in your tool list: fs__read. Call them directly; " +
+          "do not load them again.",
+        isError: false,
+      },
+      { type: "tool_use", id: "c2", name: "load_tools", input: '{"names":["fs__nope"]}' },
+      {
+        type: "tool_result",
+        toolUseId: "c2",
+        content: "Not in the catalogue: fs__nope. Check the names and try again.",
+        isError: true,
+      },
+    ]);
+    expect(declared(bodies()[1])).toEqual(["load_tools", "fs__read", "fs__ls"]);
+    expect(stats).toMatchObject({ iterations: 2, toolCalls: 0 });
+    // Nothing was called, so only what was carried in is carried out.
+    expect(chat.loadedTools).toEqual(["fs__read"]);
+  });
+
+  it("hands a long load result over whole, to the chat and to the transcript", async () => {
+    const many = Array.from({ length: 12 }, (_, index) =>
+      tool(`fs__tool_${index}`, `${"Describes itself at length. ".repeat(8)}(${index})`),
+    );
+    offer(...many);
+    script = [asks(["c1", "load_tools", '{"names":["fs__tool_*"]}']), says("Loaded.")];
+
+    const { events } = await run(session(), "get ready");
+
+    const result = events.find((event) => event.type === "tool_result");
+    const content = result?.type === "tool_result" ? result.content : "";
+    expect(content.length).toBeGreaterThan(2000);
+    expect(content.endsWith("(11)")).toBe(true);
+    expect(stored[2]).toEqual({ role: "tool", tool_call_id: "c1", content });
+  });
+
+  it("answers an identical call from an earlier step of the turn without making it again", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ);
+    mcp.call.mockResolvedValue("contents of a");
+    script = [
+      asks(["c1", "fs__read", '{"path":"/a"}']),
+      asks(["c2", "fs__read", '{"path":"/a"}']),
+      says("Done."),
+    ];
+
+    await run(session(), "read it twice");
+
+    expect(mcp.call).toHaveBeenCalledTimes(1);
+    expect(stored[2]).toEqual({ role: "tool", tool_call_id: "c1", content: "contents of a" });
+    expect(stored[4]).toEqual({
+      role: "tool",
+      tool_call_id: "c2",
+      content:
+        "contents of a\n\n(Identical call already made this turn; the result is unchanged. " +
+        "Use it rather than calling again.)",
+    });
+  });
+
+  /**
+   * agent-core's `parseToolArguments` would repair these and run the call. Today they are read
+   * with `JSON.parse` alone, so the model is told and has to write them again.
+   */
+  it("refuses arguments that are almost JSON, and stores them as the model wrote them", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ);
+    script = [asks(["c1", "fs__read", "{'path': '/a',}"]), says("Sorry.")];
+
+    const { events } = await run(session(), "read it");
+
+    expect(mcp.call).not.toHaveBeenCalled();
+    expect(events[1]).toEqual({
+      type: "tool_result",
+      toolUseId: "c1",
+      content: "model produced invalid tool arguments: {'path': '/a',}",
+      isError: true,
+    });
+    expect(stored[1]).toMatchObject({ tool_calls: [call("c1", "fs__read", "{'path': '/a',}")] });
+  });
+
+  it("runs a call_tool on demand as well, without loading or carrying what it named", async () => {
+    offer(READ, LS);
+    mcp.call.mockResolvedValue("contents of a");
+    const proxied = '{"name":"fs__read","arguments":{"path":"/a"}}';
+    script = [asks(["c1", "call_tool", proxied]), says("Read.")];
+    const chat = session();
+
+    const { events } = await run(chat, "read /a");
+
+    expect(events.slice(0, 2)).toEqual([
+      { type: "tool_use", id: "c1", name: "fs__read", input: '{"path":"/a"}' },
+      { type: "tool_result", toolUseId: "c1", content: "contents of a", isError: false },
+    ]);
+    expect(mcp.call.mock.calls).toEqual([["fs__read", { path: "/a" }, undefined]]);
+    expect(bodies().map(declared)).toEqual([["load_tools"], ["load_tools"]]);
+    expect(chat.loadedTools).toEqual([]);
+  });
+
+  it("warns when a step finds much less cached than the request before it sent", async () => {
+    const warn = vi.mocked(console.warn);
+    const earlier = [
+      { role: "user", content: "earlier" },
+      { role: "assistant", content: "before", stats: { lastPromptTokens: 1000 } },
+    ] as StoredMessage[];
+    configure({ toolDiscovery: "eager" });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    script = [
+      // Held to the turn before: 1000 tokens went out last, and 100 of this one were found.
+      {
+        chunks: [
+          chunk({ tool_calls: [{ index: 0, ...call("c1", "fs__ls", "{}") }] }),
+          chunk({}, "tool_calls"),
+          usage(1100, 100),
+        ],
+      },
+      // Held to the step before: 1100 went out and 1090 were found, which is no miss.
+      { chunks: [chunk({ content: "One file." }), chunk({}, "stop"), usage(1200, 1090)] },
+    ];
+
+    await run(session({ messages: earlier }), "what is here");
+
+    expect(warn.mock.calls.map(([line]) => line)).toEqual([
+      "[agent] prompt cache missed: 100 of 1100 cached, after a 1000-token request",
+    ]);
+  });
+
+  it("says nothing about the cache where the server reports none", async () => {
+    const earlier = [
+      { role: "user", content: "earlier" },
+      { role: "assistant", content: "before", stats: { lastPromptTokens: 1000 } },
+    ] as StoredMessage[];
+    script = [says("hello")];
+
+    await run(session({ messages: earlier }), "hi");
+
+    expect(vi.mocked(console.warn)).not.toHaveBeenCalled();
+  });
+
+  it("answers an overflow once, in the server's words and with the window it was built to", async () => {
+    script = [refuses("This model's maximum context length is 4096 tokens."), says("never sent")];
+
+    const { events, error } = await run(session(), "hi");
+
+    expect(error?.name).toBe("ContextOverflow");
+    expect(error?.message).toBe(
+      "400 This model's maximum context length is 4096 tokens. — this turn was built to 32.8k " +
+        "tokens, so the window in Settings → Agent is larger than what the server actually serves.",
+    );
+    expect(requests).toHaveLength(1);
+    expect(events).toEqual([]);
+    expect(stored).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  it("stores a stopped tool call's answer before the stop ends the turn", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(LS);
+    const controller = new AbortController();
+    mcp.call.mockImplementation(
+      (_name: string, _input: unknown, signal: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new Error("stopped by the reader")));
+        }),
+    );
+    script = [asks(["c1", "fs__ls", "{}"]), says("never asked for")];
+
+    const { events, error } = await run(session(), "look around", {
+      signal: controller.signal,
+      onEvent: (event) => {
+        // Once the call is in flight, not as it is announced.
+        if (event.type === "tool_use") setTimeout(() => controller.abort(), 0);
+      },
+    });
+
+    expect(error).toBeInstanceOf(Error);
+    expect(requests).toHaveLength(1);
+    expect(events).toEqual([
+      { type: "tool_use", id: "c1", name: "fs__ls", input: "{}" },
+      { type: "tool_result", toolUseId: "c1", content: "stopped by the reader", isError: true },
+    ]);
+    // The transcript stays one a server will take: the call the model made has its answer.
+    expect(stored).toEqual([
+      { role: "user", content: "look around" },
+      { role: "assistant", content: null, tool_calls: [call("c1", "fs__ls", "{}")] },
+      { role: "tool", tool_call_id: "c1", content: "stopped by the reader" },
+    ]);
   });
 });
