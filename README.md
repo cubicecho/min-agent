@@ -1,5 +1,7 @@
 # min-agent
 
+**<https://cubicecho.github.io/min-agent/>** — the one-page site.
+
 A very small self-hosted agent: chat sessions over any OpenAI-compatible server, with MCP tools.
 Replies render as markdown with syntax-highlighted code, and every turn reports what it cost in
 tokens, time and throughput. Everything it knows — settings, MCP servers, sessions and every

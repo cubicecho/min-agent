@@ -1,0 +1,80 @@
+---
+layout: base.njk
+---
+<section class="hero project-hero">
+  <h1>{{ site.name }}</h1>
+  <p>{{ site.tagline }}</p>
+  <p class="cta">
+    <a class="button" href="#start">Get started</a>
+    <a class="button secondary" href="{{ site.repo }}" rel="noopener">GitHub ↗</a>
+  </p>
+</section>
+
+<section class="section">
+  <h2>What it does</h2>
+  <p class="section-intro">
+    A chat app and tool-calling loop for a model you already have: one you run
+    yourself with Ollama or LM Studio, or one behind an API such as OpenAI or
+    OpenRouter. It connects to MCP servers for tools, resources and prompts, and
+    keeps its settings, servers, sessions and every message in Postgres. One
+    front end ships to the browser, Android, and a Windows or Linux desktop app.
+  </p>
+
+  <ul class="card-grid">
+    <li>
+      <article class="card">
+        <h3>Any OpenAI-compatible model</h3>
+        <p>
+          Point it at a base URL, pick a model from the list the server returns,
+          and optionally give a small fast model the side jobs: session titles,
+          context compaction, tool preselection and follow-up suggestions.
+        </p>
+      </article>
+    </li>
+    <li>
+      <article class="card">
+        <h3>MCP tools, loaded on demand</h3>
+        <p>
+          Stdio and HTTP MCP servers plug in from the settings screen, and by
+          default the model gets a name-only catalogue and loads the tool
+          definitions it needs instead of being sent every schema on every
+          request.
+        </p>
+      </article>
+    </li>
+    <li>
+      <article class="card">
+        <h3>What every turn cost</h3>
+        <p>
+          Each reply reports its output tokens, tokens per second, time to first
+          token and total time, beside a context meter and a breakdown of what
+          filled the window.
+        </p>
+      </article>
+    </li>
+  </ul>
+</section>
+
+<section class="section" id="start">
+  <h2>Get started</h2>
+  <div class="prose">
+    <pre class="code"><code>git clone https://github.com/cubicecho/min-agent
+cd min-agent
+docker compose up -d</code></pre>
+    <p>
+      That builds the image and starts it with its Postgres database. Open
+      <code>http://localhost:8787</code>, go to Settings → Agent, enter the base
+      URL of an OpenAI-compatible server, refresh the model list, pick a model
+      and save.
+    </p>
+    <p>
+      Nothing in min-agent is authenticated, so publish the port only on a
+      network you trust.
+    </p>
+  </div>
+
+  <p class="readme-link">
+    Full documentation lives in the project README:
+    <a href="{{ site.repo }}#readme" rel="noopener">{{ site.repo }}</a>
+  </p>
+</section>
