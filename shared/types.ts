@@ -1,3 +1,5 @@
+// Types only, from here: agent-core is the server's, and nothing of it may reach the app's bundle.
+import type { CompactionRecord } from "@cubicecho/agent-core";
 import type { HookEvent, McpStatus } from "@cubicecho/agent-mcp-pool";
 import { HOOK_EVENTS, INJECT_EVENTS } from "@cubicecho/agent-mcp-pool/hooks";
 import type OpenAI from "openai";
@@ -424,16 +426,6 @@ export type StoredMessage = OpenAI.ChatCompletionMessageParam & {
   followups?: string[];
 };
 
-/** What replaces the folded-away head of a long transcript. Written by the model, kept in pg. */
-export interface Compaction {
-  /** The model's notes on messages `[0, through)`. */
-  summary: string;
-  /** Index into `messages`: everything before it is represented by the summary. */
-  through: number;
-  /** When it was written, so the chat can show where history was folded. */
-  at: string;
-}
-
 export interface Session {
   id: string;
   title: string;
@@ -444,8 +436,13 @@ export interface Session {
   usage?: TokenUsage;
   /** Tools pulled in on demand, kept for the rest of the session so they load once. */
   loadedTools?: string[];
-  /** Set once the transcript outgrew the window; the head is sent as a summary instead. */
-  compaction?: Compaction;
+  /**
+   * Set once the transcript outgrew the window; the head is sent as a summary instead. Written by
+   * the model and kept in pg. agent-core's record of a fold: `summary` is the notes on messages
+   * `[0, through)`, `through` the index into `messages` the request is rebuilt from, and `at`
+   * when it was written.
+   */
+  compaction?: CompactionRecord;
   /** Raw chat-completions turns — replayed verbatim on the next request. */
   messages: StoredMessage[];
 }

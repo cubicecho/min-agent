@@ -43,4 +43,34 @@ describe("forApi", () => {
     }
     expect(sent[2]).toEqual({ role: "user", content: "second" });
   });
+
+  it("sends a fold's summary where the head was, first, and the rest as it would be anyway", () => {
+    const folded = {
+      ...session(transcript),
+      compaction: { summary: "we chose tea", through: 1, at: "2026-01-01T00:00:00.000Z" },
+    };
+    const sent = forApi(folded);
+    expect(sent).toEqual([
+      {
+        role: "system",
+        content:
+          "Summary of the earlier part of this conversation, which is no longer shown in full:" +
+          "\n\nwe chose tea",
+      },
+      { role: "assistant", content: "One." },
+      { role: "user", content: "second" },
+    ]);
+    // The stored transcript is not what was rewritten.
+    expect(folded.messages).toBe(transcript);
+    expect(transcript).toHaveLength(3);
+  });
+
+  it("keeps a kept question's context behind a summary", () => {
+    const sent = forApi({
+      ...session([{ role: "user", content: "zeroth" }, ...transcript]),
+      compaction: { summary: "notes", through: 1, at: "2026-01-01T00:00:00.000Z" },
+    });
+    expect(sent).toHaveLength(4);
+    expect(sent[1]).toEqual(forApi(session(transcript))[0]);
+  });
 });

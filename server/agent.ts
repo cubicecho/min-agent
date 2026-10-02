@@ -1,4 +1,5 @@
 import {
+  applyCompaction,
   ask,
   buildBody,
   type Capabilities,
@@ -22,9 +23,11 @@ import {
   modelCapabilitiesFor,
   preselect,
   requestedNames,
+  runCompaction,
   runTurn as runRoundTrip,
   type StreamTurnOptions,
   sanitizeTools,
+  summariser,
   type Turn,
   timeoutMs,
   tryAsk,
@@ -45,15 +48,17 @@ import {
   type TokenUsage,
   type TurnStats,
 } from "../shared/types.ts";
-import {
-  compactionMessage,
-  needsCompaction,
-  planCompaction,
-  SUMMARY_PROMPT,
-  transcriptFor,
-} from "./compaction.ts";
+import { planFold } from "./compaction.ts";
 import { endpoint, loadLlmConfig } from "./config.ts";
-import { gather, HOST, notify, turnIndex, turnMessages, withContext } from "./hooks.ts";
+import {
+  compactionHooks,
+  gather,
+  HOST,
+  notify,
+  turnIndex,
+  turnMessages,
+  withContext,
+} from "./hooks.ts";
 import * as mcp from "./mcp.ts";
 import {
   LIST_RESOURCES,
@@ -101,6 +106,9 @@ const notice = (message: string) => console.warn(`[agent] ${message}`);
  *
  * The messages themselves are never deleted — only `compaction.through` moves — so the chat
  * still shows the whole history and the next compaction can build on this summary.
+ *
+ * Where to cut, the summary and the hooks are agent-core's. What is done with the record is
+ * min-agent's: it is stored on the session, and nothing is when there is none.
  */
 async function compact(
   session: Session,
@@ -110,39 +118,25 @@ async function compact(
   signal?: AbortSignal,
 ): Promise<string> {
   const used = latestContextTokens(session);
-  if (!needsCompaction(used, contextLimit)) return "";
+  // No plan when the window is not three quarters used, or no legal cut folds enough.
+  const plan = planFold(session, contextLimit, used);
+  if (!plan) return "";
 
-  const from = session.compaction?.through ?? 0;
-  const through = planCompaction(session.messages, from, contextLimit);
-  if (through === undefined) return "";
-
-  const previous = session.compaction
-    ? `Notes so far:\n${session.compaction.summary}\n\nContinue them with this exchange:\n\n`
-    : "";
   // A memory server gets what is about to be folded away while the summary is written. Beside
   // it, not ahead of it: nothing is deleted, only what is sent changes, so filing it is not a
-  // rescue worth making the turn wait for.
-  const [summary] = await Promise.all([
-    ask(
-      endpoint(config),
-      model,
-      SUMMARY_PROMPT,
-      previous + transcriptFor(session.messages, from, through),
-      { maxTokens: 1024, signal, onNotice: notice },
-    ),
-    notify("beforeCompact", {
-      session: { id: session.id },
-      host: HOST,
-      compacting: turnMessages(session, from, through),
-      range: { from, through },
-    }),
-  ]);
-  if (!summary) return "";
+  // rescue worth making the turn wait for. No record comes back for an empty summary.
+  const record = await runCompaction(
+    session.messages,
+    plan,
+    summariser(endpoint(config), model, { signal, onNotice: notice }),
+    { hooks: compactionHooks(session) },
+  );
+  if (!record) return "";
 
-  session.compaction = { summary, through, at: new Date().toISOString() };
-  await updateSession(session.id, { compaction: session.compaction });
-  console.log(`[agent] compacted ${through} message(s) at ${used}/${contextLimit} tokens`);
-  return summary;
+  session.compaction = record;
+  await updateSession(session.id, { compaction: record });
+  console.log(`[agent] compacted ${record.through} message(s) at ${used}/${contextLimit} tokens`);
+  return record.summary;
 }
 
 /** The last turn's final prompt, which the next turn's first request should find cached. */
@@ -244,10 +238,9 @@ async function suggestFollowups(
  * the new, so a request is the one before it with only its tail added. See `withContext`.
  */
 export function forApi(session: Session): OpenAI.ChatCompletionMessageParam[] {
-  const { compaction } = session;
-  const messages = compaction
-    ? [compactionMessage(compaction), ...session.messages.slice(compaction.through)]
-    : session.messages;
+  // `from: 0` because the system prompt is a separate argument and never in the transcript:
+  // the summary is the request's first message, with nothing kept ahead of it.
+  const messages = applyCompaction(session.messages, session.compaction, { from: 0 });
   return messages.map((message) => {
     const { reasoning_content, stats, followups, hook_context, ...sent } = message as StoredMessage;
     return sent.role === "user"

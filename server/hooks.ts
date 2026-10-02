@@ -166,6 +166,24 @@ export async function notify(
 }
 
 /**
+ * The hooks as agent-core's `runCompaction` takes them, for a fold of this chat.
+ *
+ * It adds `compacting` and `range` itself, from the plan, and tells `beforeCompact` beside the
+ * summary rather than ahead of it: no `honourVeto`, so a hook cannot stop a fold and adds no
+ * time to one. No `onNote` either, as `notify` has no `emit` when nobody is listening — a fold
+ * is not part of the turn the chat is watching.
+ *
+ * @param session The chat being folded.
+ * @returns The pool as the runner, and what every hook here is told.
+ */
+export const compactionHooks = (
+  session: Pick<Session, "id">,
+): NonNullable<core.CompactionRunOptions["hooks"]> => ({
+  run,
+  context: { session: { id: session.id }, host: HOST },
+});
+
+/**
  * A chat was deleted. Tells the servers that keep anything under its id. Never rejects, as
  * agent-core's `notify` does not, because this is called without being awaited.
  *

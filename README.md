@@ -580,10 +580,10 @@ of folds.
 
 The cut point is the fussy part. It has to land **immediately before a `user` message**, because a
 transcript that opens mid-exchange — a tool result with no assistant call above it, an assistant
-turn answering nothing — is rejected by most servers. `planCompaction()` walks backwards from the
-end accumulating a tail worth about 35% of the window, then advances the cut forward to the next
-`user` message and gives up if that leaves fewer than two messages folded. A fold that would not
-pay for itself is not worth a round trip.
+turn answering nothing — is rejected by most servers. agent-core's `planCompaction()` walks
+backwards from the end accumulating a tail worth about 35% of the window, then advances the cut
+forward to the next `user` message and gives up if that leaves fewer than two messages folded. A
+fold that would not pay for itself is not worth a round trip.
 
 Like titling, a failure is swallowed: the turn proceeds on the full transcript, which is the
 behaviour you had before compaction existed.
