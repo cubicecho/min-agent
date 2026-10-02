@@ -1,13 +1,10 @@
 import {
   type CatalogServer,
-  catalogList,
+  PROXY_TOOLS as CORE_PROXY_TOOLS,
   type expandNames,
-  inCatalog,
-  LOAD_TOOLS,
   loadResult,
 } from "@cubicecho/agent-core";
 import type { ToolDefinition } from "@cubicecho/agent-mcp-pool";
-import { CALL_TOOL } from "../shared/tool-proxy.ts";
 
 /**
  * Proxied tool discovery: on-demand loading with a tool array that never changes.
@@ -22,89 +19,30 @@ import { CALL_TOOL } from "../shared/tool-proxy.ts";
  * has to get right, which a small model does less reliably than a native call.
  */
 
-/** Shallow freezing these would leave `.function.description` — the part worth editing. */
-function deepFreeze<T>(value: T): T {
-  if (value && typeof value === "object") for (const held of Object.values(value)) deepFreeze(held);
-  return Object.freeze(value);
-}
+/**
+ * The parts of this that agent-core has had since 2.20.0, taken from it: the two declared tools,
+ * the catalogue block worded for `call_tool`, the test for a load result that carries
+ * definitions (which `server/pruning.ts` asks before clearing one), and the unwrapping of a
+ * `call_tool`. Each was compared with the copy that used to live here and is the same text.
+ */
+export { holdsDefinitions, proxiedCall, proxyCatalogPrompt } from "@cubicecho/agent-core";
 
 /**
- * `load_tools` and `call_tool`, frozen and shared for the same reason as `RESOURCE_TOOLS`. The
- * load keeps agent-core's name, so `requestedNames` and `expandNames` read its arguments as they
- * do in on-demand mode; only what it promises differs.
+ * `load_tools` and `call_tool`, as agent-core declares them. It types the array as read-only and
+ * as the SDK's wider tool union; here it is read as the pool's function tools, which is what both
+ * entries are, so it can sit in a tool array beside the pool's own. Frozen all the way down, so
+ * the mutable type is a promise nobody can break.
  */
-export const PROXY_TOOLS: ToolDefinition[] = deepFreeze([
-  {
-    type: "function",
-    function: {
-      name: LOAD_TOOLS,
-      description:
-        "Get the full definitions of tools listed in the tool catalogue: what each does and the " +
-        "arguments it takes. Pass the exact names you need, or a trailing wildcard like " +
-        "`server__group__*` for a whole group. Then run them with `call_tool`. Load only what " +
-        "the task actually needs.",
-      parameters: {
-        type: "object",
-        properties: {
-          names: {
-            type: "array",
-            items: { type: "string" },
-            description: "Tool names from the catalogue. Wildcards may end with `*`.",
-          },
-        },
-        required: ["names"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: CALL_TOOL,
-      description:
-        "Run a tool from the catalogue. Load it with `load_tools` first to learn its arguments, " +
-        "then pass its exact name and an arguments object matching its parameters.",
-      parameters: {
-        type: "object",
-        properties: {
-          name: { type: "string", description: "The tool's exact name from the catalogue." },
-          arguments: {
-            type: "object",
-            description: "The tool's arguments, as its definition describes them.",
-            // Any keys at all: without this a grammar-constrained server can compile the empty
-            // property list into `{}` and leave the model no way to pass an argument.
-            additionalProperties: true,
-          },
-        },
-        required: ["name", "arguments"],
-      },
-    },
-  },
-]);
-
-/**
- * The catalogue block for the system prompt, worded for `call_tool` rather than a tool list.
- *
- * @param catalog The connected servers. A catalogue with no tools in it produces an empty string.
- */
-export function proxyCatalogPrompt(catalog: CatalogServer[]): string {
-  const list = catalogList(catalog);
-  if (!list) return "";
-  return [
-    "# Tool catalogue",
-    "",
-    "These tools exist. Call `load_tools` with the names you need to get their definitions, then",
-    "run them with `call_tool`. Names are descriptive; load a tool to see its parameters. A tool",
-    "whose definition is already in this conversation does not need loading again. Do not load",
-    "tools the task does not need, and do not mention this mechanism in your answer.",
-    "",
-    list,
-  ].join("\n");
-}
+export const PROXY_TOOLS = CORE_PROXY_TOOLS as ToolDefinition[];
 
 /**
  * What a proxied `load_tools` answers: each new tool's whole definition, since the result is the
  * only place the model will ever see it.
+ *
+ * Kept here rather than taken from agent-core, whose `proxyLoadResult` is not the same text: it
+ * says "earlier in this conversation" where this says "earlier in this turn", and it adds a line
+ * for a matched name it was given no definition for. Either would change what a stored tool row
+ * holds.
  *
  * @param resolved What the call asked for, from `expandNames`.
  * @param definitions The definitions of `resolved.matched`, from the pool.
@@ -148,55 +86,4 @@ export function proxyLoadResult(
     lines.push(loadResult({ ...resolved, matched: [] }, catalog));
   }
   return lines.join("\n");
-}
-
-/** How a proxied load result that carries definitions opens, with the count left open. */
-const PROXY_LOADED = /^Loaded \d+ tool\(s\)\. Run them with `call_tool`\./;
-
-/**
- * Whether a tool result is a proxied load carrying definitions, which is the only copy of them
- * the model has, and so one that is never cleared from what is replayed. See `server/pruning.ts`.
- *
- * Told by how `proxyLoadResult` opens, because a `tool` message carries no tool name of its own,
- * and because that makes it a fact about the stored message rather than about today's setting: a
- * chat switched out of proxied mode keeps its definitions, and its requests keep their prefix. A
- * load that only pointed back or refused holds none and is not one.
- *
- * A later agent-core than the one installed has the same test under the same name and asks it
- * inside `pruneToolResults` (it is there at 2.23.0 and not at 2.18.1); this one goes when the
- * dependency reaches it.
- *
- * @param result The tool message's text.
- */
-export const holdsDefinitions = (result: string) => PROXY_LOADED.test(result);
-
-/**
- * The tool a `call_tool` names and the arguments to run it with.
- *
- * `arguments` arrives as an object when the model follows the schema and as a JSON string when
- * it copies the shape of a native call instead; both are taken, since the intent is the same.
- *
- * @param args The `call_tool` call's own arguments, parsed.
- * @param catalog What may be called. A name outside it is refused here, not by the pool.
- */
-export function proxiedCall(
-  args: Record<string, unknown>,
-  catalog: CatalogServer[],
-): { name: string; input: Record<string, unknown> } {
-  const name = typeof args.name === "string" ? args.name.trim() : "";
-  if (!name) throw new Error("call_tool needs a name; pass one from the tool catalogue.");
-  if (!inCatalog(catalog, name))
-    throw new Error(`Not in the catalogue: ${name}. Check the name and try again.`);
-  let input: unknown = args.arguments ?? {};
-  if (typeof input === "string") {
-    const text = input;
-    try {
-      input = text.trim() ? JSON.parse(text) : {};
-    } catch {
-      throw new Error(`call_tool arguments for ${name} are not valid JSON: ${text.slice(0, 200)}`);
-    }
-  }
-  if (!input || typeof input !== "object" || Array.isArray(input))
-    throw new Error(`call_tool arguments for ${name} must be an object.`);
-  return { name, input: input as Record<string, unknown> };
 }

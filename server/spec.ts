@@ -1,4 +1,4 @@
-import { AGENT_SPEC, type AgentSpec, type ToolsSpec } from "@cubicecho/agent-core/spec";
+import { AGENT_SPEC, type AgentSpec } from "@cubicecho/agent-core/spec";
 import { MODEL_TASKS } from "../shared/model-tasks.ts";
 import type { LlmConfig } from "../shared/types.ts";
 
@@ -57,9 +57,7 @@ export function settingsSpec(config: LlmConfig): AgentSpec {
     },
     prompt: [{ id: PROMPT_PART, text: config.systemPrompt }],
     tools: {
-      // The one cast: the format's enum is `eager | ondemand` until cubicecho/agent-core#120
-      // adds `proxy`, and a proxy row is exported as what it is rather than as something else.
-      discovery: config.toolDiscovery as ToolsSpec["discovery"],
+      discovery: config.toolDiscovery,
       maxIterations: config.maxToolIterations,
     },
     tasks: tasksOf(config.taskModels),
