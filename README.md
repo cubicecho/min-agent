@@ -176,7 +176,7 @@ Five tables, created by the migrations in `drizzle/`, which `runMigrations()` ap
 settings      one row, id 'default' — Settings → Agent
 mcp_servers   one row per server, ordered by position — Settings → MCP
 embeds        one row per app in the sidebar, ordered by position — Settings → Apps
-sessions      one per chat: title, dates, token totals, compaction state
+sessions      one per chat: title, dates, token totals, compaction and pruning state
 messages      one per message, ordered by (session_id, idx), cascade-deleted with the session
 ```
 
@@ -594,6 +594,35 @@ complaint comes back with the number the turn was working to added to it — the
 that failure is that the two disagree, and the usual cause is a **Context window** larger than what
 the server actually serves (llama.cpp will list a 256k model it loaded at `-c 16384`).
 
+### Clearing old tool results
+
+A file read forty steps ago is still ten thousand tokens on every request since, long after the
+model took what it wanted from it. So old tool results are sent as a one-line stub —
+`[result cleared, 12,345 chars]`, agent-core's `pruneToolResults()` — while the stored message
+and what the chat shows stay whole.
+
+The fussy part is the prompt cache. "All but the latest five results" is a window that slides:
+applied per request, every new result pushes an older one out, rewrites a message in the middle
+of the history, and loses the cache from there on — once per tool call. So the cut is stored
+instead. `session.pruning` records `{ through, at }`, results before `through` are sent as stubs
+and results from it on are sent whole, and a request is the one before it with only its tail
+added for as long as the marker stays where it is.
+
+`planPrune()` in `server/pruning.ts` decides when it moves, and it is asked at the start of a turn
+and after each step's results are in — a long turn of tool calls is where the window fills, and
+nothing compacts mid-turn. The marker goes onto the fifth result from the end, and only:
+
+- **with a compaction**, which has just rewritten the head of the request, so whatever a move
+  clears is free; or
+- **when the move would clear a quarter of the window**, by the planner's own count. A move costs
+  one cache miss from the old marker onward, so it has to buy something. With no window known it
+  never moves on its own, and a conversation that is mostly talk never moves it at all.
+
+It never moves backwards. A result of 256 characters or fewer is left as it is, and so is a
+proxied `load_tools` result that carries definitions — the only copy of those schemas the model
+has. An on-demand load's result and the resource tools' are cleared like any other: the first
+only repeats what the tool array declares, and a resource can be read again.
+
 ## Turn statistics
 
 Every turn asks the server for `usage` (via `stream_options`) and times itself, so a finished
@@ -648,6 +677,11 @@ of, and the panel simply leaves the split out.
 *This turn* is the message you sent plus whatever the model has done about it since — the tool
 calls and their results land after it — so a turn that went off and read six files shows it
 there rather than in *History*.
+
+The split is of what was sent, so a tool result [cleared to a stub](#clearing-old-tool-results)
+counts as the stub. What the stubs stand in for is shown on a line of its own under the parts —
+*Old tool results left out  −6.1k* — at the same characters-to-tokens rate, and is not part of
+the total: it is what the request would have carried on top.
 
 ### What a turn does not make you wait for
 
@@ -735,7 +769,8 @@ again rather than decremented — `messageCount` is where the transcript now end
 usage is what the remaining turns add up to — because a decrement has to trust that the rows and
 the totals never drifted, and this does not. A compaction that summarised anything past the cut
 is dropped: it describes messages that no longer exist, and the next turn would send it as
-though they did.
+though they did. A pruning marker past the cut is pulled back to it, so the results that arrive
+next are not behind it.
 
 Neither button is offered while a turn is running. There is one stream and one composer, and
 rewinding underneath a reply that is still arriving has no sensible reading.

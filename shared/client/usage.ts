@@ -106,7 +106,13 @@ const PARTS = [
   "inputTools",
 ] as const;
 
-export const BREAKDOWN_LABEL: Record<keyof ContextBreakdown, string> = {
+/**
+ * One of the nine things a request is made of. Not `keyof ContextBreakdown`, which also holds
+ * `cleared` — what is missing from the request, and so no share of it.
+ */
+export type BreakdownPart = (typeof PARTS)[number];
+
+export const BREAKDOWN_LABEL: Record<BreakdownPart, string> = {
   system: "System prompt",
   guidance: "Server instructions",
   catalogue: "Tool catalogue",
@@ -119,7 +125,7 @@ export const BREAKDOWN_LABEL: Record<keyof ContextBreakdown, string> = {
 };
 
 /** A missing part is nothing: turns measured before a part existed simply have no share of it. */
-const partSize = (breakdown: ContextBreakdown, part: keyof ContextBreakdown) =>
+const partSize = (breakdown: ContextBreakdown, part: BreakdownPart) =>
   Math.max(0, breakdown[part] ?? 0);
 
 /**
@@ -162,6 +168,10 @@ const toolSize = (message: SizableMessage): number => {
  * remainders cannot be told apart. `turnLength` is how many of the trailing messages belong to
  * this turn; `compacted` says whether the first is a summary standing in for the messages it
  * replaced.
+ *
+ * `history` is what was sent, so a tool result cleared to a stub is counted as the stub. What the
+ * stubs stand in for is `cleared`, passed through untouched and only when there is some: it is
+ * the one figure here that is not in the request.
  */
 export function measureRequest(request: {
   system: string;
@@ -171,6 +181,7 @@ export function measureRequest(request: {
   history: SizableMessage[];
   turnLength: number;
   compacted?: boolean;
+  cleared?: number;
 }): ContextBreakdown {
   const { history, turnLength } = request;
   const cut = Math.max(0, history.length - Math.max(0, turnLength));
@@ -192,6 +203,7 @@ export function measureRequest(request: {
     historyTools: sum(earlier, toolSize),
     input: sum(mine, said),
     inputTools: sum(mine, toolSize),
+    ...(request.cleared && request.cleared > 0 ? { cleared: request.cleared } : {}),
   };
 }
 
@@ -204,13 +216,16 @@ export function measureRequest(request: {
  * to the number the server actually gave us, and the largest of them absorbs the rounding so
  * they add up to it exactly rather than to within a few tokens of it.
  *
+ * `cleared` is scaled at the same rate and kept out of the sum: it is what the request would
+ * have carried on top of `promptTokens`, not a part of them.
+ *
  * Undefined when there is nothing to be a share of: no measured total, or no request.
  */
 export function splitContext(
   chars: ContextBreakdown,
   promptTokens: number,
 ): ContextBreakdown | undefined {
-  const size = (part: keyof ContextBreakdown) => partSize(chars, part);
+  const size = (part: BreakdownPart) => partSize(chars, part);
   const total = PARTS.reduce((sum, part) => sum + size(part), 0);
   if (!total || promptTokens <= 0) return undefined;
 
@@ -225,11 +240,13 @@ export function splitContext(
     assigned += out[part];
   }
   out[absorber] = Math.max(0, promptTokens - assigned);
+  const cleared = Math.round((Math.max(0, chars.cleared ?? 0) / total) * promptTokens);
+  if (cleared > 0) out.cleared = cleared;
   return out;
 }
 
 export type BreakdownRow = {
-  key: keyof ContextBreakdown;
+  key: BreakdownPart;
   label: string;
   tokens: number;
   ratio: number;

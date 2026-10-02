@@ -77,6 +77,33 @@ describe.skipIf(!url)("session store", () => {
     expect(count).toBe(0);
   });
 
+  it("keeps a pruning marker, and reads back none where none was stored", async () => {
+    const session = await store.createSession();
+    expect((await store.getSession(session.id))?.pruning).toBeUndefined();
+
+    const marker = { through: 4, at: "2026-01-01T00:00:00.000Z" };
+    await store.updateSession(session.id, { pruning: marker });
+
+    expect((await store.getSession(session.id))?.pruning).toEqual(marker);
+  });
+
+  it("pulls a pruning marker back to the cut, and leaves one behind it alone", async () => {
+    const session = await store.createSession();
+    for (let idx = 0; idx < 6; idx++)
+      await store.addMessage(session.id, idx, { role: "user", content: `message ${idx}` });
+    const marker = { through: 5, at: "2026-01-01T00:00:00.000Z" };
+    await store.updateSession(session.id, { pruning: marker });
+
+    // Past the cut: left there, the next results appended would arrive already cleared.
+    await store.truncateSession(session.id, 3);
+    expect((await store.getSession(session.id))?.pruning).toEqual({ ...marker, through: 3 });
+
+    // Behind it: what was cleared stays cleared, so the request's prefix does not move.
+    await store.updateSession(session.id, { pruning: { ...marker, through: 1 } });
+    await store.truncateSession(session.id, 2);
+    expect((await store.getSession(session.id))?.pruning).toEqual({ ...marker, through: 1 });
+  });
+
   it("returns null for a session that is not there", async () => {
     expect(await store.getSession("00000000-0000-0000-0000-000000000000")).toBeNull();
   });

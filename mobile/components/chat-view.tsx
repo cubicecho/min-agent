@@ -2,6 +2,7 @@ import { Feather } from "@react-native-vector-icons/feather";
 import { type LivePart, liveCharCount } from "@shared/client/live.ts";
 import { messageText, turnStart } from "@shared/client/transcript.ts";
 import {
+  type BreakdownPart,
   breakdownRows,
   contextFill,
   costOf,
@@ -13,7 +14,7 @@ import {
   usageDetail,
 } from "@shared/client/usage.ts";
 import { useLiveParts } from "@shared/client/use-live-parts.ts";
-import type { ContextBreakdown, LlmConfig, TokenUsage, TurnStats } from "@shared/types.ts";
+import type { LlmConfig, TokenUsage, TurnStats } from "@shared/types.ts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -641,7 +642,7 @@ function Nothing({ configured }: { configured: boolean }) {
  * A colour per part, so the bar and the rows under it are the same thing said twice rather
  * than a legend you have to hold in your head.
  */
-const PART_COLOR: Record<keyof ContextBreakdown, string> = {
+const PART_COLOR: Record<BreakdownPart, string> = {
   // The standing overhead is the blue end, the conversation the warm one, this turn green,
   // and a part's tool traffic is the lighter shade of whatever it belongs to — so the bar
   // reads as three things before it reads as nine.
@@ -689,6 +690,7 @@ function TokensDialog({
   pricing?: LlmConfig["pricing"];
 }) {
   const rows = stats?.breakdown ? breakdownRows(stats.breakdown) : [];
+  const cleared = stats?.breakdown?.cleared ?? 0;
   const fill = contextFill(stats);
   const cost = usage ? costOf(usage, pricing) : null;
 
@@ -737,6 +739,18 @@ function TokensDialog({
                 </Text>
               </View>
             ))}
+            {/*
+              Under the parts and not among them: it is what the request did not carry, so it has
+              no colour in the bar and no share of the total. Only there once something has been
+              cleared, which for most chats is never.
+            */}
+            {cleared > 0 ? (
+              <View className="flex-row items-center gap-2">
+                <View className="h-2 w-2 rounded-full border border-muted-foreground" />
+                <Muted className="flex-1">Old tool results left out</Muted>
+                <Text className="text-sm text-foreground">−{formatTokens(cleared)}</Text>
+              </View>
+            ) : null}
             {/*
               Said plainly rather than with a "~" nobody would decode: a completion reports how
               many prompt tokens it read and nothing about where they came from, so the shares

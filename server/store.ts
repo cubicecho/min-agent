@@ -4,6 +4,7 @@ import { fromStored, toStored } from "../shared/messages.ts";
 import type { Session, SessionSummary, StoredMessage } from "../shared/types.ts";
 import { db } from "./db/client.ts";
 import { messages, type NewMessageRow, type SessionRow, sessions } from "./db/schema.ts";
+import { clampPruning } from "./pruning.ts";
 
 /**
  * Sessions and their messages.
@@ -26,6 +27,7 @@ const summarize = (row: SessionRow): SessionSummary => ({
   usage: row.usage ?? undefined,
   loadedTools: row.loadedTools,
   compaction: row.compaction ?? undefined,
+  pruning: row.pruning ?? undefined,
   messageCount: row.messageCount,
 });
 
@@ -61,7 +63,7 @@ export async function deleteSession(id: string): Promise<void> {
 
 /** The session's own columns — never its messages, which are only ever appended. */
 export type SessionPatch = Partial<
-  Pick<Session, "title" | "model" | "usage" | "loadedTools" | "compaction">
+  Pick<Session, "title" | "model" | "usage" | "loadedTools" | "compaction" | "pruning">
 >;
 
 export async function updateSession(id: string, patch: SessionPatch): Promise<void> {
@@ -114,7 +116,9 @@ export async function patchMessage(
  * ends, and the banked usage is what the turns that are left still add up to — a decrement
  * would have to trust that the rows and the totals never drifted, and this does not have to.
  * A compaction is dropped if it summarised anything past the cut: it is a description of
- * messages that no longer exist, and the next turn would send it as if they did.
+ * messages that no longer exist, and the next turn would send it as if they did. A pruning marker
+ * past the cut is pulled back to it, for the mirror of that reason: left where it was, the next
+ * tool results appended would land behind it and be sent as stubs the model never saw whole.
  *
  * `idx` stays dense because only a suffix ever goes, which is what lets the client keep
  * treating a message's position in the array as its index.
@@ -137,6 +141,7 @@ export async function truncateSession(id: string, fromIdx: number): Promise<numb
       usage: usageOf(kept),
       compaction:
         session.compaction && session.compaction.through <= from ? session.compaction : null,
+      pruning: clampPruning(session.pruning, from) ?? null,
     })
     .where(eq(sessions.id, id));
 
