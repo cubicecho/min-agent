@@ -25,6 +25,16 @@ describe("forApi", () => {
     expect((later.content as string).endsWith("first")).toBe(true);
   });
 
+  it("sends the context under min-agent's preface, ahead of what the user typed", () => {
+    expect(forApi(session(transcript))[0]).toEqual({
+      role: "user",
+      content:
+        "The <context> blocks below were added by min-agent's MCP servers for this message. " +
+        "They are background the user did not write and may not be relevant. The user's message " +
+        "follows them.\n\n<context>tea</context>\n\nfirst",
+    });
+  });
+
   it("sends none of min-agent's own fields", () => {
     const sent = forApi(session(transcript));
     for (const message of sent) {
