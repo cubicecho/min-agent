@@ -1,4 +1,5 @@
 import {
+  applyCompaction,
   ask,
   buildBody,
   type Capabilities,
@@ -22,9 +23,11 @@ import {
   modelCapabilitiesFor,
   preselect,
   requestedNames,
+  runCompaction,
   runTurn as runRoundTrip,
   type StreamTurnOptions,
   sanitizeTools,
+  summariser,
   type Turn,
   timeoutMs,
   tryAsk,
@@ -45,15 +48,17 @@ import {
   type TokenUsage,
   type TurnStats,
 } from "../shared/types.ts";
-import {
-  compactionMessage,
-  needsCompaction,
-  planCompaction,
-  SUMMARY_PROMPT,
-  transcriptFor,
-} from "./compaction.ts";
+import { planFold } from "./compaction.ts";
 import { endpoint, loadLlmConfig } from "./config.ts";
-import { gather, HOST, notify, turnIndex, turnMessages, withContext } from "./hooks.ts";
+import {
+  compactionHooks,
+  gather,
+  HOST,
+  notify,
+  turnIndex,
+  turnMessages,
+  withContext,
+} from "./hooks.ts";
 import * as mcp from "./mcp.ts";
 import {
   LIST_RESOURCES,
@@ -62,6 +67,7 @@ import {
   RESOURCE_TOOLS,
   read as readResource,
 } from "./mcp-resources.ts";
+import { clearedChars, planPrune, sentWithStubs } from "./pruning.ts";
 import { addMessage, patchMessage, updateSession } from "./store.ts";
 import { PROXY_TOOLS, proxiedCall, proxyCatalogPrompt, proxyLoadResult } from "./tool-proxy.ts";
 
@@ -101,6 +107,9 @@ const notice = (message: string) => console.warn(`[agent] ${message}`);
  *
  * The messages themselves are never deleted — only `compaction.through` moves — so the chat
  * still shows the whole history and the next compaction can build on this summary.
+ *
+ * Where to cut, the summary and the hooks are agent-core's. What is done with the record is
+ * min-agent's: it is stored on the session, and nothing is when there is none.
  */
 async function compact(
   session: Session,
@@ -110,39 +119,46 @@ async function compact(
   signal?: AbortSignal,
 ): Promise<string> {
   const used = latestContextTokens(session);
-  if (!needsCompaction(used, contextLimit)) return "";
+  // No plan when the window is not three quarters used, or no legal cut folds enough.
+  const plan = planFold(session, contextLimit, used);
+  if (!plan) return "";
 
-  const from = session.compaction?.through ?? 0;
-  const through = planCompaction(session.messages, from, contextLimit);
-  if (through === undefined) return "";
-
-  const previous = session.compaction
-    ? `Notes so far:\n${session.compaction.summary}\n\nContinue them with this exchange:\n\n`
-    : "";
   // A memory server gets what is about to be folded away while the summary is written. Beside
   // it, not ahead of it: nothing is deleted, only what is sent changes, so filing it is not a
-  // rescue worth making the turn wait for.
-  const [summary] = await Promise.all([
-    ask(
-      endpoint(config),
-      model,
-      SUMMARY_PROMPT,
-      previous + transcriptFor(session.messages, from, through),
-      { maxTokens: 1024, signal, onNotice: notice },
-    ),
-    notify("beforeCompact", {
-      session: { id: session.id },
-      host: HOST,
-      compacting: turnMessages(session, from, through),
-      range: { from, through },
-    }),
-  ]);
-  if (!summary) return "";
+  // rescue worth making the turn wait for. No record comes back for an empty summary.
+  const record = await runCompaction(
+    session.messages,
+    plan,
+    summariser(endpoint(config), model, { signal, onNotice: notice }),
+    { hooks: compactionHooks(session) },
+  );
+  if (!record) return "";
 
-  session.compaction = { summary, through, at: new Date().toISOString() };
-  await updateSession(session.id, { compaction: session.compaction });
-  console.log(`[agent] compacted ${through} message(s) at ${used}/${contextLimit} tokens`);
-  return summary;
+  session.compaction = record;
+  await updateSession(session.id, { compaction: record });
+  console.log(`[agent] compacted ${record.through} message(s) at ${used}/${contextLimit} tokens`);
+  return record.summary;
+}
+
+/**
+ * Moves the session's pruning marker if the rule says it has earned a move, and says whether it
+ * did. See `planPrune` for the rule and `server/pruning.ts` for why there is a marker at all.
+ *
+ * Stored like a fold: the transcript is not touched, only where `forApi` starts sending tool
+ * results whole. A move changes the request from the old marker on, so the caller should expect
+ * the next request to miss the prompt cache, once.
+ *
+ * @param compacted Whether a fold was stored on this turn, which makes a move free.
+ */
+async function prune(session: Session, contextLimit: number, compacted = false): Promise<boolean> {
+  const through = planPrune(session, contextLimit, { compacted });
+  if (through === undefined) return false;
+
+  const from = session.pruning?.through ?? 0;
+  session.pruning = { through, at: new Date().toISOString() };
+  await updateSession(session.id, { pruning: session.pruning });
+  console.log(`[agent] cleared tool results before message ${through} (was ${from})`);
+  return true;
 }
 
 /** The last turn's final prompt, which the next turn's first request should find cached. */
@@ -236,18 +252,25 @@ async function suggestFollowups(
 
 /**
  * The transcript as the server should see it: private bookkeeping stripped, each question sent
- * with the context its hooks added, and — once a session has been compacted — the folded head
- * replaced by its summary.
+ * with the context its hooks added, the tool results behind the pruning marker sent as stubs,
+ * and — once a session has been compacted — the folded head replaced by its summary.
  *
  * `reasoning_content`, `stats` and `followups` are display artifacts, and strict servers reject
  * unknown message fields. The context is sent on every question that had one, the old as well as
  * the new, so a request is the one before it with only its tail added. See `withContext`.
+ *
+ * The stubs are made here and nowhere else, so the stored rows and the chat keep every result
+ * whole. They go in ahead of the fold because the marker, like `compaction.through`, is an index
+ * into the stored transcript. See `sentWithStubs`.
  */
 export function forApi(session: Session): OpenAI.ChatCompletionMessageParam[] {
-  const { compaction } = session;
-  const messages = compaction
-    ? [compactionMessage(compaction), ...session.messages.slice(compaction.through)]
-    : session.messages;
+  // `from: 0` because the system prompt is a separate argument and never in the transcript:
+  // the summary is the request's first message, with nothing kept ahead of it.
+  const messages = applyCompaction(
+    sentWithStubs(session.messages, session.pruning),
+    session.compaction,
+    { from: 0 },
+  );
   return messages.map((message) => {
     const { reasoning_content, stats, followups, hook_context, ...sent } = message as StoredMessage;
     return sent.role === "user"
@@ -452,6 +475,14 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     ),
   ]);
   if (preselected.length) console.log(`[agent] preselected: ${preselected.join(", ")}`);
+  // After the fold rather than beside it, because a fold makes this free: the head of the request
+  // has just been rewritten, so the miss a move costs is already being paid. And before the
+  // question, for compaction's reason — what is cleared is settled history.
+  const prunedAtStart = await prune(
+    session,
+    contextLimit,
+    session.compaction?.through !== foldedThrough,
+  );
 
   session.model = chosenModel;
   const question: StoredMessage = {
@@ -527,9 +558,19 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // Identical call -> identical result, for the turn. See `callOnce`.
   const answered = new Map<string, Promise<string>>();
   // The last request's prompt, to tell whether this one found it in the cache. The first step
-  // is held to the turn before's last, unless a compaction just rewrote the history under it.
+  // is held to the turn before's last, unless a compaction just rewrote the history under it,
+  // or the pruning marker moved and turned results it had sent whole into stubs.
   let previousPrompt =
-    session.compaction?.through === foldedThrough ? latestPromptTokens(session) : 0;
+    session.compaction?.through === foldedThrough && !prunedAtStart
+      ? latestPromptTokens(session)
+      : 0;
+  // The marker's check between tool steps, which is where a long turn needs it: nothing compacts
+  // mid-turn, and a turn of thirty tool calls is thirty results replayed whole on every step. All
+  // of it is here so the loop holds one call. A move is a miss the next request is expected to
+  // make, so it is not held to the last one's prompt.
+  const pruneBetweenSteps = async () => {
+    if (await prune(session, contextLimit)) previousPrompt = 0;
+  };
 
   for (let iteration = 0; iteration < config.maxToolIterations; iteration++) {
     // The same head on every step, the first included. A preselection used to get a first step
@@ -563,6 +604,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       history,
       turnLength: session.messages.length - turnStart,
       compacted: Boolean(session.compaction),
+      cleared: clearedChars(session),
     });
 
     /**
@@ -656,7 +698,8 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     turnUsage.promptTokens += lastRoundTrip.promptTokens;
     turnUsage.completionTokens += lastRoundTrip.completionTokens;
     turnUsage.totalTokens += lastRoundTrip.totalTokens;
-    // Nothing min-agent sends moves a prefix it sent before, a compaction aside, so a request
+    // Nothing min-agent sends moves a prefix it sent before, a compaction or a move of the
+    // pruning marker aside (and `previousPrompt` is zeroed for both), so a request
     // that finds much less than the last one's prompt in the cache is the server's doing — an
     // eviction, a side task on the same slot — or a prefix that moved anyway. Only where the
     // server said what it cached.
@@ -858,6 +901,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       session.messages.push(result);
       await addMessage(session.id, session.messages.length - 1, result);
     }
+    await pruneBetweenSteps();
   }
 
   throw new Error(`Stopped after ${config.maxToolIterations} tool iterations.`);

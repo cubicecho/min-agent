@@ -1,8 +1,9 @@
 import type { CatalogServer } from "@cubicecho/agent-core";
-import { expandNames } from "@cubicecho/agent-core";
+import { expandNames, loadResult } from "@cubicecho/agent-core";
 import type { ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import { describe, expect, it } from "vitest";
 import {
+  holdsDefinitions,
   PROXY_TOOLS,
   proxiedCall,
   proxyCatalogPrompt,
@@ -60,6 +61,29 @@ describe("proxied tool discovery", () => {
     expect(result).not.toContain('"parameters"');
     expect(result).toContain("Already loaded earlier in this turn: fs__read");
     expect(result).toContain("Not in the catalogue: fs__nope");
+  });
+
+  it("tells a result that holds definitions from one that only points at them", () => {
+    const fresh = expandNames(["fs__read", "fs__write"], catalog);
+    const definitions = [definition("fs__read"), definition("fs__write")];
+    // Fresh definitions, all or some: the only copy the model has.
+    expect(holdsDefinitions(proxyLoadResult(fresh, catalog, definitions, new Set()))).toBe(true);
+    expect(
+      holdsDefinitions(proxyLoadResult(fresh, catalog, definitions, new Set(["fs__read"]))),
+    ).toBe(true);
+    // A repeat and a refusal carry none, and neither does an on-demand load, whose definitions
+    // are in the tool array.
+    expect(
+      holdsDefinitions(
+        proxyLoadResult(fresh, catalog, definitions, new Set(["fs__read", "fs__write"])),
+      ),
+    ).toBe(false);
+    expect(
+      holdsDefinitions(proxyLoadResult(expandNames(["fs__nope"], catalog), catalog, [], new Set())),
+    ).toBe(false);
+    expect(holdsDefinitions(loadResult(fresh, catalog, new Set()))).toBe(false);
+    // Only at the head: a tool's output that quotes the line is not a load.
+    expect(holdsDefinitions("log: Loaded 2 tool(s). Run them with `call_tool`.")).toBe(false);
   });
 
   it("reads a call's arguments as an object or as a JSON string", () => {

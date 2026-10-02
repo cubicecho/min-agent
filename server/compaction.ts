@@ -1,23 +1,22 @@
-import { estimateTokens } from "@cubicecho/agent-core";
-import type { Compaction, StoredMessage } from "../shared/types.ts";
+import { type CompactionPlan, estimateTokens, planCompaction } from "@cubicecho/agent-core";
+import type { Session, StoredMessage } from "../shared/types.ts";
 
 /**
- * Context compaction.
+ * Context compaction, as far as it is min-agent's own.
  *
  * A long session eventually exceeds the model's context window and every further turn fails.
  * Rather than truncating — which drops what was decided early on, usually the part that
  * matters — the oldest stretch is replaced by a summary the model writes itself, and the recent
  * messages are kept verbatim.
  *
+ * Where to cut, the summariser's instruction and the message the summary is sent as are
+ * agent-core's (`planCompaction`, `runCompaction`, `applyCompaction`). What is left here is what
+ * agent-core cannot know: that the fold is a record on the session beside an append-only
+ * transcript, and how a stored message is weighed.
+ *
  * The full transcript stays on disk untouched. Compaction only changes what is *sent*, so the
  * chat still displays every message and a later compaction can start from the summary before it.
  */
-
-/** Fraction of the window that must be in use before a summary is worth its own round trip. */
-export const COMPACT_AT = 0.75;
-
-/** Fraction of the window the kept tail is allowed to fill, leaving room to grow again. */
-const KEEP_RATIO = 0.35;
 
 export const messageText = (message: StoredMessage): string => {
   const { content } = message;
@@ -38,63 +37,44 @@ export const messageText = (message: StoredMessage): string => {
   return `${body} ${calls}`.trim();
 };
 
-export const tokensOf = (messages: StoredMessage[]) =>
-  messages.reduce((total, message) => total + estimateTokens(messageText(message)), 0);
-
-/** Has this session grown far enough into its window to be worth compacting? */
-export const needsCompaction = (contextTokens: number, contextLimit: number) =>
-  contextLimit > 0 && contextTokens >= contextLimit * COMPACT_AT;
+/**
+ * What one stored message weighs against the kept tail: its text and its calls, and nothing else.
+ *
+ * Handed to `planCompaction` in place of its default, `messageTokens`, for two reasons. That one
+ * reads a message as it will be sent, and these are stored ones: it would count
+ * `reasoning_content`, which `forApi` strips and the model is never sent. And it adds each
+ * message's envelope and call ids, which moves the cut later than this planner's predecessor put
+ * it — on a transcript of short messages, by several exchanges.
+ *
+ * @param message One message of `session.messages`.
+ * @returns Its estimated tokens.
+ */
+export const textTokens = (message: StoredMessage) => estimateTokens(messageText(message));
 
 /**
- * Picks how much of the transcript to fold into the summary.
+ * Where to fold a session, or `undefined` when it should be left whole: the window is not three
+ * quarters full, or the only legal cut takes too little to pay for the summary.
  *
- * The cut must land immediately before a user message: a transcript that opens mid-exchange —
- * tool results with no assistant call to answer, an assistant reply with no question — is
- * malformed, and servers reject it. Returns `undefined` when no legal cut frees enough to be
- * worth the round trip.
+ * agent-core's planner, told what min-agent keeps beside the transcript rather than in it. The
+ * fold starts where the last one ended and continues its notes — both passed, because the scan
+ * `planCompaction` falls back on looks for system messages at the head of the array, and the
+ * system prompt and the summary are never stored there.
+ *
+ * @param session The chat, with its whole transcript and the fold in force, if any.
+ * @param limit The model's window, in tokens. Zero never folds.
+ * @param used What the last turn reported using. Zero, when nothing was reported, never folds:
+ * it is passed as it is rather than left for the planner to estimate.
+ * @returns The plan, whose `cut` is an index into `session.messages` and always a user message.
  */
-export function planCompaction(
-  messages: StoredMessage[],
-  from: number,
-  contextLimit: number,
-): number | undefined {
-  const budget = contextLimit * KEEP_RATIO;
-
-  // Walk back from the end until the kept tail fills the budget, then snap to a user message.
-  let kept = 0;
-  let cut = messages.length;
-  for (let i = messages.length - 1; i > from; i--) {
-    kept += estimateTokens(messageText(messages[i]));
-    if (kept > budget) break;
-    cut = i;
-  }
-  while (cut < messages.length && messages[cut].role !== "user") cut++;
-
-  // Nothing legal to fold, or so little that summarising costs more than it saves.
-  if (cut >= messages.length || cut - from < 2) return undefined;
-  return cut;
-}
-
-/** The transcript handed to the summariser. Roles and text only; schemas are not worth summarising. */
-export function transcriptFor(messages: StoredMessage[], from: number, through: number): string {
-  return messages
-    .slice(from, through)
-    .map((message) => {
-      const text = messageText(message);
-      return text ? `${message.role}: ${text.slice(0, 4000)}` : "";
-    })
-    .filter(Boolean)
-    .join("\n\n");
-}
-
-export const SUMMARY_PROMPT =
-  "You maintain the running memory of a long conversation. Rewrite the exchange below as " +
-  "notes the assistant can rely on after the original messages are gone. Keep decisions, " +
-  "facts, file paths, names, numbers, and anything still unresolved. Drop pleasantries and " +
-  "anything already superseded. Write compact prose or bullets — no preamble, no sign-off.";
-
-/** The system message that stands in for everything folded away. */
-export const compactionMessage = (compaction: Compaction): StoredMessage => ({
-  role: "system",
-  content: `Summary of the earlier part of this conversation, which is no longer shown in full:\n\n${compaction.summary}`,
-});
+export const planFold = (
+  session: Pick<Session, "messages" | "compaction">,
+  limit: number,
+  used: number,
+): CompactionPlan | undefined =>
+  planCompaction(session.messages, {
+    limit,
+    used,
+    estimate: textTokens,
+    from: session.compaction?.through ?? 0,
+    previous: session.compaction?.summary,
+  });

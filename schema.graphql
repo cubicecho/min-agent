@@ -415,6 +415,7 @@ type Session {
   usage: JSON
   loadedTools: JSON!
   compaction: JSON
+  pruning: JSON
   messageCount: Int!
 
   """
@@ -502,6 +503,7 @@ type SessionCountNonNullAggregate {
   usage: Int!
   loadedTools: Int!
   compaction: Int!
+  pruning: Int!
   messageCount: Int!
 }
 
@@ -1669,6 +1671,7 @@ input CreateSessionInput {
   usage: JSON
   loadedTools: JSON
   compaction: JSON
+  pruning: JSON
   messageCount: Int
 }
 
@@ -1681,6 +1684,7 @@ input UpdateSessionInput {
   usage: JSON
   loadedTools: JSON
   compaction: JSON
+  pruning: JSON
   messageCount: Int
 }
 
@@ -1702,6 +1706,7 @@ input SessionFilters {
   usage: JSONFilter
   loadedTools: JSONFilter
   compaction: JSONFilter
+  pruning: JSONFilter
   messageCount: IntFilter
   messages: MessageListRelationFilter
 
@@ -1809,6 +1814,7 @@ input SessionOrderBy {
   usage: InnerOrder
   loadedTools: InnerOrder
   compaction: InnerOrder
+  pruning: InnerOrder
   messageCount: InnerOrder
 }
 
@@ -1849,6 +1855,7 @@ input SessionCountNonNullHaving {
   usage: AggregateNumberFilter
   loadedTools: AggregateNumberFilter
   compaction: AggregateNumberFilter
+  pruning: AggregateNumberFilter
   messageCount: AggregateNumberFilter
 }
 
@@ -2301,6 +2308,7 @@ enum SessionDistinctColumn {
   usage
   loadedTools
   compaction
+  pruning
   messageCount
 }
 

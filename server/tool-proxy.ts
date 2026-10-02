@@ -150,6 +150,26 @@ export function proxyLoadResult(
   return lines.join("\n");
 }
 
+/** How a proxied load result that carries definitions opens, with the count left open. */
+const PROXY_LOADED = /^Loaded \d+ tool\(s\)\. Run them with `call_tool`\./;
+
+/**
+ * Whether a tool result is a proxied load carrying definitions, which is the only copy of them
+ * the model has, and so one that is never cleared from what is replayed. See `server/pruning.ts`.
+ *
+ * Told by how `proxyLoadResult` opens, because a `tool` message carries no tool name of its own,
+ * and because that makes it a fact about the stored message rather than about today's setting: a
+ * chat switched out of proxied mode keeps its definitions, and its requests keep their prefix. A
+ * load that only pointed back or refused holds none and is not one.
+ *
+ * A later agent-core than the one installed has the same test under the same name and asks it
+ * inside `pruneToolResults` (it is there at 2.23.0 and not at 2.18.1); this one goes when the
+ * dependency reaches it.
+ *
+ * @param result The tool message's text.
+ */
+export const holdsDefinitions = (result: string) => PROXY_LOADED.test(result);
+
 /**
  * The tool a `call_tool` names and the arguments to run it with.
  *

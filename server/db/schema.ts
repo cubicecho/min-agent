@@ -10,7 +10,7 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 import type {
-  Compaction,
+  Session,
   StoredMessage,
   TokenUsage,
   ToolCall,
@@ -160,7 +160,9 @@ export const sessions = table("sessions", {
   /** Tools pulled in on demand, kept for the rest of the session so they load once. */
   loadedTools: jsonb().$type<string[]>().notNull().default([]),
   /** Set once the transcript outgrew the window; the head is sent as a summary instead. */
-  compaction: jsonb().$type<Compaction>(),
+  compaction: jsonb().$type<NonNullable<Session["compaction"]>>(),
+  /** How far old tool results are sent as stubs. Null until the rule first moves it. */
+  pruning: jsonb().$type<NonNullable<Session["pruning"]>>(),
   /**
    * Kept in step by the store as messages are appended, so the session list is one query
    * over one table. This is the row that replaces the `.meta.json` sidecar the file store
