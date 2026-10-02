@@ -523,6 +523,22 @@ describe("arguments a model gets wrong", () => {
     });
   });
 
+  it("does not load a catalogued tool called with arguments that are almost JSON", async () => {
+    configure({ toolDiscovery: "ondemand" });
+    offered = [READ, LS];
+    script = [asks(["c1", "fs__read", "{'path': '/a',}"]), says("Sorry.")];
+    const chat = session();
+
+    const { events } = await run(chat, "read it");
+
+    expect(mcp.call).not.toHaveBeenCalled();
+    expect(results(events)).toEqual([
+      ["c1", "model produced invalid tool arguments: {'path': '/a',}", true],
+    ]);
+    expect(bodies().map(declared)).toEqual([["load_tools"], ["load_tools"]]);
+    expect(chat.loadedTools).toEqual([]);
+  });
+
   it("hands the pool arguments that are JSON but not an object", async () => {
     offered = [READ];
     mcp.call.mockResolvedValue("contents");
