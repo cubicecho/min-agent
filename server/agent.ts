@@ -2,7 +2,6 @@ import {
   ask,
   buildBody,
   type Capabilities,
-  type CatalogServer,
   ContextOverflow,
   capabilitiesFor,
   carryOver,
@@ -21,10 +20,7 @@ import {
   listLines,
   loadResult,
   modelCapabilitiesFor,
-  PRESELECT_SYSTEM,
-  parseJson,
-  preselectInput,
-  preselection,
+  preselect,
   requestedNames,
   runTurn as runRoundTrip,
   type StreamTurnOptions,
@@ -190,35 +186,6 @@ async function generateTitle(
   );
   const title = clean(reply.split("\n").filter(Boolean).pop() ?? "");
   return title.length > 60 ? `${title.slice(0, 57)}…` : title;
-}
-
-/**
- * Guesses the tools this request will need, before the turn starts.
- *
- * On-demand loading otherwise spends a round trip of the chat model on reading the catalogue
- * and calling `load_tools`. A small model reading the same catalogue usually picks the right
- * names, and then the chat model opens the turn with them already in hand.
- *
- * Guessing wrong is cheap: an unused definition costs a few hundred tokens for one turn, does
- * not carry over, and the model can still load what it actually wanted. So this never blocks
- * or overrides the model's own loading — it only tries to make it unnecessary.
- */
-async function preselect(
-  config: LlmConfig,
-  model: string,
-  catalog: CatalogServer[],
-  prompt: string,
-  signal?: AbortSignal,
-): Promise<string[]> {
-  const input = preselectInput(catalog, prompt);
-  const reply = await ask(endpoint(config), model, PRESELECT_SYSTEM, input, {
-    maxTokens: 256,
-    signal,
-    onNotice: notice,
-  });
-  const chosen = preselection(parseJson<unknown>(reply), catalog);
-  if (chosen.length) console.log(`[agent] preselected: ${chosen.join(", ")}`);
-  return chosen;
 }
 
 /**
@@ -472,10 +439,11 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
           { onNotice: notice },
         )
       : undefined,
+    // A guess at the tools this request needs, so the chat model opens with them in hand rather
+    // than spending a round trip on `load_tools`. agent-core's, which holds the reply to a schema
+    // and gives up to an empty list on its own — a stop excepted, which still ends the turn.
     preselectModel
-      ? tryAsk("preselect", () => preselect(config, preselectModel, catalog, prompt, signal), {
-          onNotice: notice,
-        })
+      ? preselect(endpoint(config), preselectModel, catalog, prompt, { signal, onNotice: notice })
       : undefined,
     gather(
       session.messages.length === 0 ? ["sessionStart", "beforeTurn"] : ["beforeTurn"],
@@ -483,6 +451,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       { signal, emit },
     ),
   ]);
+  if (preselected.length) console.log(`[agent] preselected: ${preselected.join(", ")}`);
 
   session.model = chosenModel;
   const question: StoredMessage = {

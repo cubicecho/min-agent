@@ -118,6 +118,11 @@ type ConfigDraft = {
   /** The stored row, for the things a form shows about it — whether a key is already set. */
   view: LlmConfigView;
   set: <K extends keyof Draft>(key: K, value: Draft[K]) => void;
+  /**
+   * Something on Model, Agent or Voice is typed and not saved. It is one row behind three
+   * panels, so anything that reads the *stored* row has to ask about all three, not its own.
+   */
+  dirty: boolean;
   /** Every model the provider at the *saved* endpoint reports, ready for a `Select`. */
   modelOptions: Option[];
   models: { count: number; error: unknown; loading: boolean; refetch: () => void };
@@ -231,6 +236,7 @@ export function ConfigDraftProvider({ children }: { children: ReactNode }) {
           draft,
           view: config.data,
           set,
+          dirty: dirtyTabs.length > 0,
           modelOptions: (models.data?.models ?? []).map((entry) => ({
             label: entry.id,
             value: entry.id,

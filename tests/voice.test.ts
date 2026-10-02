@@ -1,6 +1,11 @@
+import { once } from "node:events";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { createVoiceClient, speakableText, spokenChunk } from "@shared/client/voice.ts";
-import { describe, expect, it } from "vitest";
-import { audioExtension } from "../server/voice.ts";
+import express from "express";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { refreshLlmConfig } from "../server/config.ts";
+import { audioExtension, voice } from "../server/voice.ts";
 
 /**
  * The two ends of voice that are worth pinning down: what a reply sounds like once the
@@ -154,5 +159,94 @@ describe("spokenChunk", () => {
   it("does not mistake a decimal point for the end of a sentence", () => {
     const text = `${"a".repeat(88)} 3.5 and more than fits here`;
     expect(spokenChunk(text, 100)).toBe(`${"a".repeat(88)} 3.5 and`);
+  });
+});
+
+/**
+ * What the proxy tells the provider about who is asking. The key is the chat endpoint's — the
+ * row's, else `$OPENAI_API_KEY` — and with neither it is a placeholder of min-agent's own,
+ * because the SDK will not build a client without one and a local server does not look.
+ *
+ * Tested over real sockets because the header is the only place the key shows: the routes sit
+ * in front of a provider that is a server of ours here, which records what it was sent.
+ */
+describe("the key the voice proxy sends", () => {
+  const previous = process.env.OPENAI_API_KEY;
+  const seen: (string | undefined)[] = [];
+  let provider: Server;
+  let agent: Server;
+
+  /**
+   * Where a server started on port 0 ended up.
+   * @param server A listening server.
+   * @returns Its base URL on the loopback.
+   */
+  const urlOf = (server: Server) => `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  /**
+   * Puts a row in the settings cache without a database behind it.
+   * @param row What the settings table would have held.
+   * @returns The settings as loaded.
+   */
+  const stored = (row: Record<string, unknown>) =>
+    refreshLlmConfig({
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => [row] }) }) }),
+    } as unknown as Parameters<typeof refreshLlmConfig>[0]);
+
+  /**
+   * Has a reply read aloud, with the provider configured as the one here.
+   * @param apiKey The key in the settings row; empty for none.
+   * @returns The `Authorization` header the provider received.
+   */
+  const spoken = async (apiKey: string) => {
+    await stored({ baseUrl: urlOf(provider), ttsModel: "tts-1", apiKey });
+    const response = await fetch(`${urlOf(agent)}/speak`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "hello" }),
+    });
+    expect(response.status).toBe(200);
+    return seen.at(-1);
+  };
+
+  beforeAll(async () => {
+    provider = createServer((request, response) => {
+      seen.push(request.headers.authorization);
+      request.resume();
+      response.writeHead(200, { "content-type": "audio/mpeg" });
+      response.end(Buffer.from([1, 2, 3]));
+    }).listen(0, "127.0.0.1");
+    agent = express().use(voice).listen(0, "127.0.0.1");
+    await Promise.all([once(provider, "listening"), once(agent, "listening")]);
+  });
+
+  afterAll(async () => {
+    await stored({});
+    provider.close();
+    agent.close();
+  });
+
+  beforeEach(() => {
+    seen.length = 0;
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  afterEach(() => {
+    if (previous === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previous;
+  });
+
+  it("is min-agent's placeholder when neither the row nor the environment holds one", async () => {
+    expect(await spoken("")).toBe("Bearer min-agent");
+  });
+
+  it("is the row's key when there is one", async () => {
+    process.env.OPENAI_API_KEY = "sk-from-env";
+    expect(await spoken("sk-test")).toBe("Bearer sk-test");
+  });
+
+  it("falls back to the environment when the row holds no key", async () => {
+    process.env.OPENAI_API_KEY = "sk-from-env";
+    expect(await spoken("")).toBe("Bearer sk-from-env");
   });
 });

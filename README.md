@@ -130,7 +130,8 @@ release still goes out to GHCR. A run of chores publishes nothing.
   `components/settings/` the panels behind the settings tabs, `electron/` is the desktop shell.
   Its web export is what the server serves.
 - `server/` — express + graphql-yoga. `agent.ts` is the tool-calling loop, `mcp.ts` the wiring
-  to the MCP pool, `store.ts` session persistence, `config.ts` the settings and MCP rows.
+  to the MCP pool, `store.ts` session persistence, `config.ts` the settings and MCP rows,
+  `spec.ts` the settings row written out as an agent spec.
 - `server/db/` — `schema.ts` is the Drizzle table definitions, `client.ts` the pool and the
   boot-time wait for it, `migrate.ts` the migration runner.
 - `drizzle/` — generated migrations. Not written by hand; not edited after they have shipped.
@@ -206,6 +207,7 @@ not tables:
 query    health          is the server up, and what is it pointed at
 query    models          asks the configured provider to list its models
 query    hasApiKey       whether a key is set, without returning it
+query    spec            the saved settings as a cubicecho.agent/1 document, without the key
 query    mcpStatus       each configured server with its live connection state and tools
 query    mcpPrompts      the prompts the connected servers offer, for the composer's picker
 query    mcpPrompt       one of them expanded with its arguments, as text for a draft

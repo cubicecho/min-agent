@@ -2195,6 +2195,11 @@ type Query {
   Whether a key is set, without saying what it is. The Config tab shows a filled placeholder rather than an empty box; the key itself is excluded from `Setting`.
   """
   hasApiKey: Boolean!
+
+  """
+  The saved settings as an agent spec: a `cubicecho.agent/1` document another host on `@cubicecho/agent-core` can read. The API key is never part of it.
+  """
+  spec: JSON!
 }
 
 """Columns of Setting that a query can be made distinct on"""

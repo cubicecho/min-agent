@@ -16,10 +16,10 @@ import type { EmbedConfig, McpServerConfig } from "../../shared/types.ts";
 import { listModels } from "../agent.ts";
 import {
   assertLlmConfigPatch,
+  hasApiKey,
   loadLlmConfig,
   loadMcpServers,
   refreshLlmConfig,
-  resolveApiKey,
   saveEmbeds,
   saveMcpServers,
 } from "../config.ts";
@@ -29,6 +29,7 @@ import { surfaced } from "../errors.ts";
 import { sessionDeleted } from "../hooks.ts";
 import * as mcp from "../mcp.ts";
 import * as mcpPrompts from "../mcp-prompts.ts";
+import { settingsSpec } from "../spec.ts";
 import { truncateSession } from "../store.ts";
 import { runTurnEvents, type TurnArgs } from "../turns.ts";
 
@@ -330,7 +331,7 @@ export const schema = new GraphQLSchema({
             ok: true,
             baseUrl: config.baseUrl,
             model: config.model,
-            hasApiKey: Boolean(resolveApiKey(config)),
+            hasApiKey: hasApiKey(config),
           };
         },
       },
@@ -339,7 +340,14 @@ export const schema = new GraphQLSchema({
         description:
           "Whether a key is set, without saying what it is. The Config tab shows a filled " +
           "placeholder rather than an empty box; the key itself is excluded from `Setting`.",
-        resolve: () => Boolean(resolveApiKey()),
+        resolve: () => hasApiKey(),
+      },
+      spec: {
+        type: new GraphQLNonNull(GraphQLJSON),
+        description:
+          "The saved settings as an agent spec: a `cubicecho.agent/1` document another host on " +
+          "`@cubicecho/agent-core` can read. The API key is never part of it.",
+        resolve: () => settingsSpec(loadLlmConfig()),
       },
     },
   }),

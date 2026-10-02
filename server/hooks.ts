@@ -1,23 +1,17 @@
-import { createHash } from "node:crypto";
-import {
-  contextBlocks,
-  type HookContext,
-  type HookEvent,
-  type HookMessage,
-  type HookOutcome,
-} from "@cubicecho/agent-mcp-pool";
+import * as core from "@cubicecho/agent-core";
+import type { HookContext, HookEvent, HookMessage } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
-import { messageText } from "../shared/client/transcript.ts";
 import type { HookNote, Session, StoredMessage, StreamEvent } from "../shared/types.ts";
 import * as mcp from "./mcp.ts";
 
 /**
  * The MCP servers' hooks, fired at min-agent's points in a session.
  *
- * The pool runs them and never lets one fail a turn. This is the half that knows what a
- * min-agent session looks like: which messages make up a turn, where the context goes in the
- * request, and what the chat says about it. `agent.ts` calls it at each point, and the sessions
- * `onWrite` hook in `graphql/schema.ts` calls it for a delete.
+ * The pool runs them and never lets one fail a turn, and agent-core's hooks module decides what a
+ * session looks like to them, where their context lands in a request, and what is said about each
+ * one. This is the layer between the two that is min-agent's own: the pool as the runner, the
+ * preface that names it, and a note as the chat's stream carries it. `agent.ts` calls it at each
+ * point, and the sessions `onWrite` hook in `graphql/schema.ts` calls it for a delete.
  *
  * `sessionEnd` is never fired. A chat does not end, it is only left, and a hook bound to it
  * would wait for something that does not happen here.
@@ -26,44 +20,69 @@ import * as mcp from "./mcp.ts";
 /** Every hook's `{{host}}`, so a server shared with kanban_server can tell the two apart. */
 export const HOST = "min-agent";
 
-/** Where the pool's notices go. The pool prints nothing itself, as agent-core does not. */
+/**
+ * Where the pool's notices go. The pool prints nothing itself, as agent-core does not.
+ *
+ * @param message The pool's line about a hook that failed or was skipped.
+ * @returns Nothing.
+ */
 const notice = (message: string) => console.warn(`[hooks] ${message}`);
 
 /**
+ * The pool, as the runner agent-core's hooks are handed.
+ *
+ * @param event Which of the servers' hooks to run.
+ * @param context What they are told.
+ * @param options `signal` ends them all.
+ * @returns One outcome per hook. Never rejects, as the pool's `runHooks` does not.
+ */
+const run: core.HookRunner = (event, context, { signal }) =>
+  mcp.runHooks(event, context, { signal, onNotice: notice });
+
+/**
+ * A note as the chat's stream carries it.
+ *
+ * @param emit Where the turn's events go, if anyone is listening.
+ * @returns What agent-core calls with each note, or nothing when there is nobody to tell.
+ */
+const told = (emit?: (event: StreamEvent) => void) =>
+  emit && ((hook: HookNote) => emit({ type: "hook", hook }));
+
+/**
  * A stretch of the transcript as a memory server reads it: what the user and the assistant
- * said, and nothing else.
+ * said, and nothing else. Tool calls and their results are left out.
  *
- * Tool calls and their results are left out. They are the model's working rather than the
- * conversation, and they are most of a transcript's characters. A server that filed them would
- * recall a directory listing ahead of the decision it led to.
+ * The uuid is the chat's id, the message's index in the stored transcript and a digest of what
+ * it says, so the same turn sent twice (afterTurn, then again when it is compacted) is one
+ * memory, and an answer retried into the same position is another. The index is the stored
+ * one because this reads `session.messages`, never a request a compaction has shortened.
  *
- * The uuid is stable for as long as the message is. The same turn sent twice (afterTurn, then
- * again when it is compacted) is one memory, not two. The text is part of it because an index
- * alone is not stable: a retry cuts the transcript back and writes a new message at the same
- * position, and a server that dedupes on uuid would keep the answer that was thrown away.
- *
+ * @param session The chat, with its whole transcript.
  * @param from The first index, inclusive.
  * @param to The end, exclusive. Defaults to the end of the transcript.
+ * @returns The messages in that stretch that said something.
  */
 export function turnMessages(session: Session, from: number, to?: number): HookMessage[] {
-  const end = Math.min(to ?? session.messages.length, session.messages.length);
-  const out: HookMessage[] = [];
-  for (let idx = Math.max(0, from); idx < end; idx++) {
-    const message = session.messages[idx];
-    if (message.role !== "user" && message.role !== "assistant") continue;
-    const text = messageText(message).trim();
-    if (!text) continue;
-    const digest = createHash("sha256").update(`${message.role}\0${text}`).digest("hex");
-    out.push({ speaker: message.role, text, uuid: `${session.id}:${idx}:${digest.slice(0, 12)}` });
-  }
-  return out;
+  return core.turnMessages(session.id, session.messages, from, to);
 }
 
-/** Which turn of the session begins at `before`, from 0: the user messages ahead of it. */
-export const turnIndex = (messages: readonly StoredMessage[], before = messages.length) =>
-  messages.slice(0, before).filter((message) => message.role === "user").length;
+/**
+ * Which turn of the session begins at `before`, from 0: the user messages ahead of it.
+ *
+ * @param messages The stored transcript.
+ * @param before Where the turn begins. Defaults to the end of the transcript.
+ * @returns The count.
+ */
+export const turnIndex = (messages: readonly StoredMessage[], before?: number) =>
+  core.turnIndex(messages, before);
 
-/** Said once, above the blocks, so the model reads them as background and not as instructions. */
+/**
+ * Said once, above the blocks, so the model reads them as background and not as instructions.
+ *
+ * min-agent's own wording rather than agent-core's, and passed with each call rather than set
+ * for the process: it is in every request that carries context, so a word changed here misses
+ * the prompt cache for every chat already under way.
+ */
 const PREFACE =
   "The <context> blocks below were added by min-agent's MCP servers for this message. They " +
   "are background the user did not write and may not be relevant. The user's message follows them.";
@@ -87,41 +106,10 @@ export function withContext(
   message: OpenAI.ChatCompletionUserMessageParam,
   context: string | undefined,
 ): OpenAI.ChatCompletionUserMessageParam {
-  if (!context) return message;
-  const preface = `${PREFACE}\n\n${context}\n\n`;
-  const content: OpenAI.ChatCompletionUserMessageParam["content"] =
-    typeof message.content === "string"
-      ? `${preface}${message.content}`
-      : [{ type: "text", text: preface }, ...message.content];
-  return { ...message, content };
-}
-
-/** The most context all of a request's hooks can add between them. */
-const CONTEXT_TOKENS = 2000;
-
-/**
- * The context a set of outcomes adds, and what the chat says about each: the context it added,
- * or why it added none. A hook that worked and added nothing says nothing. A remember that
- * succeeded is not news.
- *
- * The note keeps the text each hook added, as the pool cut it, so the chat can show exactly what
- * the model was given.
- */
-function assemble(outcomes: readonly HookOutcome[]): Gathered {
-  const blocks = contextBlocks(outcomes, { maxTokens: CONTEXT_TOKENS });
-  const notes: HookNote[] = [];
-  for (const outcome of outcomes) {
-    const base = { event: outcome.event, source: outcome.label, hookId: outcome.hookId };
-    if (!outcome.ok) {
-      notes.push({ ...base, error: outcome.error ?? "failed" });
-      continue;
-    }
-    const added = blocks.injected.find(
-      (item) => item.serverId === outcome.serverId && item.hookId === outcome.hookId,
-    );
-    if (added) notes.push({ ...base, tokens: added.tokens, text: added.text });
-  }
-  return { context: blocks.text, notes };
+  // agent-core adds it to one message of a request. Here the request is the question alone, and
+  // what comes back is still a user message, which the wider type it is returned as cannot say.
+  const [sent] = core.withContext([message], 0, context ?? "", PREFACE);
+  return sent as OpenAI.ChatCompletionUserMessageParam;
 }
 
 /** What `gather` found for a request. */
@@ -140,20 +128,22 @@ export interface Gathered {
  * - A hook that fails costs the turn its context, never the turn.
  * - Blocks are capped per hook and 2000 tokens in total, so a generous server cannot crowd out
  *   the conversation it was meant to inform.
+ *
+ * @param events Which to run, in the order their context is assembled and the budget spent.
+ * @param context What the hooks are told.
+ * @param options `signal` is the turn's. `emit` hears each note as a `hook` event.
+ * @returns The context to send with the question, and a note for each hook worth mentioning.
  */
 export async function gather(
   events: readonly HookEvent[],
   context: HookContext,
   { signal, emit }: { signal?: AbortSignal; emit?: (event: StreamEvent) => void } = {},
 ): Promise<Gathered> {
-  const outcomes = (
-    await Promise.all(
-      events.map((event) => mcp.runHooks(event, context, { signal, onNotice: notice })),
-    )
-  ).flat();
-  const gathered = assemble(outcomes);
-  for (const hook of gathered.notes) emit?.({ type: "hook", hook });
-  return gathered;
+  return core.gather(run, events, context, {
+    signal,
+    onNote: told(emit),
+    maxTokens: core.HOOK_CONTEXT_TOKENS,
+  });
 }
 
 /**
@@ -161,21 +151,26 @@ export async function gather(
  *
  * No signal: these run once the turn has been answered, and a reader who stops listening
  * at that point has not asked for the turn not to be remembered.
+ *
+ * @param event `afterTurn`, `beforeCompact` or `sessionDelete`.
+ * @param context What the hooks are told.
+ * @param emit Hears each note as a `hook` event.
+ * @returns The notes, which with nothing injected are only ever failures.
  */
 export async function notify(
   event: HookEvent,
   context: HookContext,
   emit?: (event: StreamEvent) => void,
 ): Promise<HookNote[]> {
-  // Nothing on these events injects, so the notes are only ever failures.
-  const { notes } = assemble(await mcp.runHooks(event, context, { onNotice: notice }));
-  for (const hook of notes) emit?.({ type: "hook", hook });
-  return notes;
+  return core.notify(run, event, context, told(emit));
 }
 
 /**
- * A chat was deleted. Tells the servers that keep anything under its id. Never rejects: the
- * pool's `runHooks` already does not, and this is called without being awaited.
+ * A chat was deleted. Tells the servers that keep anything under its id. Never rejects, as
+ * agent-core's `notify` does not, because this is called without being awaited.
+ *
+ * @param id The chat that went.
+ * @returns The failures, for a caller that waits for them.
  */
 export const sessionDeleted = (id: string) =>
-  notify("sessionDelete", { session: { id }, host: HOST }).catch(() => []);
+  notify("sessionDelete", { session: { id }, host: HOST });
