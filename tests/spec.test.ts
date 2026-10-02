@@ -170,7 +170,7 @@ describe("a settings row, out to a spec and back", () => {
    * prompt part before joining them, so the surrounding whitespace is the one thing in a row
    * that does not come back, and the expectation says so rather than avoiding it.
    */
-  it.each(["eager", "ondemand"] as const)(
+  it.each(["eager", "ondemand", "proxy"] as const)(
     "round-trips a %s row without a warning",
     (toolDiscovery) => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -190,25 +190,6 @@ describe("a settings row, out to a spec and back", () => {
       expect(back).toEqual({ ...stored, apiKey: "", systemPrompt: "You review code." });
     },
   );
-
-  /**
-   * Today's behaviour, pinned so it is obvious what to tighten. The row's `proxy` is exported
-   * as what it is, and agent-core 2.18's `parseSpec` only knows `eager | ondemand`: it drops
-   * that one field with a warning and resolves to its own default.
-   *
-   * When cubicecho/agent-core#120 adds `proxy` to the format, the warning goes away and this
-   * should join the round trip above — and the cast in `settingsSpec` should go with it.
-   */
-  it("exports proxy discovery as proxy, which parseSpec drops until agent-core#120", () => {
-    const document = settingsSpec(row({ toolDiscovery: "proxy" }));
-    expect(document.tools).toEqual({ discovery: "proxy", maxIterations: 12 });
-
-    const { spec, warnings } = parsed(document);
-
-    expect(warnings).toEqual(['tools.discovery: must be "eager" or "ondemand", and was dropped']);
-    expect(spec.tools).toEqual({ maxIterations: 12 });
-    expect(resolveAgentSpec([spec]).toolDiscovery).toBe("eager");
-  });
 
   /**
    * `extraBody` is the thing min-agent has nowhere to store. The row is not given a column
