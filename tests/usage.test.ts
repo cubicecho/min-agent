@@ -57,6 +57,24 @@ describe("splitContext", () => {
     expect(splitContext(chars, 0)).toBeUndefined();
     expect(splitContext({ system: 0, tools: 0, history: 0, input: 0 }, 500)).toBeUndefined();
   });
+
+  it("scales what was cleared at the same rate, and keeps it out of the total", () => {
+    const split = splitContext({ ...chars, cleared: 5000 }, 1000);
+    // Ten characters to the token, as for the parts: 5000 cleared is 500 tokens not sent.
+    expect(split?.cleared).toBe(500);
+    // And the parts are what they were without it: still the whole of the measured prompt.
+    const { cleared, ...parts } = split ?? {};
+    expect(parts).toEqual(splitContext(chars, 1000));
+    expect(Object.values(parts).reduce((sum, part) => sum + (part ?? 0), 0)).toBe(1000);
+  });
+
+  it("says nothing of clearing when nothing was cleared", () => {
+    expect(splitContext(chars, 1000)).not.toHaveProperty("cleared");
+    expect(splitContext({ ...chars, cleared: 0 }, 1000)).not.toHaveProperty("cleared");
+    expect(splitContext({ ...chars, cleared: -40 }, 1000)).not.toHaveProperty("cleared");
+    // Too little to be a token.
+    expect(splitContext({ ...chars, cleared: 4 }, 1000)).not.toHaveProperty("cleared");
+  });
 });
 
 describe("breakdownRows", () => {
@@ -69,6 +87,13 @@ describe("breakdownRows", () => {
 
   it("has nothing to draw for an empty split", () => {
     expect(breakdownRows({ system: 0, tools: 0, history: 0, input: 0 })).toEqual([]);
+  });
+
+  it("does not draw what was cleared as a part of the request", () => {
+    const split = { system: 100, tools: 0, history: 700, input: 200 };
+    const rows = breakdownRows({ ...split, cleared: 4000 });
+    expect(rows).toEqual(breakdownRows(split));
+    expect(rows.reduce((sum, row) => sum + row.ratio, 0)).toBeCloseTo(1);
   });
 });
 
@@ -153,6 +178,29 @@ describe("measureRequest", () => {
     expect(split.historyTools).toBe(0);
     expect(split.summary).toBe(0);
     expect(split.input).toBeGreaterThan(0);
+  });
+
+  it("counts a cleared result as the stub that was sent, and passes on what it stood for", () => {
+    const stub = { role: "tool", tool_call_id: "1", content: "[result cleared, 500 chars]" };
+    const request = {
+      system: "S",
+      systemPrompt: "S",
+      tools: [],
+      history: [say("user", "old"), asked, stub, say("user", "new")],
+      turnLength: 1,
+    };
+    const cleared = JSON.stringify(returned).length - JSON.stringify(stub).length;
+
+    const split = measureRequest({ ...request, cleared });
+
+    // The request as it went out: the stub's few characters, not the result's five hundred.
+    expect(split.historyTools).toBe(
+      JSON.stringify(stub).length + JSON.stringify(asked.tool_calls).length,
+    );
+    expect(split.cleared).toBe(cleared);
+    // And nothing at all when there was nothing: a turn that cleared nothing reads as it did.
+    expect(measureRequest(request)).not.toHaveProperty("cleared");
+    expect(measureRequest({ ...request, cleared: 0 })).not.toHaveProperty("cleared");
   });
 });
 

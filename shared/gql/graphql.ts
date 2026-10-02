@@ -83,6 +83,7 @@ export type CreateSessionInput = {
   loadedTools?: InputMaybe<Scalars['JSON']['input']>;
   messageCount?: InputMaybe<Scalars['Int']['input']>;
   model?: InputMaybe<Scalars['String']['input']>;
+  pruning?: InputMaybe<Scalars['JSON']['input']>;
   title?: InputMaybe<Scalars['String']['input']>;
   updatedAt?: InputMaybe<Scalars['DateTime']['input']>;
   usage?: InputMaybe<Scalars['JSON']['input']>;
@@ -1493,6 +1494,7 @@ export type Session = {
   messages: Array<Message>;
   messagesAggregate: MessageAggregate;
   model: Scalars['String']['output'];
+  pruning?: Maybe<Scalars['JSON']['output']>;
   title: Scalars['String']['output'];
   updatedAt: Scalars['DateTime']['output'];
   usage?: Maybe<Scalars['JSON']['output']>;
@@ -1556,6 +1558,7 @@ export type SessionCountNonNullAggregate = {
   loadedTools: Scalars['Int']['output'];
   messageCount: Scalars['Int']['output'];
   model: Scalars['Int']['output'];
+  pruning: Scalars['Int']['output'];
   title: Scalars['Int']['output'];
   updatedAt: Scalars['Int']['output'];
   usage: Scalars['Int']['output'];
@@ -1568,6 +1571,7 @@ export type SessionCountNonNullHaving = {
   loadedTools?: InputMaybe<AggregateNumberFilter>;
   messageCount?: InputMaybe<AggregateNumberFilter>;
   model?: InputMaybe<AggregateNumberFilter>;
+  pruning?: InputMaybe<AggregateNumberFilter>;
   title?: InputMaybe<AggregateNumberFilter>;
   updatedAt?: InputMaybe<AggregateNumberFilter>;
   usage?: InputMaybe<AggregateNumberFilter>;
@@ -1581,6 +1585,7 @@ export enum SessionDistinctColumn {
   LoadedTools = 'loadedTools',
   MessageCount = 'messageCount',
   Model = 'model',
+  Pruning = 'pruning',
   Title = 'title',
   UpdatedAt = 'updatedAt',
   Usage = 'usage'
@@ -1600,6 +1605,7 @@ export type SessionFilters = {
   messageCount?: InputMaybe<IntFilter>;
   messages?: InputMaybe<MessageListRelationFilter>;
   model?: InputMaybe<StringFilter>;
+  pruning?: InputMaybe<JsonFilter>;
   title?: InputMaybe<StringFilter>;
   updatedAt?: InputMaybe<DateTimeFilter>;
   usage?: InputMaybe<JsonFilter>;
@@ -1681,6 +1687,7 @@ export type SessionOrderBy = {
   loadedTools?: InputMaybe<InnerOrder>;
   messageCount?: InputMaybe<InnerOrder>;
   model?: InputMaybe<InnerOrder>;
+  pruning?: InputMaybe<InnerOrder>;
   title?: InputMaybe<InnerOrder>;
   updatedAt?: InputMaybe<InnerOrder>;
   usage?: InputMaybe<InnerOrder>;
@@ -2213,6 +2220,7 @@ export type UpdateSessionInput = {
   loadedTools?: InputMaybe<Scalars['JSON']['input']>;
   messageCount?: InputMaybe<Scalars['Int']['input']>;
   model?: InputMaybe<Scalars['String']['input']>;
+  pruning?: InputMaybe<Scalars['JSON']['input']>;
   title?: InputMaybe<Scalars['String']['input']>;
   updatedAt?: InputMaybe<Scalars['DateTime']['input']>;
   usage?: InputMaybe<Scalars['JSON']['input']>;

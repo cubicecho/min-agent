@@ -349,6 +349,12 @@ export interface ContextBreakdown {
   historyTools?: number;
   /** What this turn's own tool calls asked for and got back. */
   inputTools?: number;
+  /**
+   * Not a part of the request but what is missing from it: what the tool results sent as stubs
+   * would have added had they gone whole, on the same scale as the parts. Left out of their
+   * total, and absent when nothing was cleared. See `Session.pruning`.
+   */
+  cleared?: number;
 }
 
 /**
@@ -426,6 +432,24 @@ export type StoredMessage = OpenAI.ChatCompletionMessageParam & {
   followups?: string[];
 };
 
+/**
+ * How far a session's tool results are cleared from what is replayed.
+ *
+ * The same kind of thing as a compaction record, and stored beside it for the same reason: the
+ * transcript stays whole and only what is sent changes. A tool result at an index below `through`
+ * is sent as a one-line stub saying how much was there; one at or after it is sent whole. The
+ * marker is stored rather than worked out per request because "all but the latest few" is a
+ * window that slides, and a window that slides rewrites a message in the middle of the history
+ * on every tool step. It is moved by a rule, rarely, and each move costs the prompt cache once.
+ * See `server/pruning.ts`.
+ */
+export interface PruningRecord {
+  /** Index into `messages`: the first message whose tool result is still sent whole. */
+  through: number;
+  /** ISO 8601, when the marker was last moved. */
+  at: string;
+}
+
 export interface Session {
   id: string;
   title: string;
@@ -443,6 +467,11 @@ export interface Session {
    * when it was written.
    */
   compaction?: CompactionRecord;
+  /**
+   * How far old tool results are sent as stubs. Absent until the rule first fires, and a session
+   * without one is sent whole. See `PruningRecord`.
+   */
+  pruning?: PruningRecord;
   /** Raw chat-completions turns — replayed verbatim on the next request. */
   messages: StoredMessage[];
 }
