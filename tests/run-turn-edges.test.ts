@@ -15,9 +15,9 @@ import {
  * point a turn can be stopped, the order things are written and said in, what a turn that ends
  * badly leaves stored, and the arguments a model gets wrong in ways other than a syntax error.
  *
- * Characterization, like that file: a value here is what the code does. These are the places a
- * replacement loop (#52) is most likely to differ without anything else noticing, so each one a
- * swap moves is a difference to be named, not a test to be quietly rewritten.
+ * Characterization, like that file: a value here is what the code does. These were written
+ * against the loop `runTurn` had of its own, and held agent-core's `runAgentLoop` to it when that
+ * took over (#52). Where the two differ the test says so, as "Before #52".
  *
  * The harness is that file's, with one addition: `log`, a single ordered record of what was
  * posted, stored, called and emitted, so "before" and "after" can be read off one list.
@@ -350,11 +350,14 @@ describe("stopping a turn while its tools run", () => {
   });
 
   /**
-   * The stop lands while the reply is being written, before any of its calls has started. The
-   * calls are made all the same, each handed a signal that is already aborted, and what they
-   * answer is what is stored.
+   * The stop lands while the reply is being written, before any of its calls has started. None is
+   * made, and each is answered with a line saying so, since a call with no result is a transcript
+   * no endpoint takes back.
+   *
+   * Before #52 the calls were made all the same, each handed a signal that was already aborted,
+   * and announced and stored like any other.
    */
-  it("still makes the calls of a reply the stop arrived behind", async () => {
+  it("makes none of the calls of a reply the stop arrived behind", async () => {
     offered = [LS];
     const controller = new AbortController();
     mcp.call.mockImplementation(async (_name: string, _input: unknown, signal: AbortSignal) =>
@@ -369,13 +372,10 @@ describe("stopping a turn while its tools run", () => {
 
     expect(error).toBeInstanceOf(Error);
     expect(requests).toHaveLength(1);
-    expect(mcp.call).toHaveBeenCalledTimes(1);
-    expect(events).toEqual([
-      { type: "tool_use", id: "c1", name: "fs__ls", input: "{}" },
-      { type: "tool_result", toolUseId: "c1", content: "ran after the stop", isError: false },
-    ]);
+    expect(mcp.call).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
     expect(stored.slice(2)).toEqual([
-      { role: "tool", tool_call_id: "c1", content: "ran after the stop" },
+      { role: "tool", tool_call_id: "c1", content: "Not run: the run stopped first." },
     ]);
   });
 });
@@ -395,12 +395,10 @@ describe("stopping a turn between steps", () => {
     const { events, error } = await run(session(), "look", { signal: controller.signal });
 
     expect(error).toBeInstanceOf(Error);
-    // The client's own abort, from the request it was not allowed to open. `server/turns.ts` drops
-    // whatever a stopped turn throws, so no reader sees which error this is.
-    expect([error?.constructor.name, error?.message]).toEqual([
-      "APIUserAbortError",
-      "Request was aborted.",
-    ]);
+    // The signal's own reason, read before the next request is built. Before #52 it was the
+    // client's `APIUserAbortError`, from a request it was not allowed to open. `server/turns.ts`
+    // drops whatever a stopped turn throws, so no reader sees which error this is.
+    expect(error?.name).toBe("AbortError");
     expect(requests).toHaveLength(1);
     expect(events).toEqual([
       { type: "tool_use", id: "c1", name: "fs__ls", input: "{}" },
@@ -506,8 +504,16 @@ describe("the pruning marker at the end of a turn that did not finish", () => {
   });
 });
 
+/** What agent-core's loop says of a reply that ended on `finish_reason: "length"`. */
+const LENGTH_NOTICE = "[agent] the model stopped at maxTokens (4096); this turn is cut short";
+
 describe("arguments a model gets wrong", () => {
-  it("refuses a load whose arguments are almost JSON, and loads nothing", async () => {
+  /**
+   * A load on demand is the loop's to answer, and it reads the arguments with agent-core's
+   * `parseToolArguments`, which repairs these. Before #52 the load was refused like any other
+   * call ("model produced invalid tool arguments: …") and nothing was loaded.
+   */
+  it("makes a load whose arguments are almost JSON, and stores them as written", async () => {
     configure({ toolDiscovery: "ondemand" });
     offered = [READ, LS];
     script = [asks(["c1", "load_tools", "{'names': ['fs__read'],}"]), says("Sorry.")];
@@ -515,15 +521,24 @@ describe("arguments a model gets wrong", () => {
     const { events } = await run(session(), "get ready");
 
     expect(results(events)).toEqual([
-      ["c1", "model produced invalid tool arguments: {'names': ['fs__read'],}", true],
+      [
+        "c1",
+        "Loaded 1 tool(s); they are callable on your next step.\n\nfs__read: Read a file",
+        false,
+      ],
     ]);
-    expect(bodies().map(declared)).toEqual([["load_tools"], ["load_tools"]]);
+    expect(bodies().map(declared)).toEqual([["load_tools"], ["load_tools", "fs__read"]]);
     expect(stored[1]).toMatchObject({
       tool_calls: [call("c1", "load_tools", "{'names': ['fs__read'],}")],
     });
   });
 
-  it("does not load a catalogued tool called with arguments that are almost JSON", async () => {
+  /**
+   * The call is refused as it is in eager mode, but the loop has loaded the tool by then: it
+   * loads a catalogued tool the moment it is called by name. Before #52 the arguments were read
+   * first and nothing was declared. Nothing is carried either way, since the tool never ran.
+   */
+  it("refuses a catalogued tool called with almost-JSON arguments, having loaded it", async () => {
     configure({ toolDiscovery: "ondemand" });
     offered = [READ, LS];
     script = [asks(["c1", "fs__read", "{'path': '/a',}"]), says("Sorry.")];
@@ -535,22 +550,29 @@ describe("arguments a model gets wrong", () => {
     expect(results(events)).toEqual([
       ["c1", "model produced invalid tool arguments: {'path': '/a',}", true],
     ]);
-    expect(bodies().map(declared)).toEqual([["load_tools"], ["load_tools"]]);
+    expect(bodies().map(declared)).toEqual([["load_tools"], ["load_tools", "fs__read"]]);
     expect(chat.loadedTools).toEqual([]);
   });
 
-  it("hands the pool arguments that are JSON but not an object", async () => {
+  /** Before #52 the pool was handed them as they were: `mcp.call("fs__read", ["/a"])`. */
+  it("refuses arguments that are JSON but not an object", async () => {
     offered = [READ];
     mcp.call.mockResolvedValue("contents");
     script = [asks(["c1", "fs__read", '["/a"]']), says("Read.")];
 
     const { events } = await run(session(), "read it");
 
-    expect(mcp.call.mock.calls).toEqual([["fs__read", ["/a"], undefined]]);
-    expect(results(events)).toEqual([["c1", "contents", false]]);
+    expect(mcp.call).not.toHaveBeenCalled();
+    expect(results(events)).toEqual([
+      ["c1", 'model produced tool arguments that are not an object: ["/a"]', true],
+    ]);
   });
 
-  it("says the same of arguments cut off at the reply ceiling as of any that do not parse", async () => {
+  /**
+   * Before #52 these read as any that do not parse — "model produced invalid tool arguments: …",
+   * quoted with their leading space — and nothing was logged about the reply running out of room.
+   */
+  it("says that arguments cut off at the reply ceiling were cut off", async () => {
     offered = [READ];
     script = [
       asksFor("length", ["c1", "fs__read", '{"path": "/a'], ["c2", "fs__read", ' {"pa']),
@@ -560,25 +582,27 @@ describe("arguments a model gets wrong", () => {
     const { events } = await run(session(), "read it");
 
     expect(mcp.call).not.toHaveBeenCalled();
+    const cutOff =
+      "the tool call was cut off at the reply ceiling before its arguments were complete; " +
+      "raise maxTokens: ";
     expect(results(events)).toEqual([
-      ["c1", 'model produced invalid tool arguments: {"path": "/a', true],
-      // Quoted as written, leading space and all.
-      ["c2", 'model produced invalid tool arguments:  {"pa', true],
+      ["c1", `${cutOff}{"path": "/a`, true],
+      ["c2", `${cutOff}{"pa`, true],
     ]);
-    // Nothing is logged about a reply that ran out of room.
-    expect(warn).not.toHaveBeenCalled();
+    expect(warn.mock.calls).toEqual([[LENGTH_NOTICE]]);
   });
 });
 
 describe("a reply that ran out of room", () => {
-  it("is stored as the answer, and nothing is logged about it", async () => {
+  /** Before #52 nothing was logged: it read exactly like a finished answer. */
+  it("is stored as the answer, and logged as cut short", async () => {
     script = [says("Half an ans", "length")];
 
     const { stats } = await run(session(), "hi");
 
     expect(stats).toMatchObject({ iterations: 1 });
     expect(stored[1]).toMatchObject({ role: "assistant", content: "Half an ans" });
-    expect(warn).not.toHaveBeenCalled();
+    expect(warn.mock.calls).toEqual([[LENGTH_NOTICE]]);
   });
 });
 
@@ -618,10 +642,11 @@ describe("a request refused on a later step", () => {
 
 describe("the tools a later step declares", () => {
   /**
-   * The pool is asked again on every step, so a server that connects while a turn runs is
-   * declared on the turn's next request.
+   * The loop is handed its tools once, so a server that connects while a turn runs is declared
+   * from the next turn. Before #52 the pool was asked again on every step, and it was declared on
+   * the turn's next request: `[["fs__ls"], ["fs__ls", "clock__now"]]`.
    */
-  it("are the pool's as they stand at that step", async () => {
+  it("are the pool's as they stood when the turn began", async () => {
     offered = [LS];
     mcp.call.mockImplementation(async () => {
       offered = [LS, NOW];
@@ -631,6 +656,6 @@ describe("the tools a later step declares", () => {
 
     await run(session(), "look");
 
-    expect(bodies().map(declared)).toEqual([["fs__ls"], ["fs__ls", "clock__now"]]);
+    expect(bodies().map(declared)).toEqual([["fs__ls"], ["fs__ls"]]);
   });
 });
