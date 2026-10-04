@@ -1,7 +1,6 @@
 import { REASONING_EFFORTS, type ReasoningEffort } from "@shared/types.ts";
 import { useMutation } from "@tanstack/react-query";
 import { Text, View } from "react-native";
-import { CardLayout } from "@/components/card-layout";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { FieldRow } from "@/components/ui/form";
@@ -10,6 +9,7 @@ import { api } from "@/lib/client.ts";
 import { useCopy } from "@/lib/copy.ts";
 import { ConfigForm } from "./config-form.tsx";
 import { useAnyDirty } from "./dirty.tsx";
+import { SettingsCard } from "./settings-card.tsx";
 
 /**
  * The reasoning menu, in the order `REASONING_EFFORTS` gives it.
@@ -129,10 +129,9 @@ export function AgentPanel() {
       })}
       content={({ form }) => (
         <>
-          <CardLayout
+          <SettingsCard
             title="Limits"
             description="What one turn is allowed to spend. The context window is the whole conversation, and the reply limit is only the answer at the end of it."
-            contentClassName="flex flex-col gap-4"
             content={
               <>
                 <FieldRow>
@@ -189,7 +188,7 @@ export function AgentPanel() {
             }
           />
 
-          <CardLayout
+          <SettingsCard
             title="Tools"
             content={
               <form.AppField name="toolDiscovery">
@@ -204,7 +203,7 @@ export function AgentPanel() {
             }
           />
 
-          <CardLayout
+          <SettingsCard
             title="System prompt"
             description="Sent at the head of every turn, before the conversation."
             content={
@@ -214,7 +213,7 @@ export function AgentPanel() {
             }
           />
 
-          <CardLayout
+          <SettingsCard
             title="Agent spec"
             description="These settings as one JSON document, in the format other apps built on agent-core read. It covers Model and Voice as well as this panel."
             content={<CopySpec />}

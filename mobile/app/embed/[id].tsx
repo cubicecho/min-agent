@@ -1,10 +1,11 @@
 import { type EmbedConfig, embedTitle } from "@shared/types.ts";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
-import { Linking, Platform, Text, View } from "react-native";
+import { Linking, Platform, View } from "react-native";
 import { ActionButton } from "@/components/action-button";
 import { ExternalLink, LayoutGrid } from "@/components/app/app-icons";
-import { CardLayout } from "@/components/card-layout";
+import { TITLE_ROW } from "@/components/app/title-row";
+import { EMBED_ICON } from "@/components/apps/embed-icon";
 import { HeaderContentFooter } from "@/components/header-content-footer";
 import { EmptyState } from "@/components/page";
 import { PageHeader } from "@/components/page-header";
@@ -14,6 +15,7 @@ import { SettingsLink } from "@/components/settings/link.tsx";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/client.ts";
 import { EMBEDS_STALE_TIME } from "@/lib/embeds.ts";
+import { cn } from "@/lib/utils";
 
 /**
  * One of the other apps, shown inside min-agent.
@@ -45,6 +47,7 @@ export default function EmbedScreen() {
     return (
       <PageLayout
         title="App"
+        headerClassName={TITLE_ROW}
         loading={embeds.isPending}
         content={
           <QueryState
@@ -72,6 +75,9 @@ export default function EmbedScreen() {
         className="h-full"
         header={
           <PageHeader
+            // A frame's title bar, not a page's: the app in the frame has a header of its own.
+            level={3}
+            className={cn("border-border border-b py-2", TITLE_ROW)}
             title={embedTitle(embed)}
             action={
               <ActionButton
@@ -108,16 +114,20 @@ export default function EmbedScreen() {
   return (
     <PageLayout
       title={embedTitle(embed)}
+      headerClassName={TITLE_ROW}
       content={
-        <CardLayout
-          title={embedTitle(embed)}
-          description={
+        // The page already has the app's name over it, so this is the one thing left to say and
+        // the one thing to do about it — not a card repeating the title across the whole pane.
+        <EmptyState
+          icon={EMBED_ICON[embed.icon]}
+          level={2}
+          title={
             embed.mode === "external"
-              ? "Set to open in the browser rather than in a frame."
-              : "This build cannot frame another app, so it opens in the browser instead."
+              ? "Opens in the browser"
+              : "This build cannot frame another app"
           }
-          content={<Text className="text-muted-foreground text-sm">{embed.url}</Text>}
-          footerActions={
+          description={embed.url}
+          action={
             <Button className="gap-2" onPress={() => open(embed)}>
               <ExternalLink className="size-4" />
               Open
