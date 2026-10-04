@@ -1,8 +1,15 @@
 import type { LlmConfigView, ReasoningEffort } from "@shared/types.ts";
+import { useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
-import { View } from "react-native";
-import { Button, ErrorNote, Loading, Muted, type Option, Screen } from "@/components/ui.tsx";
+import { createContext, type ReactNode, useContext, useMemo, useState } from "react";
+import { Text, View } from "react-native";
+import { useAppForm } from "@/components/app/app-form";
+import { Save } from "@/components/app/app-icons";
+import { StickyHeaderContentFooter } from "@/components/header-content-footer";
+import type { SelectOption } from "@/components/option-select";
+import { QueryState } from "@/components/query-state";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { api } from "@/lib/client.ts";
 import { useReportDirty } from "./dirty.tsx";
 import { type SettingsTab, settingsTabLabel } from "./tabs.ts";
@@ -14,7 +21,7 @@ import { type SettingsTab, settingsTabLabel } from "./tabs.ts";
  * because of what is here: they are three views of one Postgres row, and three panels each
  * holding their own draft of it would each save their own copy of the other two's fields —
  * so keeping a system prompt would quietly put the voice settings back to whatever they were
- * when that panel first loaded. There is one draft, held here, and the panels are field groups.
+ * when that panel first loaded. There is one form, held here, and the panels are field groups.
  *
  * Saving is likewise one act. The bar at the bottom of each panel writes the whole row and
  * says which panels the unsaved changes are on, because from the row's point of view there is
@@ -110,22 +117,90 @@ const dirtyTabsOf = (draft: Draft, stored: Draft): ConfigTab[] => {
   return CONFIG_TABS.filter((tab) => tabs.has(tab));
 };
 
+/**
+ * What the form holds before the row has arrived. Never drawn — a panel shows a skeleton until
+ * there is a row — but the form hook has to be called on that render too, with something.
+ */
+const EMPTY: Draft = {
+  baseUrl: "",
+  apiKey: "",
+  model: "",
+  maxTokens: 0,
+  temperature: 0,
+  maxToolIterations: 0,
+  systemPrompt: "",
+  pricing: { inputPer1M: 0, outputPer1M: 0 },
+  contextLimit: 0,
+  toolDiscovery: "ondemand",
+  reasoningEffort: "off",
+  taskModels: {},
+  voiceBaseUrl: "",
+  sttModel: "",
+  ttsModel: "",
+  ttsVoice: "",
+  speakReplies: false,
+};
+
 /** How the endpoint button last went: what the provider answered, or why it did not. */
 type Probe = { ok: boolean; detail: string } | null;
 
-type ConfigDraft = {
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/**
+ * The form over the settings row.
+ *
+ * Its defaults are the stored row, so they move whenever the row does. TanStack adopts new
+ * defaults as the values only while nothing has been touched: the first load fills the form in,
+ * and a refetch behind a half-typed one changes what "unsaved" is measured against without
+ * taking the typing away.
+ *
+ * A function of its own so that its return type can be named — the form's type has a dozen
+ * parameters and every one of them is inferred here.
+ */
+function useConfigForm({
+  stored,
+  onEdit,
+  onSave,
+}: {
+  stored: Draft | null;
+  /** A field was changed by hand. `name` is the field's path. */
+  onEdit: (name: string) => void;
+  /** Resolves with the row as it was written, or throws. */
+  onSave: (value: Draft) => Promise<LlmConfigView>;
+}) {
+  return useAppForm({
+    defaultValues: stored ?? EMPTY,
+    listeners: { onChange: ({ fieldApi }) => onEdit(fieldApi.name) },
+    onSubmit: async ({ value, formApi }) => {
+      try {
+        // Reset to what the save read back, rather than left for the refetch to fill in: the
+        // form would otherwise sit on the pre-save defaults until then, and a successful save
+        // would look like one that had left everything unsaved.
+        formApi.reset(seed(await onSave(value)));
+      } catch {
+        // Shown by the bar, from the mutation. Swallowed here so the submit settles.
+      }
+    },
+  });
+}
+
+type ConfigFormApi = ReturnType<typeof useConfigForm>;
+
+export type ConfigDraft = {
+  /** The form itself, for `form.AppField`. */
+  form: ConfigFormApi;
+  /** What is in the form now, for the fields whose hints quote other fields. */
   draft: Draft;
   /** The stored row, for the things a form shows about it — whether a key is already set. */
   view: LlmConfigView;
-  set: <K extends keyof Draft>(key: K, value: Draft[K]) => void;
   /**
    * Something on Model, Agent or Voice is typed and not saved. It is one row behind three
    * panels, so anything that reads the *stored* row has to ask about all three, not its own.
    */
   dirty: boolean;
-  /** Every model the provider at the *saved* endpoint reports, ready for a `Select`. */
-  modelOptions: Option[];
-  models: { count: number; error: unknown; loading: boolean; refetch: () => void };
+  /** Every model the provider at the *saved* endpoint reports, ready for a select. */
+  modelOptions: SelectOption[];
+  models: { count: number; error: unknown; loading: boolean; refetch: () => Promise<unknown> };
   /**
    * The endpoint in the boxes is not the one the model list came from.
    *
@@ -145,77 +220,70 @@ type Held = {
   bar: ReactNode;
   /** Which panels are holding a change, so each one can report its own dot. */
   dirtyTabs: ConfigTab[];
-  /** The settings row failed to load; every panel says so rather than spinning forever. */
-  error: unknown;
+  /** The settings row's query; every panel shows its failure rather than spinning forever. */
+  query: { isPending: boolean; isError: boolean; error: unknown; refetch: () => unknown };
 };
 
 const Context = createContext<Held | null>(null);
 
 /**
- * Holds the draft for as long as the settings screen is open.
+ * Holds the form for as long as the settings screen is open.
  *
  * Above the panels rather than inside one, because a panel is unmounted only when the screen
- * is, and the draft has to outlive any one of them being visited.
+ * is, and the form has to outlive any one of them being visited.
  */
-export function ConfigDraftProvider({ children }: { children: ReactNode }) {
+export function ConfigDraftProvider({ content }: { content: ReactNode }) {
   const queryClient = useQueryClient();
   const config = useQuery({ queryKey: ["config"], queryFn: api.config });
   const models = useQuery({ queryKey: ["models"], queryFn: api.models });
-  const [draft, setDraft] = useState<Draft | null>(null);
   const [saved, setSaved] = useState(false);
   const [endpointBusy, setEndpointBusy] = useState(false);
   const [probe, setProbe] = useState<Probe>(null);
 
-  useEffect(() => {
-    if (config.data && !draft) setDraft(seed(config.data));
-  }, [config.data, draft]);
-
   const save = useMutation({
     mutationFn: (value: Draft) => api.saveConfig(value),
-    onSuccess: async (fresh) => {
+    onSuccess: (fresh) => {
       setSaved(true);
-      // Seeded from what the save read back, rather than cleared and left to a refetch.
-      // Clearing it re-runs the effect above on the very next render — while the cache still
-      // holds the pre-save row, because the refetch cannot have landed yet — so the form
-      // filled itself back in with the values that had just been replaced and never looked
-      // again. A successful save looked like one that had been ignored.
       queryClient.setQueryData(["config"], fresh);
-      setDraft(seed(fresh));
       // The model list belongs to the provider, so a new base URL or key means a new list.
-      await queryClient.invalidateQueries({ queryKey: ["models"] });
+      void queryClient.invalidateQueries({ queryKey: ["models"] });
     },
   });
 
-  const stored = config.data ? seed(config.data) : null;
-  const dirtyTabs = draft && stored ? dirtyTabsOf(draft, stored) : [];
+  const stored = useMemo(() => (config.data ? seed(config.data) : null), [config.data]);
 
-  const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
-    // The note beside the button describes the last save, and an edit outdates it.
-    setSaved(false);
-    // So does the endpoint badge, which describes a provider that is no longer the one in the
-    // boxes — a green "Connected" beside a half-retyped address is the wrong thing to believe.
-    if (key === "baseUrl" || key === "apiKey") setProbe(null);
-    setDraft((current) => (current ? { ...current, [key]: value } : current));
-  };
+  const form = useConfigForm({
+    stored,
+    onEdit: (name) => {
+      // The note beside the button describes the last save, and an edit outdates it.
+      setSaved(false);
+      // So does the endpoint badge, which describes a provider that is no longer the one in the
+      // boxes — a green "Connected" beside a half-retyped address is the wrong thing to believe.
+      if (name === "baseUrl" || name === "apiKey") setProbe(null);
+    },
+    onSave: save.mutateAsync,
+  });
+  const draft = useStore(form.store, (state) => state.values);
+  const dirtyTabs = stored ? dirtyTabsOf(draft, stored) : [];
 
   /**
    * Store just the endpoint, then ask the provider what it serves.
    *
    * A patch rather than a whole save: this button answers "point at this provider", and it
    * would be a poor answer to it that also committed a half-written system prompt two tabs
-   * away. For the same reason only the two fields it wrote are refreshed in the draft — a
-   * reseed from the response would throw away every other unsaved edit.
+   * away. For the same reason only the two fields it wrote are refreshed in the form — a
+   * reset to the response would throw away every other unsaved edit.
    */
   const applyEndpoint = async () => {
-    if (!draft) return;
+    if (!stored) return;
     setEndpointBusy(true);
     setProbe(null);
     try {
-      const fresh = await api.saveConfig({ baseUrl: draft.baseUrl, apiKey: draft.apiKey });
+      const { baseUrl, apiKey } = form.state.values;
+      const fresh = await api.saveConfig({ baseUrl, apiKey });
       queryClient.setQueryData(["config"], fresh);
-      setDraft((current) =>
-        current ? { ...current, baseUrl: fresh.baseUrl, apiKey: "" } : current,
-      );
+      form.setFieldValue("baseUrl", fresh.baseUrl);
+      form.setFieldValue("apiKey", "");
       const result = await models.refetch();
       if (result.error) throw result.error;
       const count = result.data?.models.length ?? 0;
@@ -224,18 +292,18 @@ export function ConfigDraftProvider({ children }: { children: ReactNode }) {
         detail: `${fresh.baseUrl || "the default endpoint"} — ${count} model(s)`,
       });
     } catch (error) {
-      setProbe({ ok: false, detail: error instanceof Error ? error.message : String(error) });
+      setProbe({ ok: false, detail: messageOf(error) });
     } finally {
       setEndpointBusy(false);
     }
   };
 
   const state: ConfigDraft | null =
-    draft && config.data
+    stored && config.data
       ? {
+          form,
           draft,
           view: config.data,
-          set,
           dirty: dirtyTabs.length > 0,
           modelOptions: (models.data?.models ?? []).map((entry) => ({
             label: entry.id,
@@ -245,9 +313,9 @@ export function ConfigDraftProvider({ children }: { children: ReactNode }) {
             count: models.data?.models.length ?? 0,
             error: models.error,
             loading: models.isFetching,
-            refetch: () => void models.refetch(),
+            refetch: () => models.refetch(),
           },
-          endpointPending: Boolean(stored && (draft.baseUrl !== stored.baseUrl || draft.apiKey)),
+          endpointPending: draft.baseUrl !== stored.baseUrl || Boolean(draft.apiKey),
           applyEndpoint: () => void applyEndpoint(),
           endpointBusy,
           probe,
@@ -262,54 +330,63 @@ export function ConfigDraftProvider({ children }: { children: ReactNode }) {
   */
   const bar =
     dirtyTabs.length > 0 || saved || save.error ? (
-      <View className="gap-2 border-t border-border bg-background p-3">
-        <ErrorNote error={save.error} />
-        <View className="flex-row items-center gap-3">
-          <Muted className="flex-1">
-            {dirtyTabs.length === 0
-              ? "Saved"
-              : `Unsaved changes on ${dirtyTabs.map(settingsTabLabel).join(", ")}`}
-          </Muted>
-          {dirtyTabs.length > 0 && stored && (
-            <>
-              <Button
-                variant="outline"
-                onPress={() => {
-                  setSaved(false);
-                  setDraft(stored);
-                }}
-              >
-                Revert
-              </Button>
-              <Button icon="save" busy={save.isPending} onPress={() => draft && save.mutate(draft)}>
-                Save
-              </Button>
-            </>
-          )}
+      <form.AppForm>
+        <View className="gap-2 border-border border-t bg-background p-3">
+          {save.error ? (
+            <Alert
+              variant="destructive"
+              title="Could not save the settings"
+              description={messageOf(save.error)}
+            />
+          ) : null}
+          <View className="flex-row items-center gap-3">
+            <Text className="flex-1 text-muted-foreground text-sm">
+              {dirtyTabs.length === 0
+                ? "Saved"
+                : `Unsaved changes on ${dirtyTabs.map(settingsTabLabel).join(", ")}`}
+            </Text>
+            {dirtyTabs.length > 0 ? (
+              <>
+                <Button
+                  variant="outline"
+                  onPress={() => {
+                    setSaved(false);
+                    save.reset();
+                    form.reset();
+                  }}
+                >
+                  Revert
+                </Button>
+                <form.SubmitButton
+                  createLabel="Save"
+                  savingLabel="Saving…"
+                  icon={<Save className="size-4" />}
+                />
+              </>
+            ) : null}
+          </View>
         </View>
-      </View>
+      </form.AppForm>
     ) : null;
 
   return (
-    <Context.Provider value={{ state, bar, dirtyTabs, error: config.error }}>
-      {children}
-    </Context.Provider>
+    <Context.Provider value={{ state, bar, dirtyTabs, query: config }}>{content}</Context.Provider>
   );
 }
 
 /**
  * One panel's worth of the settings form: its own fields, and the shared save bar under them.
  *
- * A render prop rather than a hook handing back a draft, so that the three panels do not each
+ * A render prop rather than a hook handing back the form, so that the three panels do not each
  * repeat the loading branch, the scroll container and the bar — and so that the fields inside
- * are written against a draft that is known to have arrived.
+ * are written against a row that is known to have arrived.
  */
 export function ConfigForm({
   tab,
-  children,
+  content,
 }: {
   tab: ConfigTab;
-  children: (config: ConfigDraft) => ReactNode;
+  content: (config: ConfigDraft) => ReactNode;
 }) {
   const held = useContext(Context);
   // Before the early returns: a mounted panel reports its dot on every render, and a hook
@@ -317,21 +394,21 @@ export function ConfigForm({
   useReportDirty(tab, held?.dirtyTabs.includes(tab) ?? false);
 
   if (!held) throw new Error("ConfigForm must be rendered inside a ConfigDraftProvider");
-  if (held.error)
-    return (
-      <Screen>
-        <ErrorNote error={held.error} />
-      </Screen>
-    );
-  if (!held.state) return <Loading />;
 
   return (
-    <View className="flex-1">
-      <Screen>
-        {children(held.state)}
-        <View className="pb-8" />
-      </Screen>
-      {held.bar}
-    </View>
+    <StickyHeaderContentFooter
+      width="prose"
+      className="flex-1"
+      // The body is a block on the web, where a slot wraps a caller's nodes; the cards want a column.
+      contentClassName="flex flex-col gap-4 py-4"
+      content={
+        held.state ? (
+          content(held.state)
+        ) : (
+          <QueryState query={held.query} what="the settings" count={1} />
+        )
+      }
+      footer={held.state ? held.bar : undefined}
+    />
   );
 }

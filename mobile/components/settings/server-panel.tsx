@@ -1,16 +1,12 @@
+import { useStore } from "@tanstack/react-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Text, View } from "react-native";
-import {
-  Badge,
-  Button,
-  Card,
-  CardDescription,
-  CardTitle,
-  Field,
-  Input,
-  Screen,
-} from "@/components/ui.tsx";
+import { useAppForm } from "@/components/app/app-form";
+import { CardLayout } from "@/components/card-layout";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Form } from "@/components/ui/form";
+import { Check, CircleCheck } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
 import {
   defaultServerUrl,
@@ -20,6 +16,8 @@ import {
   setServerUrl,
 } from "@/lib/server-url.ts";
 import { useReportDirty } from "./dirty.tsx";
+import { TextField } from "./fields.tsx";
+import { PanelBody } from "./panel-body.tsx";
 
 type Probe = { ok: boolean; detail: string } | null;
 
@@ -46,83 +44,93 @@ const hint = () => {
  */
 export function ServerPanel() {
   const queryClient = useQueryClient();
-  const [draft, setDraft] = useState(serverUrl());
   const [probe, setProbe] = useState<Probe>(null);
-  const [busy, setBusy] = useState(false);
+
+  const form = useAppForm({
+    defaultValues: { url: serverUrl() },
+    onSubmit: async ({ value, formApi }) => {
+      setProbe(null);
+      const saved = await setServerUrl(value.url);
+      // What was stored is the new clean state, and it may not be what was typed: the address
+      // is tidied on the way in.
+      formApi.reset({ url: saved });
+      try {
+        const config = await api.config();
+        setProbe({
+          ok: true,
+          detail: `${config.model || "no model selected"} · ${config.baseUrl}`,
+        });
+        // Everything fetched from the old address is now wrong.
+        await queryClient.invalidateQueries();
+      } catch (error) {
+        setProbe({ ok: false, detail: error instanceof Error ? error.message : String(error) });
+      }
+    },
+  });
 
   // The panel keeps the typed address when you switch tabs, so the tab says it is holding one.
-  useReportDirty("server", draft !== serverUrl());
-
-  const save = async () => {
-    setBusy(true);
-    setProbe(null);
-    const saved = await setServerUrl(draft);
-    setDraft(saved);
-    try {
-      const config = await api.config();
-      setProbe({ ok: true, detail: `${config.model || "no model selected"} · ${config.baseUrl}` });
-      // Everything fetched from the old address is now wrong.
-      await queryClient.invalidateQueries();
-    } catch (error) {
-      setProbe({ ok: false, detail: error instanceof Error ? error.message : String(error) });
-    } finally {
-      setBusy(false);
-    }
-  };
+  const dirty = useStore(form.store, (state) => !state.isDefaultValue);
+  useReportDirty("server", dirty);
 
   return (
-    <Screen>
-      <Card>
-        <CardTitle>Server</CardTitle>
-        <CardDescription>
-          The address of the min-agent server, including its port. Saving checks the connection
-          before it is used.
-        </CardDescription>
+    <PanelBody
+      content={
+        <>
+          <form.AppForm>
+            <CardLayout
+              title="Server"
+              description="The address of the min-agent server, including its port. Saving checks the connection before it is used."
+              content={
+                <Form className="gap-4">
+                  <form.AppField name="url">
+                    {() => (
+                      <TextField
+                        label="Base URL"
+                        description={hint()}
+                        placeholder="http://192.168.1.20:8787"
+                        inputMode="url"
+                        onSubmitEditing={() => void form.handleSubmit()}
+                      />
+                    )}
+                  </form.AppField>
+                  {probe ? (
+                    <Alert
+                      variant={probe.ok ? "default" : "destructive"}
+                      {...(probe.ok ? { icon: <CircleCheck /> } : {})}
+                      title={probe.ok ? "Connected" : "Failed"}
+                      description={probe.detail}
+                    />
+                  ) : null}
+                </Form>
+              }
+              footerActions={
+                <>
+                  {/* Nothing to reset to on a build that was given no address; the button would
+                      only ever clear the box, which is not what "Reset" says. */}
+                  {hasDefaultServerUrl() ? (
+                    <Button
+                      variant="outline"
+                      onPress={() => form.setFieldValue("url", defaultServerUrl())}
+                    >
+                      Reset
+                    </Button>
+                  ) : null}
+                  <form.SubmitButton
+                    icon={<Check className="size-4" />}
+                    createLabel="Save and test"
+                    savingLabel="Testing…"
+                  />
+                </>
+              }
+            />
+          </form.AppForm>
 
-        <Field label="Base URL" hint={hint()}>
-          <Input
-            value={draft}
-            onChangeText={setDraft}
-            onSubmitEditing={save}
-            placeholder="http://192.168.1.20:8787"
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-            inputMode="url"
+          <CardLayout
+            title="About"
+            description="This build talks to the same server as the browser build, and is the same code: the types, the API client and the formatting are shared. There is no authentication — keep the server on a trusted network."
           />
-        </Field>
-
-        <View className="flex-row gap-2">
-          <Button onPress={save} busy={busy} icon="check">
-            Save and test
-          </Button>
-          {/* Nothing to reset to on a build that was given no address; the button would
-              only ever clear the box, which is not what "Reset" says. */}
-          {hasDefaultServerUrl() ? (
-            <Button variant="outline" onPress={() => setDraft(defaultServerUrl())}>
-              Reset
-            </Button>
-          ) : null}
-        </View>
-
-        {probe && (
-          <View className="flex-row items-center gap-2">
-            <Badge variant={probe.ok ? "secondary" : "destructive"}>
-              {probe.ok ? "Connected" : "Failed"}
-            </Badge>
-            <Text className="flex-1 text-xs text-muted-foreground">{probe.detail}</Text>
-          </View>
-        )}
-      </Card>
-
-      <Card>
-        <CardTitle>About</CardTitle>
-        <CardDescription>
-          This build talks to the same server as the browser build, and is the same code: the types,
-          the API client and the formatting are shared. There is no authentication — keep the server
-          on a trusted network.
-        </CardDescription>
-      </Card>
-    </Screen>
+        </>
+      }
+    />
   );
 }

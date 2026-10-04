@@ -1,7 +1,10 @@
 import { voiceBaseUrlFor } from "@shared/types.ts";
-import { Text, View } from "react-native";
-import { Card, CardDescription, CardTitle, Field, Input, Muted, Switch } from "@/components/ui.tsx";
+import { View } from "react-native";
+import { CardLayout } from "@/components/card-layout";
+import { SettingRow } from "@/components/setting-row";
+import { FieldRow } from "@/components/ui/form";
 import { ConfigForm } from "./config-form.tsx";
+import { TextField } from "./fields.tsx";
 import { SettingsLink } from "./link.tsx";
 
 /**
@@ -13,107 +16,92 @@ import { SettingsLink } from "./link.tsx";
  *
  * What is *not* here is when the microphone button sends, which is under Device: it is stored
  * on the device rather than on the server, because it is about how you are holding the thing.
- * The link at the bottom says so, since this is where anyone would look for it first.
+ * The row at the bottom says so, since this is where anyone would look for it first.
  */
 export function VoicePanel() {
   return (
-    <ConfigForm tab="voice">
-      {({ draft, set }) => (
+    <ConfigForm
+      tab="voice"
+      content={({ form, draft }) => (
         <>
-          <Card>
-            <CardTitle>Where the audio runs</CardTitle>
-            <CardDescription>
-              Leave both models blank and voice runs on whatever the device already has: a browser
-              and an Android build both read replies aloud and take dictation with the recogniser
-              they ship with. Naming a model moves that work to the server, which is the only way
-              the desktop build gets a microphone button of its own. A tcp://host:port in place of a
-              model name is a Wyoming server — the voice services Home Assistant speaks to — and the
-              audio base URL and API key are not used for it.
-            </CardDescription>
-
-            <Field
-              label="Audio base URL"
-              hint={`Where the transcription and speech endpoints are, when that is not where the chat model is — a local Ollama serves no audio. Blank uses ${voiceBaseUrlFor(draft) || "the endpoint under Model"}. The same API key is sent either way.`}
-            >
-              <Input
-                value={draft.voiceBaseUrl}
-                onChangeText={(value) => set("voiceBaseUrl", value)}
-                placeholder={draft.baseUrl || "https://api.openai.com/v1"}
-                autoCapitalize="none"
-                autoCorrect={false}
-                inputMode="url"
-              />
-            </Field>
-          </Card>
-
-          <Card>
-            <CardTitle>Models</CardTitle>
-
-            <View className="flex-row gap-3">
-              <View className="flex-1">
-                <Field
-                  label="Speech to text"
-                  hint="whisper-1, or tcp://host:10300 for a Wyoming one. Blank uses the device."
-                >
-                  <Input
-                    value={draft.sttModel}
-                    onChangeText={(value) => set("sttModel", value)}
-                    placeholder="off"
-                    autoCapitalize="none"
-                    autoCorrect={false}
+          <CardLayout
+            title="Where the audio runs"
+            description="Leave both models blank and voice runs on whatever the device already has: a browser and an Android build both read replies aloud and take dictation with the recogniser they ship with. Naming a model moves that work to the server, which is the only way the desktop build gets a microphone button of its own. A tcp://host:port in place of a model name is a Wyoming server — the voice services Home Assistant speaks to — and the audio base URL and API key are not used for it."
+            content={
+              <form.AppField name="voiceBaseUrl">
+                {() => (
+                  <TextField
+                    label="Audio base URL"
+                    description={`Where the transcription and speech endpoints are, when that is not where the chat model is — a local Ollama serves no audio. Blank uses ${voiceBaseUrlFor(draft) || "the endpoint under Model"}. The same API key is sent either way.`}
+                    placeholder={draft.baseUrl || "https://api.openai.com/v1"}
+                    inputMode="url"
                   />
-                </Field>
-              </View>
-              <View className="flex-1">
-                <Field
-                  label="Text to speech"
-                  hint="tts-1, or tcp://host:10200 for a Wyoming one. Blank uses the device."
-                >
-                  <Input
-                    value={draft.ttsModel}
-                    onChangeText={(value) => set("ttsModel", value)}
-                    placeholder="off"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </Field>
-              </View>
-            </View>
+                )}
+              </form.AppField>
+            }
+          />
 
-            <Field
-              label="Voice"
-              hint="Which voice the speech model uses — a Piper voice name for Wyoming. Blank takes its default."
-            >
-              <Input
-                value={draft.ttsVoice}
-                onChangeText={(value) => set("ttsVoice", value)}
-                placeholder="alloy"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </Field>
-          </Card>
+          <CardLayout
+            title="Models"
+            contentClassName="flex flex-col gap-4"
+            content={
+              <>
+                <FieldRow>
+                  <form.AppField name="sttModel">
+                    {() => (
+                      <TextField
+                        label="Speech to text"
+                        description="whisper-1, or tcp://host:10300 for a Wyoming one. Blank uses the device."
+                        placeholder="off"
+                      />
+                    )}
+                  </form.AppField>
+                  <form.AppField name="ttsModel">
+                    {() => (
+                      <TextField
+                        label="Text to speech"
+                        description="tts-1, or tcp://host:10200 for a Wyoming one. Blank uses the device."
+                        placeholder="off"
+                      />
+                    )}
+                  </form.AppField>
+                </FieldRow>
 
-          <Card>
-            <CardTitle>Playback</CardTitle>
+                <form.AppField name="ttsVoice">
+                  {() => (
+                    <TextField
+                      label="Voice"
+                      description="Which voice the speech model uses — a Piper voice name for Wyoming. Blank takes its default."
+                      placeholder="alloy"
+                    />
+                  )}
+                </form.AppField>
+              </>
+            }
+          />
 
-            <View className="flex-row items-center gap-3">
-              <Switch
-                value={draft.speakReplies}
-                onValueChange={(value) => set("speakReplies", value)}
-              />
-              <Text className="flex-1 text-sm text-foreground">Read every reply aloud</Text>
-            </View>
+          <CardLayout
+            title="Playback"
+            contentClassName="flex flex-col gap-4"
+            content={
+              <>
+                <form.AppField name="speakReplies">
+                  {(field) => <field.SwitchField label="Read every reply aloud" />}
+                </form.AppField>
 
-            <Muted>
-              When the microphone button sends what you dictated is set per device, not here.
-            </Muted>
-            <View className="flex-row">
-              <SettingsLink tab="device">Settings → Device</SettingsLink>
-            </View>
-          </Card>
+                <SettingRow
+                  description="When the microphone button sends what you dictated is set per device, not here."
+                  action={
+                    <View className="flex-row">
+                      <SettingsLink tab="device" />
+                    </View>
+                  }
+                />
+              </>
+            }
+          />
         </>
       )}
-    </ConfigForm>
+    />
   );
 }

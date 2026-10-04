@@ -1,27 +1,29 @@
-import { Feather } from "@react-native-vector-icons/feather";
-import { EMBED_ICONS, type EmbedConfig, embedTitle } from "@shared/types.ts";
+import { type EmbedConfig, embedTitle } from "@shared/types.ts";
+import { useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { Linking, Platform, Pressable, Text, View } from "react-native";
-import {
-  Badge,
-  Button,
-  Dialog,
-  Empty,
-  ErrorNote,
-  Field,
-  IconPicker,
-  Input,
-  Loading,
-  Muted,
-  Screen,
-  Select,
-  Switch,
-} from "@/components/ui.tsx";
+import { useState } from "react";
+import { Linking, Platform, View } from "react-native";
+import { ActionButton } from "@/components/action-button";
+import { useAppForm } from "@/components/app/app-form";
+import { ExternalLink, LayoutGrid } from "@/components/app/app-icons";
+import { EMBED_ICON } from "@/components/apps/embed-icon";
+import { EmbedIconField } from "@/components/apps/embed-icon-picker";
+import { ConfirmButton } from "@/components/confirm-button";
+import { DialogLayout } from "@/components/dialog-layout";
+import { ListItem } from "@/components/list-item";
+import { EmptyState } from "@/components/page";
+import { QueryState } from "@/components/query-state";
+import { Section } from "@/components/section";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Form } from "@/components/ui/form";
+import { ChevronRight, Plus, Trash2 } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
 import { EMBEDS_STALE_TIME } from "@/lib/embeds.ts";
-import { colors } from "@/lib/theme.ts";
 import { useReportDirty } from "./dirty.tsx";
+import { TextField } from "./fields.tsx";
+import { PanelBody } from "./panel-body.tsx";
 
 /**
  * The other apps that get a row in the sidebar — a task server, a kanban board.
@@ -30,18 +32,15 @@ import { useReportDirty } from "./dirty.tsx";
  * thing you come here to read: which apps exist, which are on, where they point. Six form
  * fields per row said none of that until you had scrolled past them.
  *
- * There is no Save button. The mutation replaces the whole set — an embed's id is the route
- * its view lives at, so the server takes the list rather than a patch — and the dialog is the
- * unit of work: closing it has already saved, or has told you why it could not.
+ * Every edit goes through the dialog and its Save, the switch that shows or hides an app
+ * included. The mutation replaces the whole set — an embed's id is the route its view lives
+ * at, so the server takes the list rather than a patch.
  */
 
 const MODES = [
   { label: "In a frame", value: "iframe" },
   { label: "In the browser", value: "external" },
 ];
-
-/** How long a primed remove stays primed before it forgets it was ever asked. */
-const ARMED_FOR = 5000;
 
 const blank = (taken: EmbedConfig[]): EmbedConfig => {
   // Ids are unique or the save is refused, and the id of the row you just deleted is the one
@@ -54,43 +53,31 @@ const blank = (taken: EmbedConfig[]): EmbedConfig => {
 /** Which row the dialog is editing: an index into the list, or a new row at the end. */
 type Editing = { index: number | null; value: EmbedConfig };
 
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
 /** One line of the list: what it is, where it points, and whether it is on. */
-function Row({
-  embed,
-  onOpen,
-  onToggle,
-}: {
-  embed: EmbedConfig;
-  onOpen: () => void;
-  onToggle: (enabled: boolean) => void;
-}) {
+function Row({ embed, onOpen }: { embed: EmbedConfig; onOpen: () => void }) {
+  const Glyph = EMBED_ICON[embed.icon];
   return (
-    <Pressable
+    <ListItem
+      className="border border-border bg-card"
+      leading={
+        <Glyph
+          className={embed.enabled ? "size-4 text-foreground" : "size-4 text-muted-foreground"}
+        />
+      }
+      title={embedTitle(embed)}
+      titleClassName={embed.enabled ? undefined : "text-muted-foreground"}
+      description={embed.url || "No address yet"}
+      meta={
+        <>
+          {embed.mode === "external" ? <Badge variant="outline">browser</Badge> : null}
+          {embed.enabled ? null : <Badge variant="secondary">hidden</Badge>}
+        </>
+      }
+      action={<ChevronRight className="size-4 text-muted-foreground" />}
       onPress={onOpen}
-      accessibilityRole="button"
-      accessibilityLabel={`Edit ${embedTitle(embed)}`}
-      className="flex-row items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 active:bg-muted"
-    >
-      <Feather
-        name={embed.icon}
-        size={17}
-        color={embed.enabled ? colors.foreground : colors.mutedForeground}
-      />
-      <View className="flex-1">
-        <Text
-          className={`text-sm font-medium ${embed.enabled ? "text-card-foreground" : "text-muted-foreground"}`}
-          numberOfLines={1}
-        >
-          {embedTitle(embed)}
-        </Text>
-        <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-          {embed.url || "No address yet"}
-        </Text>
-      </View>
-      {embed.mode === "external" && <Badge variant="outline">browser</Badge>}
-      <Switch value={embed.enabled} onValueChange={onToggle} />
-      <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
-    </Pressable>
+    />
   );
 }
 
@@ -99,7 +86,7 @@ function Row({
  * it, and it is seeded afresh every time the dialog opens — `key` on the caller — rather than
  * syncing an effect against the row it was opened on.
  *
- * `visible` is the panel's, not the dialog's: a `Modal` is drawn outside the tree it is
+ * `visible` is the panel's, not the dialog's: a dialog is drawn outside the tree it is
  * written in, so hiding the panel behind another tab would leave this floating over whatever
  * you switched to. It is hidden with the panel and kept mounted, so the half-typed row is
  * still here when you come back.
@@ -108,7 +95,6 @@ function Editor({
   visible,
   initial,
   existing,
-  busy,
   error,
   onCancel,
   onSave,
@@ -117,127 +103,140 @@ function Editor({
   visible: boolean;
   initial: EmbedConfig;
   existing: boolean;
-  busy: boolean;
   error: unknown;
   onCancel: () => void;
-  onSave: (value: EmbedConfig) => void;
+  onSave: (value: EmbedConfig) => Promise<unknown>;
   onRemove: () => void;
 }) {
-  const [draft, setDraft] = useState(initial);
-  const [armed, setArmed] = useState(false);
+  const form = useAppForm({
+    defaultValues: initial,
+    // A refused save is reported by the mutation, under the fields; the form only has to
+    // stay open with what was typed.
+    onSubmit: ({ value }) => onSave(value).catch(() => {}),
+  });
 
+  const dirty = useStore(form.store, (state) => !state.isDefaultValue);
   // Puts a dot on the tab while there is a row typed and not yet saved behind it.
-  useReportDirty("apps", JSON.stringify(draft) !== JSON.stringify(initial));
+  useReportDirty("apps", dirty);
 
-  // A remove left primed and forgotten is a delete waiting to happen on the next stray tap.
-  useEffect(() => {
-    if (!armed) return;
-    const timer = setTimeout(() => setArmed(false), ARMED_FOR);
-    return () => clearTimeout(timer);
-  }, [armed]);
-
-  const update = (patch: Partial<EmbedConfig>) => setDraft({ ...draft, ...patch });
+  const name = embedTitle(initial);
 
   return (
-    <Dialog
-      visible={visible}
-      title={existing ? embedTitle(draft) : "Add an app"}
-      onClose={onCancel}
-      footer={
-        <>
-          {existing &&
-            (armed ? (
-              <Button size="sm" variant="destructive" busy={busy} onPress={onRemove}>
-                Remove?
-              </Button>
-            ) : (
-              <Button
+    <form.AppForm>
+      <DialogLayout
+        open={visible}
+        onOpenChange={(open) => {
+          if (!open) onCancel();
+        }}
+        title={existing ? name : "Add an app"}
+        description="A web app given a row in the sidebar."
+        hasUnsavedChanges={() => !form.state.isDefaultValue}
+        footer={
+          <View className="flex-row items-center gap-1">
+            {existing ? (
+              <ConfirmButton
                 variant="ghost"
                 size="icon"
-                icon="trash-2"
-                accessibilityLabel={`Remove ${embedTitle(draft)}`}
-                onPress={() => setArmed(true)}
-              />
-            ))}
-          <Button
-            variant="ghost"
-            size="icon"
-            icon="external-link"
-            accessibilityLabel="Open in the browser"
-            disabled={!draft.url}
-            onPress={() => Linking.openURL(draft.url)}
-          />
-          <View className="flex-1" />
-          <Button variant="outline" onPress={onCancel}>
-            Cancel
-          </Button>
-          <Button icon="save" busy={busy} onPress={() => onSave(draft)}>
-            Save
-          </Button>
-        </>
-      }
-    >
-      <Field label="Label">
-        <Input
-          value={draft.label}
-          onChangeText={(label) => update({ label })}
-          placeholder="Kanban"
-          autoFocus={!existing}
-        />
-      </Field>
-
-      <Field
-        label="URL"
-        hint="An address every device that opens min-agent can reach — a LAN address, not localhost, if you use the phone or desktop build."
-      >
-        <Input
-          value={draft.url}
-          onChangeText={(url) => update({ url })}
-          autoCapitalize="none"
-          inputMode="url"
-          placeholder="http://192.168.1.10:3000"
-        />
-      </Field>
-
-      <Field label="Icon" hint="What the sidebar row shows next to the label.">
-        <IconPicker
-          icons={EMBED_ICONS}
-          value={draft.icon}
-          onChange={(icon) => update({ icon: icon as EmbedConfig["icon"] })}
-        />
-      </Field>
-
-      <Field
-        label="Opens"
-        hint={
-          draft.mode === "iframe"
-            ? "Some servers refuse to be framed; switch to the browser if it comes up blank."
-            : undefined
+                label={`Remove ${name}`}
+                title={`Remove ${name}?`}
+                description="Its row leaves the sidebar. The app itself is not touched."
+                confirmLabel="Remove"
+                onConfirm={onRemove}
+              >
+                <Trash2 className="size-4" />
+              </ConfirmButton>
+            ) : null}
+            <form.Subscribe selector={(state) => state.values.url}>
+              {(url) => (
+                <ActionButton
+                  variant="ghost"
+                  size="icon"
+                  label="Open in the browser"
+                  disabled={!url}
+                  onPress={() => void Linking.openURL(url)}
+                >
+                  <ExternalLink className="size-4" />
+                </ActionButton>
+              )}
+            </form.Subscribe>
+          </View>
         }
-      >
-        <Select
-          value={draft.mode}
-          options={MODES}
-          onChange={(mode) => update({ mode: mode as EmbedConfig["mode"] })}
-        />
-      </Field>
+        footerActions={(close) => (
+          <>
+            <Button variant="outline" onPress={close}>
+              Cancel
+            </Button>
+            <form.SubmitButton isEdit={existing} createLabel="Add app" editLabel="Save" />
+          </>
+        )}
+        content={
+          <Form className="gap-4">
+            <form.AppField name="label">
+              {() => <TextField label="Label" placeholder="Kanban" autoFocus={!existing} />}
+            </form.AppField>
 
-      <Field label="Id" hint="The route its view lives at: /embed/<id>">
-        <Input
-          value={draft.id}
-          onChangeText={(id) => update({ id })}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </Field>
+            <form.AppField
+              name="url"
+              validators={{
+                onChange: ({ value }) =>
+                  value.trim() === "" ? "An app needs an address." : undefined,
+              }}
+            >
+              {() => (
+                <TextField
+                  label="URL"
+                  required
+                  description="An address every device that opens min-agent can reach — a LAN address, not localhost, if you use the phone or desktop build."
+                  inputMode="url"
+                  placeholder="http://192.168.1.10:3000"
+                />
+              )}
+            </form.AppField>
 
-      <View className="flex-row items-center gap-3">
-        <Switch value={draft.enabled} onValueChange={(enabled) => update({ enabled })} />
-        <Text className="text-sm text-popover-foreground">Show it in the sidebar</Text>
-      </View>
+            <form.AppField name="icon">
+              {() => (
+                <EmbedIconField
+                  label="Icon"
+                  description="What the sidebar row shows next to the label."
+                />
+              )}
+            </form.AppField>
 
-      <ErrorNote error={error} />
-    </Dialog>
+            <form.Subscribe selector={(state) => state.values.mode}>
+              {(mode) => (
+                <form.AppField name="mode">
+                  {(field) => (
+                    <field.OptionSelectField
+                      label="Opens"
+                      options={MODES}
+                      description={
+                        mode === "iframe"
+                          ? "Some servers refuse to be framed; switch to the browser if it comes up blank."
+                          : undefined
+                      }
+                    />
+                  )}
+                </form.AppField>
+              )}
+            </form.Subscribe>
+
+            <form.AppField name="id">
+              {() => (
+                <TextField label="Id" description="The route its view lives at: /embed/<id>" />
+              )}
+            </form.AppField>
+
+            <form.AppField name="enabled">
+              {(field) => <field.SwitchField label="Show it in the sidebar" />}
+            </form.AppField>
+
+            {error ? (
+              <Alert variant="destructive" title="Not saved" description={messageOf(error)} />
+            ) : null}
+          </Form>
+        }
+      />
+    </form.AppForm>
   );
 }
 
@@ -260,19 +259,11 @@ export function AppsPanel({ active = true }: { active?: boolean }) {
     },
   });
 
-  if (embeds.isError)
-    return (
-      <Screen>
-        <ErrorNote error={embeds.error} />
-      </Screen>
-    );
-  if (embeds.isLoading) return <Loading />;
-
   const list = embeds.data ?? [];
 
   // Every write is the whole list, so each of these is "the list, with one row changed".
   const commit = (value: EmbedConfig) =>
-    save.mutate(
+    save.mutateAsync(
       editing?.index == null
         ? [...list, value]
         : list.map((embed, i) => (i === editing.index ? value : embed)),
@@ -280,63 +271,76 @@ export function AppsPanel({ active = true }: { active?: boolean }) {
 
   const remove = (index: number) => save.mutate(list.filter((_, i) => i !== index));
 
-  const toggle = (index: number, enabled: boolean) =>
-    save.mutate(list.map((embed, i) => (i === index ? { ...embed, enabled } : embed)));
+  const add = (
+    <Button variant="outline" onPress={() => setEditing({ index: null, value: blank(list) })}>
+      <Plus className="size-4" />
+      Add app
+    </Button>
+  );
 
   return (
-    <Screen>
-      <Muted>
-        Other web apps, given a row in the sidebar. They are not part of min-agent — a framed app is
-        the other server’s own UI, running on its own.
-      </Muted>
-      {Platform.OS !== "web" && (
-        <Muted>This build has no frame to put them in, so every app opens in the browser.</Muted>
-      )}
+    <PanelBody
+      content={
+        <>
+          <Section
+            title="Apps"
+            description={
+              Platform.OS === "web"
+                ? "Other web apps, given a row in the sidebar. They are not part of min-agent — a framed app is the other server’s own UI, running on its own."
+                : "Other web apps, given a row in the sidebar. They are not part of min-agent, and this build has no frame to put them in, so every app opens in the browser."
+            }
+            action={embeds.isSuccess ? add : undefined}
+            contentClassName="flex flex-col gap-2"
+            content={
+              <>
+                {/* The dialog reports its own failures; this is for the ones nothing is open to catch. */}
+                {!editing && save.error ? (
+                  <Alert
+                    variant="destructive"
+                    title="Not saved"
+                    description={messageOf(save.error)}
+                  />
+                ) : null}
+                <QueryState
+                  query={embeds}
+                  what="apps"
+                  count={list.length}
+                  empty={
+                    <EmptyState
+                      icon={LayoutGrid}
+                      title="No apps yet"
+                      description="Add one to put it in the sidebar."
+                    />
+                  }
+                />
+                {list.map((embed, index) => (
+                  <Row
+                    key={embed.id}
+                    embed={embed}
+                    onOpen={() => setEditing({ index, value: embed })}
+                  />
+                ))}
+              </>
+            }
+          />
 
-      {/* The dialog reports its own failures; this is for the ones nothing is open to catch. */}
-      {!editing && <ErrorNote error={save.error} />}
-
-      {list.length === 0 ? (
-        <Empty>No apps yet. Add one to put it in the sidebar.</Empty>
-      ) : (
-        <View className="gap-2">
-          {list.map((embed, index) => (
-            <Row
-              key={embed.id}
-              embed={embed}
-              onOpen={() => setEditing({ index, value: embed })}
-              onToggle={(enabled) => toggle(index, enabled)}
+          {editing ? (
+            <Editor
+              key={editing.index ?? "new"}
+              visible={active}
+              initial={editing.value}
+              existing={editing.index !== null}
+              error={save.error}
+              onCancel={() => {
+                save.reset();
+                setEditing(null);
+              }}
+              onSave={commit}
+              onRemove={() => editing.index !== null && remove(editing.index)}
             />
-          ))}
-        </View>
-      )}
-
-      <View className="flex-row pb-8">
-        <Button
-          variant="outline"
-          icon="plus"
-          onPress={() => setEditing({ index: null, value: blank(list) })}
-        >
-          Add app
-        </Button>
-      </View>
-
-      {editing && (
-        <Editor
-          key={editing.index ?? "new"}
-          visible={active}
-          initial={editing.value}
-          existing={editing.index !== null}
-          busy={save.isPending}
-          error={save.error}
-          onCancel={() => {
-            save.reset();
-            setEditing(null);
-          }}
-          onSave={commit}
-          onRemove={() => editing.index !== null && remove(editing.index)}
-        />
-      )}
-    </Screen>
+          ) : null}
+        </>
+      }
+    />
   );
 }

@@ -1,21 +1,13 @@
 import { REASONING_EFFORTS, type ReasoningEffort } from "@shared/types.ts";
 import { useMutation } from "@tanstack/react-query";
-import { View } from "react-native";
-import {
-  Button,
-  Card,
-  CardDescription,
-  CardTitle,
-  ErrorNote,
-  Field,
-  Muted,
-  NumberInput,
-  Select,
-  Textarea,
-} from "@/components/ui.tsx";
+import { Text, View } from "react-native";
+import { CardLayout } from "@/components/card-layout";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { FieldRow } from "@/components/ui/form";
+import { Check, Copy } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
 import { useCopy } from "@/lib/copy.ts";
-import type { Draft } from "./config-form.tsx";
 import { ConfigForm } from "./config-form.tsx";
 
 /**
@@ -39,6 +31,12 @@ const EFFORT_OPTIONS = REASONING_EFFORTS.map((effort) => ({
   label: EFFORT_LABEL[effort],
   value: effort,
 }));
+
+const DISCOVERY_OPTIONS = [
+  { label: "On demand — load definitions as needed", value: "ondemand" },
+  { label: "Proxied — load as needed, call through one tool, keep the cache", value: "proxy" },
+  { label: "Eager — send every definition every time", value: "eager" },
+];
 
 /**
  * Copies the saved settings out as an agent spec.
@@ -65,24 +63,35 @@ function CopySpec({ dirty }: { dirty: boolean }) {
     },
   });
 
+  const Glyph = copied ? Check : Copy;
+
   return (
-    <>
+    <View className="gap-2">
       <View className="flex-row items-center gap-2">
         <Button
           variant="outline"
-          icon={copied ? "check" : "copy"}
-          busy={fetched.isPending}
-          disabled={dirty}
-          accessibilityLabel={copied ? "Copied" : "Copy agent spec"}
+          disabled={dirty || fetched.isPending}
+          aria-label={copied ? "Copied" : "Copy agent spec"}
           onPress={() => fetched.mutate()}
         >
-          Copy agent spec
+          <Glyph className="size-4" />
+          {fetched.isPending ? "Copying…" : "Copy agent spec"}
         </Button>
-        {dirty ? <Muted className="flex-1">Save to copy the current settings.</Muted> : null}
+        {dirty ? (
+          <Text className="flex-1 text-muted-foreground text-sm">
+            Save to copy the current settings.
+          </Text>
+        ) : null}
       </View>
-      <Muted>The API key is never included.</Muted>
-      <ErrorNote error={fetched.error} />
-    </>
+      <Text className="text-muted-foreground text-sm">The API key is never included.</Text>
+      {fetched.error ? (
+        <Alert
+          variant="destructive"
+          title="Could not copy the spec"
+          description={fetched.error.message}
+        />
+      ) : null}
+    </View>
   );
 }
 
@@ -95,116 +104,102 @@ function CopySpec({ dirty }: { dirty: boolean }) {
  */
 export function AgentPanel() {
   return (
-    <ConfigForm tab="agent">
-      {({ draft, set, dirty }) => (
+    <ConfigForm
+      tab="agent"
+      content={({ form, dirty }) => (
         <>
-          <Card>
-            <CardTitle>Limits</CardTitle>
-            <CardDescription>
-              What one turn is allowed to spend. The context window is the whole conversation, and
-              the reply limit is only the answer at the end of it.
-            </CardDescription>
+          <CardLayout
+            title="Limits"
+            description="What one turn is allowed to spend. The context window is the whole conversation, and the reply limit is only the answer at the end of it."
+            contentClassName="flex flex-col gap-4"
+            content={
+              <>
+                <FieldRow>
+                  <form.AppField name="maxTokens">
+                    {(field) => (
+                      <field.NumberField
+                        integer
+                        label="Max reply tokens"
+                        description="The longest single reply. Not the context window."
+                      />
+                    )}
+                  </form.AppField>
+                  <form.AppField name="temperature">
+                    {(field) => (
+                      <field.NumberField
+                        label="Temperature"
+                        description="Higher is more random. 0 is deterministic."
+                      />
+                    )}
+                  </form.AppField>
+                </FieldRow>
 
-            <View className="flex-row gap-3">
-              <View className="flex-1">
-                <Field
-                  label="Max reply tokens"
-                  hint="The longest single reply. Not the context window."
-                >
-                  <NumberInput
-                    integer
-                    value={draft.maxTokens}
-                    onChangeValue={(value) => set("maxTokens", value)}
+                <FieldRow>
+                  <form.AppField name="maxToolIterations">
+                    {(field) => (
+                      <field.NumberField
+                        integer
+                        label="Max tool loops"
+                        description="How many tool calls one turn may make."
+                      />
+                    )}
+                  </form.AppField>
+                  <form.AppField name="contextLimit">
+                    {(field) => (
+                      <field.NumberField
+                        integer
+                        label="Context window"
+                        description="The whole conversation. 0 asks the server."
+                      />
+                    )}
+                  </form.AppField>
+                </FieldRow>
+
+                <form.AppField name="reasoningEffort">
+                  {(field) => (
+                    <field.OptionSelectField
+                      label="Reasoning effort"
+                      description="Only a reasoning model takes this. Off and None are not the same: Off leaves the setting off the request, which is the only thing a server that has never heard of reasoning will accept, and None sends it — the way a model that can reason is told not to on this turn. A model that refuses the setting is asked again without it, so a wrong pick here costs a round trip rather than the turn."
+                      options={EFFORT_OPTIONS}
+                    />
+                  )}
+                </form.AppField>
+              </>
+            }
+          />
+
+          <CardLayout
+            title="Tools"
+            content={
+              <form.AppField name="toolDiscovery">
+                {(field) => (
+                  <field.OptionSelectField
+                    label="MCP tools"
+                    description="On demand puts a name-only catalogue in the system prompt and lets the model pull in the schemas it needs mid-turn. Much cheaper with many tools; costs one extra round trip on the turns that use them. Proxied does the same without changing the tool list, so a load keeps the server's prompt cache; the model calls each tool through one fixed tool, which smaller models get wrong more often."
+                    options={DISCOVERY_OPTIONS}
                   />
-                </Field>
-              </View>
-              <View className="flex-1">
-                <Field label="Temperature" hint="Higher is more random. 0 is deterministic.">
-                  <NumberInput
-                    value={draft.temperature}
-                    onChangeValue={(value) => set("temperature", value)}
-                  />
-                </Field>
-              </View>
-            </View>
+                )}
+              </form.AppField>
+            }
+          />
 
-            <View className="flex-row gap-3">
-              <View className="flex-1">
-                <Field label="Max tool loops" hint="How many tool calls one turn may make.">
-                  <NumberInput
-                    integer
-                    value={draft.maxToolIterations}
-                    onChangeValue={(value) => set("maxToolIterations", value)}
-                  />
-                </Field>
-              </View>
-              <View className="flex-1">
-                <Field label="Context window" hint="The whole conversation. 0 asks the server.">
-                  <NumberInput
-                    integer
-                    value={draft.contextLimit}
-                    onChangeValue={(value) => set("contextLimit", value)}
-                  />
-                </Field>
-              </View>
-            </View>
+          <CardLayout
+            title="System prompt"
+            description="Sent at the head of every turn, before the conversation."
+            content={
+              <form.AppField name="systemPrompt">
+                {(field) => <field.TextAreaField label="Prompt" className="min-h-36" />}
+              </form.AppField>
+            }
+          />
 
-            <Field
-              label="Reasoning effort"
-              hint="Only a reasoning model takes this. Off and None are not the same: Off leaves the setting off the request, which is the only thing a server that has never heard of reasoning will accept, and None sends it — the way a model that can reason is told not to on this turn. A model that refuses the setting is asked again without it, so a wrong pick here costs a round trip rather than the turn."
-            >
-              <Select
-                value={draft.reasoningEffort}
-                options={EFFORT_OPTIONS}
-                onChange={(value) => set("reasoningEffort", value as ReasoningEffort)}
-              />
-            </Field>
-          </Card>
-
-          <Card>
-            <CardTitle>Tools</CardTitle>
-
-            <Field
-              label="MCP tools"
-              hint="On demand puts a name-only catalogue in the system prompt and lets the model pull in the schemas it needs mid-turn. Much cheaper with many tools; costs one extra round trip on the turns that use them. Proxied does the same without changing the tool list, so a load keeps the server's prompt cache; the model calls each tool through one fixed tool, which smaller models get wrong more often."
-            >
-              <Select
-                value={draft.toolDiscovery}
-                options={[
-                  { label: "On demand — load definitions as needed", value: "ondemand" },
-                  {
-                    label: "Proxied — load as needed, call through one tool, keep the cache",
-                    value: "proxy",
-                  },
-                  { label: "Eager — send every definition every time", value: "eager" },
-                ]}
-                onChange={(value) => set("toolDiscovery", value as Draft["toolDiscovery"])}
-              />
-            </Field>
-          </Card>
-
-          <Card>
-            <CardTitle>System prompt</CardTitle>
-            <CardDescription>
-              Sent at the head of every turn, before the conversation.
-            </CardDescription>
-            <Textarea
-              value={draft.systemPrompt}
-              onChangeText={(value) => set("systemPrompt", value)}
-              className="min-h-36"
-            />
-          </Card>
-
-          <Card>
-            <CardTitle>Agent spec</CardTitle>
-            <CardDescription>
-              These settings as one JSON document, in the format other apps built on agent-core
-              read. It covers Model and Voice as well as this panel.
-            </CardDescription>
-            <CopySpec dirty={dirty} />
-          </Card>
+          <CardLayout
+            title="Agent spec"
+            description="These settings as one JSON document, in the format other apps built on agent-core read. It covers Model and Voice as well as this panel."
+            content={<CopySpec dirty={dirty} />}
+          />
         </>
       )}
-    </ConfigForm>
+    />
   );
 }
