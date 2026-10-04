@@ -25,7 +25,7 @@ export const useWide = () => useWindowDimensions().width >= WIDE;
  * `KeyboardAvoidingView` has nothing to react to and the composer stays where it was, under
  * the keys. Reserving the room is the app's job on both counts, which is what this is for.
  *
- * Called in one place: the drawer in `app/_layout.tsx` pads every scene by it, so no screen
+ * Called in one place: the shell in `app/_layout.tsx` pads every scene by it, so no screen
  * has to remember to — and none can quietly forget when it is added later.
  *
  * The two numbers are added rather than picked between because on Android they measure
