@@ -128,8 +128,9 @@ release still goes out to GHCR. A run of chores publishes nothing.
 
 ## Layout
 
-- `mobile/` — the front end. `app/` is one file per route, `components/ui.tsx` is the widget set,
-  `components/settings/` the panels behind the settings tabs, `electron/` is the desktop shell.
+- `mobile/` — the front end. `app/` is one file per route, `components/ui/` and the files at the
+  root of `components/` are cubeui's controls and shells (vendored — see [cubeui](#cubeui)),
+  `components/chat/` and `components/settings/` are the app's own screens, `electron/` is the desktop shell.
   Its web export is what the server serves.
 - `server/` — express + graphql-yoga. `agent.ts` is the tool-calling loop, `mcp.ts` the wiring
   to the MCP pool, `store.ts` session persistence, `config.ts` the settings and MCP rows,
@@ -720,7 +721,7 @@ leaving the bottom unpins it and a *Jump to latest* button brings it back.
 ### Highlighting a code fence
 
 `shared/highlight.ts` registers a dozen languages with lowlight and flattens a fence into
-`{ text, scope }` tokens, a line at a time. `mobile/components/code-block.tsx` renders them as
+`{ text, scope }` tokens, a line at a time. `mobile/components/chat/code-block.tsx` renders them as
 `<Text>` spans coloured from the `syntax` map in `mobile/lib/theme.ts` — github-dark's values,
 so a fence looks the way it always has. There is no stylesheet in it, because React Native has
 no `hljs-*` classes to hang one on.
@@ -917,7 +918,7 @@ while a text box has focus.
 New chat and Settings are bound in the sidebar rather than in the list, because the nav is the
 one thing mounted on every route and they would otherwise stop working the moment you opened
 Settings. Escape closing a modal is not bound here at all: react-native-web's `Modal` already
-turns it into `onRequestClose`, which `Dialog` and `Select` were passing before any of this.
+turns it into `onRequestClose`, which cubeui's `Dialog` passes through.
 
 One caveat: a browser will not give up `⌘N`, so that one only reaches us in Electron.
 
@@ -935,24 +936,22 @@ hours: at nine in the morning something from eleven last night is yesterday, not
 ago. The difference is rounded, because the two midnights can be 23 or 25 hours apart when the
 clocks change and a chat should not slide into the wrong day over it.
 
-A chat is renamed in place — the title becomes a field, Enter or moving away commits, Escape
-puts it back — over the `updateSessionSingle` mutation the generated CRUD hands us for free.
+A chat is renamed in a dialog — the pencil opens a `FormDialog` with the title in it — over the
+`updateSessionSingle` mutation the generated CRUD hands us for free. cubeui's rule is that a row
+is never edited in place: a field that appears where a label was moves everything beside it.
 
-Delete asks first. The bin primes the row into a `Delete?` button rather than opening a dialog:
-one tap to arm, one to confirm, and the row disarms itself after five seconds so a forgotten
-click is not a delete waiting to happen. There is no modal, which also means no `Alert.alert` —
-react-native-web does not implement it, and the same code runs in a browser.
+Delete asks first. The bin is a `ConfirmButton`, which opens a dialog naming the chat and does
+nothing until it is confirmed. It is cubeui's dialog rather than `Alert.alert`, which
+react-native-web does not implement — the same code runs in a browser.
 
 A search box appears above the list once there are more than eight chats — below that, scanning
 is faster than the box is worth. It matches every whitespace-separated term against the title, in
 any order, so typing more always narrows.
 
-The rule is `matchTerms` in `shared/client/search.ts`, and it is the only one in the app: the
-same eight-item threshold and the same matching turn up inside `Select`, which grows a filter box
-when there is a long list behind it — the models one, on an Ollama box with forty tags on it,
-being the list that made the case. Filtering is done in the client in both places: what is being
-filtered is already in memory, and a round trip per keystroke would be slower than the scanning
-it replaced.
+The rule is `matchTerms` in `shared/client/search.ts`. Filtering is done in the client: what is
+being filtered is already in memory, and a round trip per keystroke would be slower than the
+scanning it replaced. The model pickers do not filter — cubeui's `OptionSelect` has no filter box
+— so an Ollama box with forty tags on it is a list to scroll.
 
 ## Other apps in the sidebar
 
@@ -963,7 +962,7 @@ sidebar item, and opening it puts that server's own UI in an iframe filling the 
 ```
 Label    what the sidebar row says
 URL      an absolute http/https address
-Icon     a Feather glyph, picked from a grid of the dozen on offer
+Icon     a glyph, picked from a grid of the dozen on offer
 Opens    "In a frame", or "In the browser"
 ```
 
@@ -993,10 +992,11 @@ showing an empty screen.
 `shared/types.ts`). An iframe `src` and `Linking.openURL` are both places the browser is told to
 go, and a script URL in either would run in min-agent's own origin.
 
-The sidebar rows are not routes. There is one `embed/[id]` screen behind all of them, hidden from
-the drawer the way `chat/[id]` is, and `Sidebar` in `mobile/app/_layout.tsx` draws a `DrawerItem`
-per row from the query — the drawer's own `DrawerItemList` can only render screens that exist in
-the file tree, and these come from the database.
+The sidebar rows are not routes. There is one `embed/[id]` screen behind all of them, and the
+shell in `mobile/app/_layout.tsx` draws a `SidebarNavItem` per row from the query, because these
+come from the database and not from the file tree. The icon names stored with them are the ones
+the app had when it drew Feather; `mobile/components/apps/embed-icon.ts` maps each to a lucide
+glyph, and `trello`, which lucide does not carry, is drawn as a kanban board.
 
 ## Android and Windows
 
@@ -1032,28 +1032,32 @@ against a case GraphQL has already ruled out, and it costs 82 kB to do it. Take 
 there with `import type`, never a bare `import { type A }` — under `verbatimModuleSyntax` the
 latter is still a value import, and one of them puts the whole validator back in the bundle.
 
-`mobile/components/ui.tsx` keeps shadcn's component and variant names
-(`<Button variant="outline" size="sm">`) even though there is no Radix and no DOM under them.
-That is deliberate: it is the vocabulary the screens were written in, and a React Native widget
-set that answers to the same names is one less thing to translate when a view moves.
+### cubeui
+
+The widgets are not the app's. `mobile/components/ui/` and the files directly under
+`mobile/components/` are [cubeui](https://github.com/cubicecho/cubeui)'s native registry,
+installed with `npx shadcn@latest add @cubeui/<item>` (`mobile/components.json` names the
+registry) and vendored as source — they are replaced by the next install, so they are not edited
+here and Biome is told to leave them alone. The colours come the same way:
+`mobile/cubeui-tokens.css` is generated, and `global.css` only imports it.
+
+What the app owns sits in folders under `components/`: `app/` for its form hook and the icons
+cubeui does not ship, `apps/`, `chat/` and `settings/` for the screens. A screen is put together
+from cubeui's shells — `PageLayout`, `HeaderContentFooter`, `CardLayout`, `DialogLayout`,
+`Sidebar` — which take their parts as named slots (`content`, `title`, `action`, `footer`) rather
+than as children. Forms go through `useAppForm` in `components/app/app-form.tsx`, which is
+cubeui's TanStack Form hook with this app's extra fields bound to it.
 
 ### A sidebar, not a hamburger
 
-On the web the nav is always on screen. `drawerType: "permanent"` pins it beside the
-content and takes the toggle out of the header, so the destinations are a sidebar rather
-than something you have to remember is there. Above 768px it shows icons and labels; below, it
-narrows to a 64px rail of icons that the button at its top opens back out — a nav you can still
-see and click at 400px wide, which a closed drawer is not.
+The nav is cubeui's `SidebarLayout`. At 768px and up it is a sidebar beside the content: New chat
+at the top, Chats, a row per configured app (see [Other apps in the
+sidebar](#other-apps-in-the-sidebar)), and Settings at the foot. Below that the sidebar is not
+drawn and the same destinations become a bar of icons across the top, each still announced by
+name — a nav you can see and press on a phone, where a closed drawer is neither.
 
-The rail hides its labels with `display: none` on `drawerLabelStyle` rather than dropping
-them, so each icon is still announced by name. On a phone none of this applies: the drawer
-goes on sliding over the content, because 64px of permanent rail is a lot of a phone.
-
-`drawerContent` is min-agent's own `Sidebar` on every platform, not just the web: below the
-screens it draws a row per configured app (see [Other apps in the
-sidebar](#other-apps-in-the-sidebar)), and under a spacer at the foot of the list, Settings.
-Both exist on the phone too. Only the fold-out button is web-only, and it is passed in rather
-than assumed.
+There is no drawer and nothing to fold: the sidebar holds no state, so it is one width or it is
+the bar.
 
 ### One settings page
 
@@ -1067,14 +1071,14 @@ Apps     the other apps that get a sidebar row
 Server   which min-agent server this build talks to
 ```
 
-These were four sibling entries in the drawer, which put the four things you set up once at the
+These were four sibling entries in the nav, which put the four things you set up once at the
 same level as the one thing you use all day, and left Settings meaning only the last of them.
-The drawer is the app's nav, not its preferences pane.
+The sidebar is the app's nav, not its preferences pane.
 
 The panels are components rather than files under `app/` because every file under `app/` is a
 route, and only the tab bar is a destination now. `/settings?tab=mcp` opens on one — the param
 seeds the state, and the state is what the row reads, so a tab is never dead on a platform
-where the URL is not an address bar. Each panel renders its own `Screen` and owns its own
+where the URL is not an address bar. Each panel is its own scroller and owns its own
 loading, error and save states.
 
 A panel is mounted the first time you open its tab and kept from then on, hidden rather than
@@ -1087,16 +1091,12 @@ one, because a `Modal` is drawn outside the tree it is written in.
 
 Nothing blocks you from leaving a draft behind. `components/settings/dirty.tsx` is how the tab
 row finds out: a panel reports whether it is holding something unsaved, and the tab gets a dot
-(`Tabs` takes `marks` — a muted dot for unsaved, a red one for the MCP servers that stopped
-answering, which outranks it). The Agent panel is three cards long, so its Save is pinned under
+(drawn inside the `TabsTrigger` — a muted dot for unsaved, a red one for the MCP servers that
+stopped answering, which outranks it). The Agent panel is three cards long, so its Save is pinned under
 the form instead of at the end of it, and shows up only when there is a change to keep or a
 save to confirm — with a Revert beside it, now that a draft can outlive the tab it was typed
 in. Dirty is measured against the stored row rather than set by a keystroke, so putting a value
 back the way it was is not a change.
-
-Settings is drawn by hand in `Sidebar` rather than by `DrawerItemList`, for its position alone:
-it is hidden from the generated list and repeated under a `flex: 1` spacer, which is what puts
-it at the bottom of a drawer whose content container grows to fill the height.
 
 The tab table is `mobile/components/settings/tabs.ts`, and `SettingsLink` reads it too. Every
 place that reports something unconfigured — no model picked, the server not answering, an
@@ -1107,7 +1107,7 @@ stale: a link names its panel the way the tab does, from the one table.
 ### One chats view, two widths
 
 A wide screen has room for the conversation on the left and the session list in a panel on the
-right; a phone has never had room for both. `mobile/components/chat-view.tsx` is both: above
+right; a phone has never had room for both. `mobile/components/chat/chat-view.tsx` is both: above
 768px (`useWide()` in `mobile/lib/layout.ts`) it renders the chat and the panel side by side,
 and below it the list and the chat go back to being separate screens at `/` and `/chat/[id]`.
 
@@ -1119,7 +1119,8 @@ put while the route beneath it changes; switching chats from the panel `replace`
 than `push`es, so an afternoon of browsing does not pile up on the back stack.
 
 Enter sends in the browser, and Shift+Enter breaks the line. That is wired through `onKeyPress`
-in `Textarea` and is deliberately web-only: on a phone the return key is how
+in `components/chat/composer-input.tsx` — the app's own box, because cubeui's `Textarea` has no
+submit key — and is deliberately web-only: on a phone the return key is how
 you get a new line, and the send button is an inch away. react-native-web hands `onKeyPress`
 the React synthetic keyboard event rather than the bare `{ key }` its types promise, so the
 handler reads `shiftKey` and the IME's `isComposing` through a documented cast — and calls
@@ -1166,8 +1167,8 @@ so it matches the repo root, and `expo.install.exclude` in `mobile/package.json`
 
 ### Unlayered Tailwind utilities
 
-`mobile/global.css` imports `tailwindcss/theme.css` and `tailwindcss/utilities.css` separately
-rather than `@import "tailwindcss"`, and the utilities go in unlayered.
+`mobile/cubeui-tokens.css` imports `tailwindcss/theme.css` and `tailwindcss/utilities.css`
+separately rather than `@import "tailwindcss"`, and the utilities go in unlayered.
 
 `@import "tailwindcss"` would put every utility in `@layer utilities`. react-native-web gives each
 component a base class — `padding: 0`, `border: 0 solid black`, `background-color: transparent`,
@@ -1181,13 +1182,14 @@ utilities are in the same cascade as react-native-web and win on document order.
 Preflight is left out: react-native-web has its own reset, and the app renders no bare HTML
 elements for preflight to fix.
 
-The palette is dark, full stop — one `:root`, no `prefers-color-scheme` block, `userInterfaceStyle`
-pinned to `dark` in `app.json`. There is no light mode to follow the device into, and adding one
-would mean a second value for every colour in three places rather than one.
-`mobile/lib/theme.ts` carries the same values as hex for the props that take a colour as a string
-rather than a class, and `app/_layout.tsx` hands them to react-navigation, which paints the drawer
-and header itself. Those theming primitives are imported from `expo-router`, not from
-`@react-navigation/native` — SDK 56 and later refuse to let app code import the latter directly.
+The app is dark, full stop. cubeui's tokens carry a light and a dark set and follow
+`prefers-color-scheme`; `pinDarkAppearance()` in `mobile/lib/theme.ts` holds them on dark — the
+`dark` class on `<html>` in a browser, `Appearance.setColorScheme` on a device — and
+`userInterfaceStyle` is `dark` in `app.json`. Nothing but that pin stands between the app and a
+light mode. `theme.ts` also carries the dark values as hex for the props that take a colour as a
+string rather than a class, and `app/_layout.tsx` hands them to the navigation theme. Those
+theming primitives are imported from `expo-router`, not from `@react-navigation/native` — SDK 56
+and later refuse to let app code import the latter directly.
 
 ### Pointing it at your server
 

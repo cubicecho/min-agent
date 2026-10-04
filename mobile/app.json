@@ -40,7 +40,6 @@
       ],
       "expo-font",
       "expo-system-ui",
-      "@react-native-vector-icons/feather",
       [
         "expo-audio",
         {
