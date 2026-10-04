@@ -1,10 +1,9 @@
 import {
+  type AgentLoopResult,
   applyCompaction,
   ask,
-  buildBody,
   type Capabilities,
   ContextOverflow,
-  capabilitiesFor,
   carryOver,
   catalogPrompt,
   clean,
@@ -12,7 +11,7 @@ import {
   contextLimitFor,
   errorMessage,
   expandNames,
-  getClient,
+  failedRun,
   inCatalog,
   isOverflow,
   LOAD_TOOLS,
@@ -20,19 +19,20 @@ import {
   listModels as listEndpointModels,
   listLines,
   loadResult,
-  modelCapabilitiesFor,
   preselect,
   requestedNames,
+  runAgentLoop,
   runCompaction,
   runTurn as runRoundTrip,
   type StreamTurnOptions,
   sanitizeTools,
   summariser,
+  type ToolCallRequest,
+  ToolIterationLimit,
   type Turn,
-  timeoutMs,
   tryAsk,
 } from "@cubicecho/agent-core";
-import { McpPoolError } from "@cubicecho/agent-mcp-pool";
+import { McpPoolError, type ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { measureRequest, splitContext } from "../shared/client/usage.ts";
 import { CALL_TOOL, shownCall } from "../shared/tool-proxy.ts";
@@ -306,6 +306,28 @@ export function instructionsPrompt(servers: { label: string; text: string }[]) {
   ].join("\n");
 }
 
+/**
+ * A refusal as it should reach the reader: itself, unless it is the one no retry can answer.
+ *
+ * An overflow is a request larger than the model will read, so sending it again is the same
+ * refusal a round trip later. It goes back in the server's own words with ours added, because the
+ * whole difficulty of that failure is that the number the server reports and the window this turn
+ * was built to disagree — and the setting that disagrees is one screen away.
+ *
+ * @param contextLimit The window the turn was built to. Zero when none is set.
+ */
+function withWindow(error: unknown, contextLimit: number): unknown {
+  const detail = errorMessage(error);
+  if (!isOverflow(detail)) return error;
+  return new ContextOverflow(
+    contextLimit > 0
+      ? `${detail} — this turn was built to ${compactTokens(contextLimit)} tokens, so the window ` +
+          "in Settings → Agent is larger than what the server actually serves."
+      : `${detail} — set Settings → Agent → Context window, and the turn will compact ` +
+          "itself before it gets this far.",
+  );
+}
+
 /** What one round trip needs beyond the body it sends. */
 export interface SendOptions
   extends Pick<StreamTurnOptions, "signal" | "idleMs" | "onThinking" | "onOutput"> {
@@ -329,17 +351,11 @@ export interface SendOptions
  * before the first chunk, so an endpoint that accepted the request and then dropped it was a
  * dead turn rather than a second attempt.
  *
- * What is left here is the overflow: the request was larger than the model will read, so sending
- * it again is the same refusal a round trip later. It goes back in the server's own words with
- * ours added, because the whole difficulty of that failure is that the number the server reports
- * and the window this turn was built to disagree — and the setting that disagrees is one screen
- * away.
+ * What is left here is the overflow; see `withWindow`.
  *
- * `runTurn` also offers to size the body against a `contextLimit` and refuse it here rather than
- * a round trip later. min-agent does not take it yet, on purpose: its limit is the *configured*
- * window, which this very message exists to say may be larger than what the server serves, and a
- * guard read off the number under suspicion would refuse turns for the wrong reason. Worth taking
- * once the window comes from `contextLimitFor` alone.
+ * Nothing in the server calls this since the turn's steps became agent-core's `runAgentLoop`
+ * (#52), which makes the same round trip itself. It is kept for `tests/negotiate.test.ts`, which
+ * pins the negotiation through it.
  *
  * @param client The pooled client for this endpoint. `getClient` builds it with the SDK's own
  * retrying off, because a stream that has already produced tokens must never be replayed from
@@ -360,15 +376,7 @@ export async function sendTurn(
       onNotice: notice,
     });
   } catch (error) {
-    const detail = errorMessage(error);
-    if (!isOverflow(detail)) throw error;
-    throw new ContextOverflow(
-      contextLimit > 0
-        ? `${detail} — this turn was built to ${compactTokens(contextLimit)} tokens, so the window ` +
-            "in Settings → Agent is larger than what the server actually serves."
-        : `${detail} — set Settings → Agent → Context window, and the turn will compact ` +
-            "itself before it gets this far.",
-    );
+    throw withWindow(error, contextLimit);
   }
 }
 
@@ -392,15 +400,13 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
 
   const emit = onEvent ?? (() => {});
   const server = endpoint(config);
-  const client = getClient(server);
-  const supports = capabilitiesFor(server.baseUrl);
   const contextLimit = await contextLimitFor(
     { ...server, model: chosenModel },
     config.contextLimit,
   );
 
   // In on-demand mode the model sees a name-only catalogue up front and pulls in the
-  // definitions it needs as the turn runs; `loaded` grows between iterations.
+  // definitions it needs as the turn runs.
   const catalog = mcp.catalog();
   const onDemand = config.toolDiscovery !== "eager" && catalog.length > 0;
   // On demand, but with a tool array that never changes: definitions come back as `load_tools`
@@ -413,10 +419,10 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // Nothing is carried when proxied: a definition loaded last turn is already in the history, and
   // one a compaction folded away has to be loadable again rather than answered "already loaded".
   const carried = proxied ? [] : (session.loadedTools ?? []);
-  // In the order each was loaded, which is the order they are declared in. Never a set rebuilt
-  // or re-sorted: a template renders the tool array near the head of the prompt, and a load that
-  // lands in the middle moves every definition after it and loses the cache for the whole history
-  // behind them. Appended, what was declared last request stays a prefix of what is declared now.
+  // What a `load_tools` answered here has loaded, for its "already loaded". On demand the loop
+  // answers them and keeps its own, in the order each was loaded, which is the order they are
+  // declared in: a load that lands in the middle of the tool array moves every definition after
+  // it and loses the cache for the whole history behind them.
   const loaded: string[] = [...carried];
   const load = (name: string) => {
     if (!loaded.includes(name)) loaded.push(name);
@@ -554,7 +560,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   let lastRoundTrip = emptyUsage();
   // Measured on the way out, in characters, because nothing on the way back reports it: a
   // completion says how many prompt tokens it read and nothing about where they came from.
-  let lastRequest: ContextBreakdown | null = null;
+  let lastRequest = null as ContextBreakdown | null;
   // Identical call -> identical result, for the turn. See `callOnce`.
   const answered = new Map<string, Promise<string>>();
   // The last request's prompt, to tell whether this one found it in the cache. The first step
@@ -565,346 +571,385 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       ? latestPromptTokens(session)
       : 0;
   // The marker's check between tool steps, which is where a long turn needs it: nothing compacts
-  // mid-turn, and a turn of thirty tool calls is thirty results replayed whole on every step. All
-  // of it is here so the loop holds one call. A move is a miss the next request is expected to
-  // make, so it is not held to the last one's prompt.
+  // mid-turn, and a turn of thirty tool calls is thirty results replayed whole on every step. Owed
+  // from the moment a step's last result is stored, and paid before the next request or, where
+  // the turn ends there instead — the iteration cap, a stop — on the way out: `beforeStep` is not
+  // called after the last step. A move is a miss the next request is expected to make, so it is
+  // not held to the last one's prompt.
+  let pruneOwed = false;
   const pruneBetweenSteps = async () => {
+    if (!pruneOwed) return;
+    pruneOwed = false;
     if (await prune(session, contextLimit)) previousPrompt = 0;
   };
 
-  for (let iteration = 0; iteration < config.maxToolIterations; iteration++) {
-    // The same head on every step, the first included. A preselection used to get a first step
-    // of its own — the shortlist alone, no catalogue, no `load_tools` — so the model would not
-    // shop the menu; but a head that differs from the next step's is the whole transcript
-    // prefilled twice per turn. The shortlist is loaded like anything else instead, at the end.
-    // `list_resources` and `read_resource` only where a connected server offers resources at all.
-    const declared = sanitizeTools([
-      ...(offersResources ? RESOURCE_TOOLS : []),
-      ...(proxied
-        ? PROXY_TOOLS
-        : onDemand
-          ? [LOAD_TOOLS_DEFINITION, ...mcp.tools(loaded)]
-          : mcp.tools()),
-    ]);
+  // What has streamed since the last message was stored. Kept here because an abort never hands a
+  // turn back: the loop throws, and what streamed before the stop is only in these. `reasoning` is
+  // not on a `Turn` at all.
+  let text = "";
+  let reasoning = "";
+  // The last assistant row written, which the turn's stats are patched onto.
+  let assistantRow = "";
+  // How many of the step's calls have no result stored yet.
+  let unanswered = 0;
+  // Calls `dispatch` answered with a failure. It answers rather than throws; see below.
+  const failed = new Set<string>();
 
-    // Hoisted out of `open` because a rejected request is retried below with the same
-    // transcript, and because the split measured from it has to be the one that was sent.
-    // The hooks' context rides on this turn's question, and is counted as the turn's own input,
-    // which it is.
-    const history = forApi(session);
+  const store = async (message: StoredMessage) => {
+    session.messages.push(message);
+    return addMessage(session.id, session.messages.length - 1, message);
+  };
 
-    // The tail of the request is this turn's own messages: the question, and whatever the
-    // model has done about it so far. `forApi` only ever replaces the head with a summary,
-    // so the last n messages of the request are the last n of the session.
-    lastRequest = measureRequest({
-      system,
-      systemPrompt: config.systemPrompt,
-      guidance,
-      tools: declared,
-      history,
-      turnLength: session.messages.length - turnStart,
-      compacted: Boolean(session.compaction),
-      cleared: clearedChars(session),
-    });
+  // The transcript is the session's, not the loop's: `forApi` strips what is private, sends each
+  // question with its hooks' context and the pruned results as stubs, and replaces a folded head
+  // with its summary. So every step is handed it afresh, and the loop's own copy — which carries
+  // repaired arguments where the stored row has the model's own — is never what is sent.
+  //
+  // The split measured in `onRequest` has to be of the history that was sent, so it is kept. An
+  // empty system prompt is still sent as a message, as it always was; the loop leaves one out.
+  let history: OpenAI.ChatCompletionMessageParam[] = [];
+  const transcript = (): OpenAI.ChatCompletionMessageParam[] => {
+    history = forApi(session);
+    return system ? history : [{ role: "system", content: "" }, ...history];
+  };
 
-    /**
-     * The body, built from whatever the last attempt latched off — which is why it is a callback
-     * and not an object. agent-core's `buildBody` decides every field that negotiates: the
-     * ceiling's two spellings, the temperature, `stream_options`, relaxed schemas, and the
-     * reasoning effort, where a value the model has refused becomes the cheapest one it takes
-     * rather than the same refusal again.
-     *
-     * `modelCapabilitiesFor` rather than the second argument `runTurn` offers, which is optional
-     * because a caller may not have named a model. This one always does, so reading it back is
-     * unconditional here and stays that way if the argument is ever dropped by accident.
-     *
-     * The tools go in the order they were declared, not by name: a load appends, and an array
-     * that only grows at its end keeps the prompt cache up to the point it grew.
-     */
-    const open = (supports: Capabilities): OpenAI.ChatCompletionCreateParamsStreaming =>
-      buildBody(
-        {
-          model: chosenModel,
-          maxTokens: config.maxTokens,
-          temperature: config.temperature,
-          reasoningEffort: config.reasoningEffort,
-        },
-        supports,
-        modelCapabilitiesFor(supports, chosenModel),
-        [{ role: "system", content: system }, ...history],
-        declared,
-        false,
-      );
+  // Everything the turn may declare, read once. Loading on demand is the loop's when it is plain
+  // on-demand; proxied, the loop is run eager over the two proxy tools and `dispatch` answers
+  // them, because its own proxied mode declares nothing else and min-agent declares the resource
+  // tools beside them. `call_tool` is listed on demand so that it stays the host's: answered
+  // here, it does not load or carry what it names.
+  const native = onDemand && !proxied;
+  const always = offersResources ? [LIST_RESOURCES, READ_RESOURCE] : [];
+  const tools: ToolDefinition[] = [
+    ...(offersResources ? RESOURCE_TOOLS : []),
+    ...(proxied ? PROXY_TOOLS : []),
+    ...(native ? PROXY_TOOLS.filter((tool) => tool.function.name === CALL_TOOL) : []),
+    ...(proxied ? [] : mcp.tools()),
+  ];
+  // As declared, before a server that cannot build a grammar is sent them relaxed: the breakdown
+  // has always measured these.
+  const definitions = new Map(
+    [LOAD_TOOLS_DEFINITION, ...tools].flatMap((tool) =>
+      tool.type === "function" ? [[tool.function.name, tool] as const] : [],
+    ),
+  );
 
-    iterations++;
-    // Kept outside the round trip because an abort never hands one back: `runTurn` throws, and
-    // what streamed before the stop is only in these. `turn.content` says the same as `text` on
-    // the way out, and the message below is still built from `text` — so it and `reasoning`,
-    // which a `Turn` does not carry at all, are read from one place rather than two.
-    let text = "";
-    let reasoning = "";
-
-    let turn: Turn;
+  /**
+   * Runs one call and answers with what the model reads — a failure included, which is noted in
+   * `failed` rather than thrown. The loop rethrows what a dispatcher throws once the turn has
+   * been stopped, and a call the stop ended has an answer worth keeping: which call it was, and
+   * that it did not finish.
+   *
+   * The arguments are read again from the model's own text, with `JSON.parse` alone. The loop
+   * hands over a repaired reading; min-agent tells the model its arguments were not JSON and has
+   * it write them again, and that is not the loop's to change.
+   */
+  const dispatch = async ({ id, name: called, raw }: ToolCallRequest): Promise<string> => {
     try {
-      turn = await sendTurn(client, open, {
-        supports,
-        model: chosenModel,
-        contextLimit,
-        signal,
-        // Zero today — `endpoint` has never set a request timeout, because a local model can
-        // take a minute over a long answer. Wired through so that the day it becomes a setting,
-        // a server that stops answering mid-stream ends the turn instead of hanging it.
-        idleMs: timeoutMs(server),
-        onThinking: (delta) => {
-          if (!firstTokenAt) firstTokenAt = Date.now();
-          lastTokenAt = Date.now();
-          reasoning += delta;
-          emit({ type: "reasoning_delta", text: delta });
-        },
-        onOutput: (delta) => {
-          if (!firstTokenAt) firstTokenAt = Date.now();
-          lastTokenAt = Date.now();
-          text += delta;
-          emit({ type: "text_delta", text: delta });
-        },
-      });
+      const args = parseArgs(raw);
+      // Reached only where the loop is not loading on demand itself: proxied, and eager, where a
+      // model copies the call out of an on-demand chat's history.
+      if (called === LOAD_TOOLS) {
+        const resolved = expandNames(requestedNames(args), catalog);
+        // What was loaded before this call, so a repeat load is answered "already loaded"
+        // rather than as fresh — the model's cue to call the tool instead of loading again.
+        const before = new Set(loaded);
+        for (const name of resolved.matched) load(name);
+        if (resolved.matched.length === 0) failed.add(id);
+        return proxied
+          ? proxyLoadResult(resolved, catalog, mcp.tools(resolved.matched), before)
+          : loadResult(resolved, catalog, before);
+      }
+      if (onDemand && called === CALL_TOOL) {
+        // Any on-demand turn, not only a proxied one: a chat switched out of proxied mode
+        // still has `call_tool` in its history, and the model may copy it.
+        const { name, input } = proxiedCall(args, catalog);
+        used.add(name);
+        return await callOnce(answered, `${name}\u0000${JSON.stringify(input)}`, () =>
+          mcp.call(name, input, signal),
+        );
+      }
+      if (called === LIST_RESOURCES) return await listResources();
+      if (called === READ_RESOURCE) {
+        // Named rather than positional in the schema, so an empty one is a model that filled
+        // the call in wrongly — worth saying so, since the uri is the whole of the request.
+        const uri = typeof args.uri === "string" ? args.uri.trim() : "";
+        if (!uri) throw new Error("read_resource needs a uri; pass the one list_resources gave.");
+        return await readResource(uri);
+      }
+      // A model that skips `load_tools` and calls a catalogued tool straight from its name is
+      // right about what it wants. On demand the loop has loaded it already.
+      if (proxied && inCatalog(catalog, called)) load(called);
+      used.add(called);
+      return await callOnce(answered, `${called}\u0000${raw}`, () =>
+        mcp.call(called, args, signal),
+      );
     } catch (error) {
-      // Stopping a turn used to throw away everything it had already said: the assistant
-      // message is only appended once the stream ends, so an abort left the reply on screen
-      // and nothing in the transcript. Keep the part that streamed, then let the error
-      // through — the route stays quiet about a turn its reader ended.
-      if (signal?.aborted && (text || reasoning)) {
-        const partial: StoredMessage = {
+      failed.add(id);
+      return errorMessage(error);
+    }
+  };
+
+  let result: AgentLoopResult;
+  try {
+    result = await runAgentLoop({
+      // No `contextLength`, on purpose: the loop would size each request against it and refuse
+      // one here rather than a round trip later, and min-agent's is the *configured* window,
+      // which `withWindow` exists to say may be larger than what the server serves. A guard read
+      // off the number under suspicion would refuse turns for the wrong reason.
+      config: {
+        ...server,
+        model: chosenModel,
+        maxTokens: config.maxTokens,
+        temperature: config.temperature,
+        reasoningEffort: config.reasoningEffort,
+        maxToolIterations: config.maxToolIterations,
+        toolDiscovery: native ? "ondemand" : "eager",
+        maxRetries: OPEN_RETRIES,
+      },
+      // On demand the loop appends the catalogue itself, to the same text `system` is.
+      system: native ? [config.systemPrompt, guidance].filter(Boolean).join("\n\n") : system,
+      messages: transcript(),
+      tools,
+      catalog,
+      // The resource tools are no server's, so nothing loads them: they go in as already loaded,
+      // and the order puts them back ahead of `load_tools`, where they have always been declared.
+      // Everything else stays in the order it was loaded — a load appends, and an array that only
+      // grows at its end keeps the prompt cache up to the point it grew.
+      loaded: [...always, ...carried],
+      toolOrder:
+        native && always.length > 0
+          ? (a, b) => Number(!always.includes(a)) - Number(!always.includes(b))
+          : false,
+      // The same head on every step, the first included: the shortlist is loaded like anything
+      // else, at the end, rather than given a first step of its own that no later step matches.
+      preselected,
+      preselectRouting: "append",
+      // The model asked for a step's calls together and they do not depend on each other, so
+      // they run together: a round trip costs the slowest call rather than the sum of them.
+      parallel: true,
+      // `callOnce` instead: for the turn rather than the step, and with a note on the repeat.
+      dedupeToolCalls: false,
+      // A reply that is only a call written as text is still the answer here.
+      recoverToolCalls: false,
+      signal,
+      dispatch,
+      beforeStep: async (_sent, step) => {
+        if (step === 0) return undefined;
+        await pruneBetweenSteps();
+        return transcript();
+      },
+      onRequest: (request) => {
+        iterations++;
+        // The tail of the request is this turn's own messages: the question, and whatever the
+        // model has done about it so far. `forApi` only ever replaces the head with a summary,
+        // so the last n messages of the request are the last n of the session.
+        lastRequest = measureRequest({
+          system,
+          systemPrompt: config.systemPrompt,
+          guidance,
+          tools: sanitizeTools(
+            request.tools.flatMap((tool) =>
+              tool.type === "function" ? (definitions.get(tool.function.name) ?? []) : [],
+            ),
+          ),
+          history,
+          turnLength: session.messages.length - turnStart,
+          compacted: Boolean(session.compaction),
+          cleared: clearedChars(session),
+        });
+      },
+      onEvent: ({ kind, text: delta = "" }) => {
+        if (kind === "notice") notice(delta);
+        if (kind !== "thinking" && kind !== "output") return;
+        if (!firstTokenAt) firstTokenAt = Date.now();
+        lastTokenAt = Date.now();
+        if (kind === "output") text += delta;
+        else reasoning += delta;
+        emit({ type: kind === "output" ? "text_delta" : "reasoning_delta", text: delta });
+      },
+      onToolCall: ({ id, name, raw }) => emit({ type: "tool_use", id, ...shownCall(name, raw) }),
+      onToolResult: ({ id, ok, content }) =>
+        emit({ type: "tool_result", toolUseId: id, content, isError: !ok || failed.has(id) }),
+      // Each message is written as it is produced, so a crash mid-run still leaves readable
+      // history: the reply before its tools run, every result before the next request.
+      onMessage: async (message, _step, turn) => {
+        if (message.role === "tool") {
+          await store({
+            role: "tool",
+            tool_call_id: message.tool_call_id,
+            content: message.content as string,
+          });
+          if (--unanswered === 0) pruneOwed = true;
+          return;
+        }
+        if (!turn) return;
+
+        // Assigned, not accumulated. `stream_options.include_usage` sends one final chunk and a
+        // sum over the chunks agreed with it, but llama.cpp reports cumulatively per chunk — so
+        // the old `+=` made a sum of sums, and a turn against it read as several times its true
+        // cost. The turn's own total still accumulates: that is one number per round trip, and a
+        // turn is as many round trips as the model asked for tools.
+        lastRoundTrip = {
+          promptTokens: turn.usage.prompt,
+          completionTokens: turn.usage.completion,
+          totalTokens: turn.usage.total,
+        };
+        turnUsage.promptTokens += lastRoundTrip.promptTokens;
+        turnUsage.completionTokens += lastRoundTrip.completionTokens;
+        turnUsage.totalTokens += lastRoundTrip.totalTokens;
+        // Nothing min-agent sends moves a prefix it sent before, a compaction or a move of the
+        // pruning marker aside (and `previousPrompt` is zeroed for both), so a request that finds
+        // much less than the last one's prompt in the cache is the server's doing — an eviction,
+        // a side task on the same slot — or a prefix that moved anyway. Only where the server
+        // said what it cached.
+        if (turn.usage.uncached !== undefined && turn.usage.cached < previousPrompt * 0.9)
+          console.warn(
+            `[agent] prompt cache missed: ${turn.usage.cached} of ${turn.usage.prompt} cached, ` +
+              `after a ${previousPrompt}-token request`,
+          );
+        previousPrompt = turn.usage.prompt;
+
+        // Loading a definition is bookkeeping, not work the model did for the user.
+        toolCalls += turn.toolCalls.filter((call) => call.function.name !== LOAD_TOOLS).length;
+        unanswered = turn.toolCalls.length;
+        // Built from the turn rather than taken from `message`, which carries the arguments as
+        // the loop repaired them: what is stored is what the model wrote.
+        const assistant: StoredMessage = {
           role: "assistant",
           content: text || null,
           ...(reasoning ? { reasoning_content: reasoning } : {}),
+          ...(turn.toolCalls.length
+            ? {
+                tool_calls: turn.toolCalls.map((call) => ({
+                  id: call.id,
+                  type: "function" as const,
+                  function: {
+                    name: call.function.name,
+                    arguments: call.function.arguments || "{}",
+                  },
+                })),
+              }
+            : {}),
         };
-        session.messages.push(partial);
-        await addMessage(session.id, session.messages.length - 1, partial);
-      }
-      throw error;
-    }
-
-    // Assigned, not accumulated. `stream_options.include_usage` sends one final chunk and a
-    // sum over the chunks agreed with it, but llama.cpp reports cumulatively per chunk — so the
-    // old `+=` made a sum of sums, and a turn against it read as several times its true cost.
-    // The turn's own total still accumulates: that is one number per round trip, and a turn is
-    // as many round trips as the model asked for tools.
-    lastRoundTrip = {
-      promptTokens: turn.usage.prompt,
-      completionTokens: turn.usage.completion,
-      totalTokens: turn.usage.total,
-    };
-    turnUsage.promptTokens += lastRoundTrip.promptTokens;
-    turnUsage.completionTokens += lastRoundTrip.completionTokens;
-    turnUsage.totalTokens += lastRoundTrip.totalTokens;
-    // Nothing min-agent sends moves a prefix it sent before, a compaction or a move of the
-    // pruning marker aside (and `previousPrompt` is zeroed for both), so a request
-    // that finds much less than the last one's prompt in the cache is the server's doing — an
-    // eviction, a side task on the same slot — or a prefix that moved anyway. Only where the
-    // server said what it cached.
-    if (turn.usage.uncached !== undefined && turn.usage.cached < previousPrompt * 0.9)
-      console.warn(
-        `[agent] prompt cache missed: ${turn.usage.cached} of ${turn.usage.prompt} cached, ` +
-          `after a ${previousPrompt}-token request`,
-      );
-    previousPrompt = turn.usage.prompt;
-
-    // A call with no name is a fragment the server never finished sending; there is nothing to
-    // run and nothing to answer it with. `streamTurn` gives every call an id even when the
-    // server did not, so the result has something to point at.
-    //
-    // `flatMap` rather than a filter and a map, because the SDK's tool call is a union and only
-    // the function arm has a `function` to read: dropping the other arm and reading the name are
-    // the same narrowing, and split across two callbacks TypeScript has to be told twice.
-    const roundTripCalls = turn.toolCalls.flatMap((call) =>
-      call.type === "function" && call.function.name
-        ? [{ id: call.id, name: call.function.name, args: call.function.arguments }]
-        : [],
-    );
-    // Loading a definition is bookkeeping, not work the model did for the user.
-    toolCalls += roundTripCalls.filter((call) => call.name !== LOAD_TOOLS).length;
-    const assistant: StoredMessage = {
-      role: "assistant",
-      content: text || null,
-      ...(reasoning ? { reasoning_content: reasoning } : {}),
-      ...(roundTripCalls.length
-        ? {
-            tool_calls: roundTripCalls.map((call) => ({
-              id: call.id,
-              type: "function" as const,
-              function: { name: call.name, arguments: call.args || "{}" },
-            })),
-          }
-        : {}),
-    };
-    session.messages.push(assistant);
-    session.usage = add(banked, turnUsage);
-    const assistantRow = await addMessage(session.id, session.messages.length - 1, assistant);
-    await updateSession(session.id, { usage: session.usage });
-
-    if (!roundTripCalls.length) {
-      const breakdown = lastRequest
-        ? splitContext(lastRequest, lastRoundTrip.promptTokens)
-        : undefined;
-      const stats: TurnStats = {
-        ...turnUsage,
-        model: chosenModel,
-        totalMs: Date.now() - startedAt,
-        iterations,
-        toolCalls,
-        ...(firstTokenAt ? { ttftMs: firstTokenAt - startedAt } : {}),
-        ...(firstTokenAt && lastTokenAt > firstTokenAt
-          ? {
-              generationMs: lastTokenAt - firstTokenAt,
-              ...(turnUsage.completionTokens
-                ? {
-                    tokensPerSecond:
-                      turnUsage.completionTokens / ((lastTokenAt - firstTokenAt) / 1000),
-                  }
-                : {}),
-            }
-          : {}),
-        ...(lastRoundTrip.totalTokens
-          ? { contextTokens: lastRoundTrip.promptTokens + lastRoundTrip.completionTokens }
-          : {}),
-        ...(lastRoundTrip.promptTokens ? { lastPromptTokens: lastRoundTrip.promptTokens } : {}),
-        ...(contextLimit ? { contextLimit } : {}),
-        ...(breakdown ? { breakdown } : {}),
-        ...(gathered.notes.length ? { hooks: gathered.notes } : {}),
-      };
-      assistant.stats = stats;
-      // What was called, in the order it was loaded, and only what was loaded: a name the model
-      // made up is called, and fails, but is nothing to declare next turn.
-      if (onDemand && !proxied)
-        session.loadedTools = carryOver(carried, new Set(loaded.filter((name) => used.has(name))));
-      await titling;
-      await patchMessage(assistantRow, { stats });
-      if (onDemand && !proxied)
-        await updateSession(session.id, { loadedTools: session.loadedTools });
-      emit({ type: "stats", stats });
-      // The turn is over at this point and the reader should not be held by what comes after
-      // it, so `done` — the composer's cue to unlock — goes out here rather than once the
-      // route returns. The stream stays open a moment longer only so late chips have a way
-      // home.
-      emit({ type: "done" });
-
-      // Both of these land after the answer and write to the same row. Each write carries
-      // everything known at the moment it runs, and they are chained, so the one that finishes
-      // second cannot put back a row without the first one's change.
-      let writing = Promise.resolve();
-      const persist = () => {
-        writing = writing.then(() =>
-          patchMessage(assistantRow, {
-            stats,
-            ...(assistant.followups ? { followups: assistant.followups } : {}),
-          }),
-        );
-        return writing;
-      };
-
-      const body = typeof assistant.content === "string" ? assistant.content : "";
-      // The turn is answered, so the servers are told about it. Only a failure is noted, and
-      // it is stored with the turn's stats so the line is still there after a reload. Said
-      // once it is stored, as the chips are: the turn has settled on the client by now, and
-      // what it does with the event is read the stored message back.
-      const remembered = notify("afterTurn", {
-        ...hookContext,
-        reply: body,
-        turn: { ...hookContext.turn, messages: turnMessages(session, turnStart) },
-      }).then(async (notes) => {
-        if (!notes.length) return;
-        stats.hooks = [...(stats.hooks ?? []), ...notes];
-        await persist();
-        for (const hook of notes) emit({ type: "hook", hook });
-      });
-
-      // After the answer, not before: it is on screen and being read by the time this runs, so
-      // the second it costs is spent where nobody is waiting on it. The chips are read back off
-      // the stored message too, so they survive a reload without a second delivery path.
-      const followupModel = modelForTask(config, "followups");
-      if (followupModel && body) {
-        const followups = await tryAsk(
-          "followups",
-          () => suggestFollowups(config, followupModel, prompt, body, signal),
-          { onNotice: notice },
-        );
-        if (followups?.length) {
-          assistant.followups = followups;
-          await persist();
-          emit({ type: "followups", items: followups });
-        }
-      }
-      await remembered;
-      return stats;
-    }
-
-    // The model asked for these together and they do not depend on each other, so they run
-    // together: a round trip now costs the slowest call rather than the sum of all of them.
-    // Results are emitted the moment each lands, but appended to the transcript in call order,
-    // so what is stored still reads the way the model wrote it.
-    const outcomes = await Promise.all(
-      roundTripCalls.map(async (call) => {
-        emit({ type: "tool_use", id: call.id, ...shownCall(call.name, call.args) });
-        let content: string;
-        let isError = false;
-        try {
-          const args = parseArgs(call.args);
-          if (call.name === LOAD_TOOLS) {
-            const resolved = expandNames(requestedNames(args), catalog);
-            // What was declared before this call, so a repeat load is answered "already loaded"
-            // rather than as fresh — the model's cue to call the tool instead of loading again.
-            const before = new Set(loaded);
-            for (const name of resolved.matched) load(name);
-            content = proxied
-              ? proxyLoadResult(resolved, catalog, mcp.tools(resolved.matched), before)
-              : loadResult(resolved, catalog, before);
-            isError = resolved.matched.length === 0;
-          } else if (onDemand && call.name === CALL_TOOL) {
-            // Any on-demand turn, not only a proxied one: a chat switched out of proxied mode
-            // still has `call_tool` in its history, and the model may copy it.
-            const { name, input } = proxiedCall(args, catalog);
-            used.add(name);
-            content = await callOnce(answered, `${name}\u0000${JSON.stringify(input)}`, () =>
-              mcp.call(name, input, signal),
-            );
-          } else if (call.name === LIST_RESOURCES) {
-            content = await listResources();
-          } else if (call.name === READ_RESOURCE) {
-            // Named rather than positional in the schema, so an empty one is a model that filled
-            // the call in wrongly — worth saying so, since the uri is the whole of the request.
-            const uri = typeof args.uri === "string" ? args.uri.trim() : "";
-            if (!uri)
-              throw new Error("read_resource needs a uri; pass the one list_resources gave.");
-            content = await readResource(uri);
-          } else {
-            // A model that skips `load_tools` and calls a catalogued tool straight from its
-            // name is right about what it wants; load it and run it rather than erroring.
-            if (onDemand && inCatalog(catalog, call.name)) load(call.name);
-            used.add(call.name);
-
-            content = await callOnce(answered, `${call.name}\u0000${call.args}`, () =>
-              mcp.call(call.name, args, signal),
-            );
-          }
-        } catch (error) {
-          content = errorMessage(error);
-          isError = true;
-        }
-        emit({ type: "tool_result", toolUseId: call.id, content, isError });
-        return { id: call.id, content };
-      }),
-    );
-
-    for (const { id, content } of outcomes) {
-      const result: StoredMessage = { role: "tool", tool_call_id: id, content };
-      session.messages.push(result);
-      await addMessage(session.id, session.messages.length - 1, result);
-    }
+        text = "";
+        reasoning = "";
+        session.usage = add(banked, turnUsage);
+        assistantRow = await store(assistant);
+        await updateSession(session.id, { usage: session.usage });
+      },
+    });
+  } catch (error) {
     await pruneBetweenSteps();
+    // Stopping a turn used to throw away everything it had already said: the assistant message
+    // is only appended once the stream ends, so an abort left the reply on screen and nothing in
+    // the transcript. Keep the part that streamed, then let the error through — the route stays
+    // quiet about a turn its reader ended.
+    if (signal?.aborted && (text || reasoning))
+      await store({
+        role: "assistant",
+        content: text || null,
+        ...(reasoning ? { reasoning_content: reasoning } : {}),
+      });
+    if (error instanceof ToolIterationLimit) throw new Error(error.message);
+    // The loop wraps what it caught to hang the run on it. Every message is stored already, so
+    // the run is not needed and the error goes on as it was thrown.
+    throw withWindow(failedRun(error) ? (error as Error).cause : error, contextLimit);
   }
 
-  throw new Error(`Stopped after ${config.maxToolIterations} tool iterations.`);
+  // The loop returns on the step that asked for no tools, whose reply is the last row written.
+  const assistant = session.messages[session.messages.length - 1];
+  const breakdown = lastRequest ? splitContext(lastRequest, lastRoundTrip.promptTokens) : undefined;
+  const stats: TurnStats = {
+    ...turnUsage,
+    model: chosenModel,
+    totalMs: Date.now() - startedAt,
+    iterations,
+    toolCalls,
+    ...(firstTokenAt ? { ttftMs: firstTokenAt - startedAt } : {}),
+    ...(firstTokenAt && lastTokenAt > firstTokenAt
+      ? {
+          generationMs: lastTokenAt - firstTokenAt,
+          ...(turnUsage.completionTokens
+            ? {
+                tokensPerSecond: turnUsage.completionTokens / ((lastTokenAt - firstTokenAt) / 1000),
+              }
+            : {}),
+        }
+      : {}),
+    ...(lastRoundTrip.totalTokens
+      ? { contextTokens: lastRoundTrip.promptTokens + lastRoundTrip.completionTokens }
+      : {}),
+    ...(lastRoundTrip.promptTokens ? { lastPromptTokens: lastRoundTrip.promptTokens } : {}),
+    ...(contextLimit ? { contextLimit } : {}),
+    ...(breakdown ? { breakdown } : {}),
+    ...(gathered.notes.length ? { hooks: gathered.notes } : {}),
+  };
+  assistant.stats = stats;
+  // What was called, in the order it was loaded, and only what was loaded: a name the model
+  // made up is called, and fails, but is nothing to declare next turn.
+  if (native)
+    session.loadedTools = carryOver(
+      carried,
+      new Set(result.loaded.filter((name) => used.has(name))),
+    );
+  await titling;
+  await patchMessage(assistantRow, { stats });
+  if (native) await updateSession(session.id, { loadedTools: session.loadedTools });
+  emit({ type: "stats", stats });
+  // The turn is over at this point and the reader should not be held by what comes after it, so
+  // `done` — the composer's cue to unlock — goes out here rather than once the route returns.
+  // The stream stays open a moment longer only so late chips have a way home.
+  emit({ type: "done" });
+
+  // Both of these land after the answer and write to the same row. Each write carries everything
+  // known at the moment it runs, and they are chained, so the one that finishes second cannot put
+  // back a row without the first one's change.
+  let writing = Promise.resolve();
+  const persist = () => {
+    writing = writing.then(() =>
+      patchMessage(assistantRow, {
+        stats,
+        ...(assistant.followups ? { followups: assistant.followups } : {}),
+      }),
+    );
+    return writing;
+  };
+
+  const body = typeof assistant.content === "string" ? assistant.content : "";
+  // The turn is answered, so the servers are told about it. Only a failure is noted, and it is
+  // stored with the turn's stats so the line is still there after a reload. Said once it is
+  // stored, as the chips are: the turn has settled on the client by now, and what it does with
+  // the event is read the stored message back.
+  const remembered = notify("afterTurn", {
+    ...hookContext,
+    reply: body,
+    turn: { ...hookContext.turn, messages: turnMessages(session, turnStart) },
+  }).then(async (notes) => {
+    if (!notes.length) return;
+    stats.hooks = [...(stats.hooks ?? []), ...notes];
+    await persist();
+    for (const hook of notes) emit({ type: "hook", hook });
+  });
+
+  // After the answer, not before: it is on screen and being read by the time this runs, so the
+  // second it costs is spent where nobody is waiting on it. The chips are read back off the
+  // stored message too, so they survive a reload without a second delivery path.
+  const followupModel = modelForTask(config, "followups");
+  if (followupModel && body) {
+    const followups = await tryAsk(
+      "followups",
+      () => suggestFollowups(config, followupModel, prompt, body, signal),
+      { onNotice: notice },
+    );
+    if (followups?.length) {
+      assistant.followups = followups;
+      await persist();
+      emit({ type: "followups", items: followups });
+    }
+  }
+  await remembered;
+  return stats;
 }
 
 /** A tool that ran and failed, as opposed to a call that could not be made. */
