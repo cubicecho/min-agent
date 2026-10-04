@@ -1,8 +1,8 @@
 import { tokenizeLines } from "@shared/highlight.ts";
 import { memo } from "react";
 import { ScrollView, Text, View } from "react-native";
-import { CopyButton } from "@/components/ui.tsx";
-import { colors, syntax } from "@/lib/theme.ts";
+import { CopyButton } from "@/components/ui/copy-button";
+import { syntax } from "@/lib/theme.ts";
 
 /**
  * A fenced code block, syntax-highlighted.
@@ -33,15 +33,7 @@ export const CodeBlock = memo(function CodeBlock({
   const lines = tokenizeLines(code.replace(/\n$/, ""), language);
 
   return (
-    <View
-      style={{
-        backgroundColor: colors.muted,
-        borderColor: colors.border,
-        borderWidth: 1,
-        borderRadius: 8,
-        marginBottom: 8,
-      }}
-    >
+    <View className="mb-2 rounded-lg border border-border bg-muted">
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -54,13 +46,16 @@ export const CodeBlock = memo(function CodeBlock({
               // because the only thing that changes them is new code, replacing all of them.
               // biome-ignore lint/suspicious/noArrayIndexKey: a row is identified by position
               key={line}
+              className="text-foreground"
               style={{ fontFamily: "monospace", fontSize: 12, lineHeight: 18 }}
             >
               {tokens.map((token, position) => (
                 <Text
                   // biome-ignore lint/suspicious/noArrayIndexKey: likewise within a line
                   key={position}
-                  style={{ color: (token.scope && syntax[token.scope]) || colors.foreground }}
+                  // A scope with no colour of its own inherits the row's `text-foreground`.
+                  className="text-foreground"
+                  style={token.scope && syntax[token.scope] ? { color: syntax[token.scope] } : null}
                 >
                   {token.text}
                 </Text>
@@ -78,8 +73,14 @@ export const CodeBlock = memo(function CodeBlock({
         not run under. It sits outside the scroller so it stays put, and carries the block's
         own background so it masks the line it covers instead of tangling with it.
       */}
-      <View style={{ position: "absolute", right: 4, top: 4 }}>
-        <CopyButton text={code} label="Copy code" className="bg-muted" />
+      <View className="absolute top-1 right-1">
+        <CopyButton
+          value={code}
+          label="Copy code"
+          variant="ghost"
+          size="icon-xs"
+          className="bg-muted"
+        />
       </View>
     </View>
   );

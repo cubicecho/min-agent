@@ -1,8 +1,18 @@
 import type { McpPrompt } from "@shared/types.ts";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Pressable, Text, View } from "react-native";
-import { Badge, Button, Dialog, Empty, ErrorNote, Input, Muted } from "@/components/ui.tsx";
+import { View } from "react-native";
+import { CornerDownLeft } from "@/components/app/app-icons";
+import { DialogLayout } from "@/components/dialog-layout";
+import { ListItem } from "@/components/list-item";
+import { EmptyState } from "@/components/page";
+import { QueryState } from "@/components/query-state";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/client.ts";
 
 /**
@@ -73,69 +83,76 @@ export function PromptPicker({
     chosen?.arguments.some((arg) => arg.required && !values[arg.name]?.trim()) ?? false;
 
   return (
-    <Dialog
-      visible={visible}
+    <DialogLayout
+      open={visible}
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
       title={chosen ? titleOf(chosen) : "MCP prompts"}
-      onClose={close}
+      description={chosen?.description || undefined}
       footer={
         chosen ? (
-          <>
-            <Button variant="secondary" onPress={() => setChosen(null)}>
-              Back
-            </Button>
-            <View className="flex-1" />
-            <Button
-              icon="corner-down-left"
-              busy={expand.isPending}
-              disabled={missing}
-              onPress={() => expand.mutate(chosen)}
-            >
-              Insert
-            </Button>
-          </>
+          <Button variant="outline" onPress={() => setChosen(null)}>
+            Back
+          </Button>
         ) : undefined
       }
-    >
-      <ErrorNote error={prompts.error ?? expand.error} />
-
-      {chosen ? (
+      footerActions={
+        chosen ? (
+          <Button disabled={missing || expand.isPending} onPress={() => expand.mutate(chosen)}>
+            {expand.isPending ? <Spinner label="Inserting" /> : <CornerDownLeft aria-hidden />}
+            Insert
+          </Button>
+        ) : undefined
+      }
+      content={
         <View className="gap-4">
-          {chosen.description ? <Muted>{chosen.description}</Muted> : null}
-          {chosen.arguments.map((arg) => (
-            <View key={arg.name} className="gap-1.5">
-              <Text className="text-sm font-medium text-foreground">
-                {arg.name}
-                {arg.required ? "" : " (optional)"}
-              </Text>
-              <Input
-                value={values[arg.name] ?? ""}
-                onChangeText={(next) => setValues((held) => ({ ...held, [arg.name]: next }))}
-                placeholder={arg.description ?? ""}
+          {expand.error ? (
+            <Alert
+              variant="destructive"
+              title="The prompt could not be expanded"
+              description={expand.error.message}
+            />
+          ) : null}
+
+          {chosen ? (
+            chosen.arguments.map((arg) => (
+              <Field key={arg.name}>
+                <FieldLabel>{arg.required ? arg.name : `${arg.name} (optional)`}</FieldLabel>
+                <Input
+                  aria-label={arg.name}
+                  value={values[arg.name] ?? ""}
+                  onChangeText={(next) => setValues((held) => ({ ...held, [arg.name]: next }))}
+                  placeholder={arg.description ?? ""}
+                />
+              </Field>
+            ))
+          ) : (
+            <>
+              <QueryState
+                query={prompts}
+                what="prompts"
+                count={prompts.data?.length ?? 0}
+                empty={<EmptyState compact title="No connected MCP server offers prompts." />}
               />
-            </View>
-          ))}
+              {prompts.data?.length ? (
+                <View className="gap-2">
+                  {prompts.data.map((prompt) => (
+                    <ListItem
+                      key={`${prompt.server}/${prompt.name}`}
+                      title={titleOf(prompt)}
+                      description={prompt.description || undefined}
+                      meta={<Badge variant="secondary">{prompt.serverLabel}</Badge>}
+                      onPress={() => pick(prompt)}
+                      className="rounded-lg border border-border bg-card"
+                    />
+                  ))}
+                </View>
+              ) : null}
+            </>
+          )}
         </View>
-      ) : prompts.data?.length ? (
-        <View className="gap-2">
-          {prompts.data.map((prompt) => (
-            <Pressable
-              key={`${prompt.server}/${prompt.name}`}
-              onPress={() => pick(prompt)}
-              className="gap-1 rounded-lg border border-border bg-card p-3"
-            >
-              <View className="flex-row items-center gap-2">
-                <Text className="flex-1 text-sm font-medium text-foreground">
-                  {titleOf(prompt)}
-                </Text>
-                <Badge variant="secondary">{prompt.serverLabel}</Badge>
-              </View>
-              {prompt.description ? <Muted>{prompt.description}</Muted> : null}
-            </Pressable>
-          ))}
-        </View>
-      ) : (
-        <Empty>{prompts.isLoading ? "Looking…" : "No connected MCP server offers prompts."}</Empty>
-      )}
-    </Dialog>
+      }
+    />
   );
 }

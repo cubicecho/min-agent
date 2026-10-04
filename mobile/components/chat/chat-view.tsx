@@ -1,4 +1,3 @@
-import { Feather } from "@react-native-vector-icons/feather";
 import { type LivePart, liveCharCount } from "@shared/client/live.ts";
 import { messageText, turnStart } from "@shared/client/transcript.ts";
 import {
@@ -16,33 +15,36 @@ import {
 import { useLiveParts } from "@shared/client/use-live-parts.ts";
 import type { LlmConfig, TokenUsage, TurnStats } from "@shared/types.ts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useFocusEffect, useNavigation, useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  Pressable,
   ScrollView,
   Text,
   View,
 } from "react-native";
+import { ActionButton } from "@/components/action-button";
+import { ArrowDown, BookOpen, MessageSquare, Mic, Send } from "@/components/app/app-icons";
+import { ComposerInput } from "@/components/chat/composer-input.tsx";
 import { MessageView } from "@/components/chat/message-view.tsx";
 import { PromptPicker, useMcpPrompts } from "@/components/chat/prompt-picker.tsx";
 import { SessionsPanel, SessionsScreen } from "@/components/chat/session-list.tsx";
+import { DescriptionList, PropertyRow } from "@/components/description-list";
+import { DialogLayout } from "@/components/dialog-layout";
+import { HeaderContentFooter } from "@/components/header-content-footer";
+import { OptionSelect } from "@/components/option-select";
+import { EmptyState } from "@/components/page";
+import { PageHeader } from "@/components/page-header";
 import { SettingsLink } from "@/components/settings/link.tsx";
-import {
-  Button,
-  Dialog,
-  Empty,
-  ErrorNote,
-  Muted,
-  Select,
-  Separator,
-  Textarea,
-} from "@/components/ui.tsx";
+import { SplitLayout } from "@/components/split-layout";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Square } from "@/components/ui/icons";
+import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
 import { api, streamTurn } from "@/lib/client.ts";
 import { useWide } from "@/lib/layout.ts";
-import { colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 import { useDictation, useSpeech } from "@/lib/voice.ts";
 import { useVoiceSettings } from "@/lib/voice-settings.ts";
@@ -64,15 +66,19 @@ export function ChatsView({ sessionId }: { sessionId?: string }) {
   if (!wide) return sessionId ? <ChatPane sessionId={sessionId} /> : <SessionsScreen />;
 
   return (
-    <View className="flex-1 flex-row bg-background">
-      <ChatPane sessionId={sessionId} />
-      <SessionsPanel activeId={sessionId} />
-    </View>
+    <SplitLayout
+      className="h-full flex-1 bg-background"
+      // The panel is a rail with a width of its own; the chat has whatever is left.
+      secondWidth="auto"
+      stackBelow="never"
+      divider="none"
+      first={<ChatPane sessionId={sessionId} />}
+      second={<SessionsPanel activeId={sessionId} />}
+    />
   );
 }
 
 function ChatPane({ sessionId }: { sessionId?: string }) {
-  const navigation = useNavigation();
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -172,7 +178,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
 
   /**
    * Everything in this pane belongs to one conversation, and the pane outlives them: the
-   * drawer keeps `/chat/[id]` mounted and swaps its parameter, so without this the last
+   * router keeps `/chat/[id]` mounted and swaps its parameter, so without this the last
    * chat's turn — its live parts, its unsent question, its stats, its half-typed reply —
    * would still be on screen under the next one. A turn already streaming is left alone to
    * finish into the session that asked for it; `send` below drops what arrives for a chat
@@ -208,12 +214,6 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   useFocusEffect(
     useCallback(() => () => setCreated((held) => (sessionId ? held : null)), [sessionId]),
   );
-
-  // The drawer owns the header, so the session title is pushed up to it. The empty pane
-  // leaves it alone: that screen is still "Chats".
-  useEffect(() => {
-    if (sessionId) navigation.setOptions({ title: session.data?.title ?? "Chat" });
-  }, [navigation, sessionId, session.data?.title]);
 
   /** A hundred pixels of slack, so a stray flick does not count as leaving the bottom. */
   function onScroll({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) {
@@ -423,188 +423,229 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   speakRef.current = toggleSpeak;
   const onSpeak = useCallback((index: number, text: string) => speakRef.current(index, text), []);
 
+  /** What the conversation has cost so far, as the one line the header has room for. */
+  const usageLine = shownUsage
+    ? `${formatUsage(shownUsage, config.data?.pricing)} · ${usageDetail(shownUsage)}`
+    : null;
+
   return (
-    /*
-      No `KeyboardAvoidingView`. Under Android's edge-to-edge window it has nothing to react
-      to — the window is not resized when the keyboard opens — so the composer below reserves
-      the room itself and this column shrinks around it.
-    */
-    <View className="min-w-0 flex-1 bg-background">
-      <View className="flex-row flex-wrap items-center justify-end gap-3 border-b border-border px-4 py-2">
-        {/*
-          The readout is the way in to the breakdown: it is already the thing you look at when
-          you wonder where the window went, and a second control beside it saying the same
-          numbers would only be one more thing in a header that is mostly the model picker.
-        */}
-        {fill || shownUsage ? (
-          <Pressable
-            onPress={() => setTokensOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="What the tokens went on"
-            className="flex-row flex-wrap items-center gap-3 rounded-md px-1 py-0.5 active:bg-accent"
-          >
-            {fill ? <ContextMeter fill={fill} /> : null}
-            {shownUsage ? (
-              <Muted>
-                {formatUsage(shownUsage, config.data?.pricing)} · {usageDetail(shownUsage)}
-              </Muted>
-            ) : null}
-          </Pressable>
-        ) : null}
-        <TokensDialog
-          visible={tokensOpen}
-          onClose={() => setTokensOpen(false)}
-          usage={shownUsage}
-          stats={recent}
-          pricing={config.data?.pricing}
-        />
-        <View className="w-64 max-w-full">
-          <Select
-            value={activeModel}
-            options={(models.data?.models ?? []).map((entry) => ({
-              label: entry.id,
-              value: entry.id,
-            }))}
-            onChange={setModel}
-            disabled={!models.data?.models.length}
-            placeholder={models.isError ? "server unreachable" : "select a model"}
-          />
-        </View>
-      </View>
-
-      <View className="min-h-0 flex-1">
-        <ScrollView
-          ref={scroller}
-          className="flex-1"
-          contentContainerClassName="p-4"
-          keyboardShouldPersistTaps="handled"
-          onScroll={onScroll}
-          scrollEventThrottle={16}
-        >
-          {/* Wide, the column is centred and capped for readability; narrow, the cap is
-            wider than the screen and does nothing. */}
-          <View className="w-full max-w-3xl self-center">
-            {activeId ? (
-              <MessageView
-                messages={stored}
-                pending={question}
-                live={live}
-                pricing={config.data?.pricing}
-                onFollowup={pending ? undefined : followup}
-                onRetry={pending ? undefined : onRetry}
-                onEdit={pending ? undefined : onEdit}
-                onSpeak={onSpeak}
-                speakingIndex={spoken}
-              />
-            ) : (
-              <Nothing configured={Boolean(activeModel)} />
-            )}
-            {pending ? <LiveMeter startedAt={startedAt} live={live} /> : null}
-          </View>
-        </ScrollView>
-
-        {pinned ? null : (
-          <Pressable
-            onPress={() => {
-              setPinned(true);
-              scroller.current?.scrollToEnd({ animated: true });
-            }}
-            className="absolute bottom-4 self-center flex-row items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5"
-          >
-            <Feather name="arrow-down" size={13} color={colors.mutedForeground} />
-            <Text className="text-xs text-muted-foreground">Jump to latest</Text>
-          </Pressable>
-        )}
-      </View>
-
-      {failure ? (
-        <View className="px-4 pb-2">
-          <ErrorNote error={new Error(failure)} />
-        </View>
-      ) : null}
-
-      {/* A microphone that would not open, or a reply that would not play. Its own line: it
-        has nothing to do with whether the turn itself worked. */}
-      {dictation.error || speech.error ? (
-        <View className="px-4 pb-2">
-          <ErrorNote error={new Error(dictation.error ?? speech.error ?? "")} />
-        </View>
-      ) : null}
-
+    <>
       {/*
-        The composer is the bottom of the screen on a phone, over the gesture pill and under
-        the keyboard — but neither is its problem any more: the drawer pads the whole scene
-        by both, so the column above simply ends higher up when the keys come up, and the
-        transcript shrinks by the height of them rather than sliding behind them.
+        No `KeyboardAvoidingView`. Under Android's edge-to-edge window it has nothing to react
+        to — the window is not resized when the keyboard opens — so the composer below reserves
+        the room itself and this column shrinks around it.
       */}
-      <View className="border-t border-border px-4 py-3">
-        {/*
-          Nothing below this can work without a model, and the composer cannot say where to
-          get one — a placeholder is not something you can press. So the way out sits above
-          it, as a button rather than as the name of a screen to go and find.
-        */}
-        {activeModel ? null : (
-          <View className="mx-auto mb-2 w-full max-w-3xl flex-row items-center gap-3">
-            <Muted className="flex-1">No model selected, so a turn has nothing to run on.</Muted>
-            <SettingsLink tab="model">Pick a model</SettingsLink>
-          </View>
-        )}
-        <View className="w-full max-w-3xl flex-row items-end gap-2 self-center">
-          <Textarea
-            grows
-            value={draft}
-            onChangeText={setDraft}
-            onSubmit={() => void send()}
-            placeholder={activeModel ? "Send a message…" : "Pick a model to start"}
-            className="min-h-11 max-h-40 flex-1 py-2.5"
+      <HeaderContentFooter
+        className="h-full flex-1 bg-background"
+        headerClassName="border-border border-b px-4 py-2"
+        // The transcript scrolls itself rather than the shell doing it: following a turn needs
+        // the scroll position, and the shell's own scroller does not report one.
+        contentClassName="flex flex-col"
+        footerClassName="border-border border-t px-4 py-3"
+        header={
+          <PageHeader
+            level={3}
+            // The page draws its own title now. The empty pane has no conversation to name, so
+            // it is still "Chats".
+            title={activeId ? (session.data?.title ?? "Chat") : "Chats"}
+            action={
+              <View className="flex-row flex-wrap items-center justify-end gap-3">
+                {/*
+                  The readout is the way in to the breakdown: it is already the thing you look at
+                  when you wonder where the window went, and a second control beside it saying
+                  the same numbers would only be one more thing in a header that is mostly the
+                  model picker.
+                */}
+                {fill || usageLine ? (
+                  <ActionButton
+                    variant="ghost"
+                    size="sm"
+                    label="What the tokens went on"
+                    className="h-auto flex-wrap gap-3 px-1 py-0.5"
+                    onPress={() => setTokensOpen(true)}
+                  >
+                    {fill ? <ContextMeter fill={fill} /> : null}
+                    {usageLine ? <Text className={MUTED}>{usageLine}</Text> : null}
+                  </ActionButton>
+                ) : null}
+                <OptionSelect
+                  aria-label="Model"
+                  className="w-64 max-w-full"
+                  value={activeModel}
+                  options={(models.data?.models ?? []).map((entry) => ({
+                    label: entry.id,
+                    value: entry.id,
+                  }))}
+                  onValueChange={setModel}
+                  disabled={!models.data?.models.length}
+                  placeholder={models.isError ? "server unreachable" : "select a model"}
+                />
+              </View>
+            }
           />
-          {/*
-            Absent where no server offers a prompt, for the same reason as the microphone below:
-            a button that opens an empty list is a button that teaches you not to press it.
-          */}
-          {prompts.data?.length ? (
-            <Button
-              variant="secondary"
-              size="icon-lg"
-              icon="book-open"
-              accessibilityLabel="Insert an MCP prompt"
-              onPress={() => setPicking(true)}
-            />
-          ) : null}
-          {/*
-            Absent rather than disabled where neither engine can run — a device build with no
-            transcription model configured, or Firefox. There is nothing to press it for, and
-            the phone keyboard already has a microphone key of its own.
-          */}
-          {dictation.supported ? (
-            <Button
-              variant={dictation.listening ? "destructive" : "secondary"}
-              size="icon-lg"
-              icon={dictation.listening ? "square" : "mic"}
-              busy={dictation.transcribing}
-              accessibilityLabel={dictation.listening ? "Stop dictating" : "Dictate a message"}
-              onPress={dictation.toggle}
-            />
-          ) : null}
-          {pending ? (
-            <Button
-              variant="secondary"
-              size="icon-lg"
-              icon="square"
-              accessibilityLabel="Stop the turn"
-              onPress={() => abort.current?.abort()}
-            />
-          ) : (
-            <Button
-              size="icon-lg"
-              icon="send"
-              accessibilityLabel="Send"
-              disabled={!draft.trim()}
-              onPress={() => void send()}
-            />
-          )}
-        </View>
-      </View>
+        }
+        content={
+          <>
+            <ScrollView
+              ref={scroller}
+              className="flex-1"
+              contentContainerClassName="p-4"
+              keyboardShouldPersistTaps="handled"
+              onScroll={onScroll}
+              scrollEventThrottle={16}
+            >
+              {/* Wide, the column is centred and capped for readability; narrow, the cap is
+                wider than the screen and does nothing. */}
+              <View className="w-full max-w-3xl self-center">
+                {activeId ? (
+                  <MessageView
+                    messages={stored}
+                    pending={question}
+                    live={live}
+                    pricing={config.data?.pricing}
+                    onFollowup={pending ? undefined : followup}
+                    onRetry={pending ? undefined : onRetry}
+                    onEdit={pending ? undefined : onEdit}
+                    onSpeak={onSpeak}
+                    speakingIndex={spoken}
+                  />
+                ) : (
+                  <Nothing configured={Boolean(activeModel)} />
+                )}
+                {pending ? <LiveMeter startedAt={startedAt} live={live} /> : null}
+              </View>
+            </ScrollView>
+
+            {pinned ? null : (
+              <View className="absolute bottom-4 self-center">
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className="rounded-full bg-card"
+                  onPress={() => {
+                    setPinned(true);
+                    scroller.current?.scrollToEnd({ animated: true });
+                  }}
+                >
+                  <ArrowDown aria-hidden className="size-3.5" />
+                  Jump to latest
+                </Button>
+              </View>
+            )}
+          </>
+        }
+        /*
+          The composer is the bottom of the screen on a phone, over the gesture pill and under
+          the keyboard — but neither is its problem: the app shell pads the whole scene by both,
+          so the column above simply ends higher up when the keys come up, and the transcript
+          shrinks by the height of them rather than sliding behind them.
+        */
+        footer={
+          <View className="mx-auto w-full max-w-3xl gap-2">
+            {failure ? (
+              <Alert variant="destructive" title="The turn failed" description={failure} />
+            ) : null}
+
+            {/* A microphone that would not open, or a reply that would not play. Its own line:
+              it has nothing to do with whether the turn itself worked. */}
+            {dictation.error || speech.error ? (
+              <Alert
+                variant="destructive"
+                title="Voice is not working"
+                description={dictation.error ?? speech.error ?? ""}
+              />
+            ) : null}
+
+            {/*
+              Nothing below this can work without a model, and the composer cannot say where to
+              get one — a placeholder is not something you can press. So the way out sits above
+              it, as a button rather than as the name of a screen to go and find.
+            */}
+            {activeModel ? null : (
+              <View className="flex-row items-center gap-3">
+                <Text className={cn(MUTED, "flex-1")}>
+                  No model selected, so a turn has nothing to run on.
+                </Text>
+                <SettingsLink tab="model" label="Pick a model" />
+              </View>
+            )}
+            <View className="flex-row items-end gap-2">
+              <ComposerInput
+                label="Message"
+                value={draft}
+                onChangeText={setDraft}
+                onSubmit={() => void send()}
+                placeholder={activeModel ? "Send a message…" : "Pick a model to start"}
+                className="max-h-40 min-h-11 flex-1 py-2.5"
+              />
+              {/*
+                Absent where no server offers a prompt, for the same reason as the microphone
+                below: a button that opens an empty list is a button that teaches you not to
+                press it.
+              */}
+              {prompts.data?.length ? (
+                <ActionButton
+                  variant="secondary"
+                  size="icon-lg"
+                  label="Insert an MCP prompt"
+                  onPress={() => setPicking(true)}
+                >
+                  <BookOpen aria-hidden className="size-4" />
+                </ActionButton>
+              ) : null}
+              {/*
+                Absent rather than disabled where neither engine can run — a device build with no
+                transcription model configured, or Firefox. There is nothing to press it for, and
+                the phone keyboard already has a microphone key of its own.
+              */}
+              {dictation.supported ? (
+                <ActionButton
+                  variant={dictation.listening ? "destructive" : "secondary"}
+                  size="icon-lg"
+                  label={dictation.listening ? "Stop dictating" : "Dictate a message"}
+                  disabled={dictation.transcribing}
+                  onPress={dictation.toggle}
+                >
+                  {dictation.transcribing ? (
+                    <Spinner label="Transcribing" />
+                  ) : dictation.listening ? (
+                    <Square aria-hidden className="size-4" />
+                  ) : (
+                    <Mic aria-hidden className="size-4" />
+                  )}
+                </ActionButton>
+              ) : null}
+              {pending ? (
+                <ActionButton
+                  variant="secondary"
+                  size="icon-lg"
+                  label="Stop the turn"
+                  onPress={() => abort.current?.abort()}
+                >
+                  <Square aria-hidden className="size-4" />
+                </ActionButton>
+              ) : (
+                <ActionButton
+                  size="icon-lg"
+                  label="Send"
+                  disabled={!draft.trim()}
+                  onPress={() => void send()}
+                >
+                  <Send aria-hidden className="size-4" />
+                </ActionButton>
+              )}
+            </View>
+          </View>
+        }
+      />
+
+      <TokensDialog
+        visible={tokensOpen}
+        onClose={() => setTokensOpen(false)}
+        usage={shownUsage}
+        stats={recent}
+        pricing={config.data?.pricing}
+      />
 
       {/*
         Expanded into the draft rather than sent: a template is a starting point, and the one
@@ -617,9 +658,12 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
           setDraft((held) => (held.trim() ? `${held.trimEnd()}\n\n${text}` : text))
         }
       />
-    </View>
+    </>
   );
 }
+
+/** The small grey line: a readout, a hint, a footnote. */
+const MUTED = "text-muted-foreground text-xs";
 
 /**
  * The empty pane, wide, with no conversation open. On a fresh install it is also the first
@@ -627,14 +671,22 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
  * been pointed at a model yet — so which of the two it says depends on whether there is one.
  */
 function Nothing({ configured }: { configured: boolean }) {
-  if (configured) return <Empty>Start a chat, or open one from the right.</Empty>;
+  if (configured) {
+    return (
+      <EmptyState
+        icon={MessageSquare}
+        title="No chat open"
+        description="Send a message to start one, or open one from the list."
+      />
+    );
+  }
   return (
-    <View className="items-center gap-3 p-8">
-      <Text className="text-center text-sm text-muted-foreground">
-        Point min-agent at an OpenAI-compatible server and pick a model, and this becomes a chat.
-      </Text>
-      <SettingsLink tab="model">Set up a model</SettingsLink>
-    </View>
+    <EmptyState
+      icon={MessageSquare}
+      title="No model yet"
+      description="Point min-agent at an OpenAI-compatible server and pick a model, and this becomes a chat."
+      action={<SettingsLink tab="model" label="Set up a model" />}
+    />
   );
 }
 
@@ -656,13 +708,6 @@ const PART_COLOR: Record<BreakdownPart, string> = {
   input: "bg-emerald-500",
   inputTools: "bg-emerald-300",
 };
-
-const Figure = ({ label, value }: { label: string; value: string }) => (
-  <View className="flex-row items-center justify-between">
-    <Muted>{label}</Muted>
-    <Text className="text-sm text-foreground">{value}</Text>
-  </View>
-);
 
 /**
  * Where the tokens went.
@@ -694,29 +739,35 @@ function TokensDialog({
   const fill = contextFill(stats);
   const cost = usage ? costOf(usage, pricing) : null;
 
-  return (
-    <Dialog visible={visible} title="Tokens" onClose={onClose}>
-      {usage ? (
-        <View className="gap-1.5">
-          <Figure label="Total" value={usage.totalTokens.toLocaleString()} />
-          <Figure label="Sent" value={usage.promptTokens.toLocaleString()} />
-          <Figure label="Received" value={usage.completionTokens.toLocaleString()} />
-          {cost !== null ? <Figure label="Cost" value={`$${cost.toFixed(4)}`} /> : null}
-        </View>
-      ) : null}
-
-      {fill ? (
-        <>
-          <Separator />
-          <Figure label="Context window" value={`${fill.label} · ${fill.percent}`} />
-        </>
+  const body = (
+    <>
+      {usage || fill ? (
+        <DescriptionList
+          content={
+            <>
+              {usage ? (
+                <>
+                  <PropertyRow label="Total" value={usage.totalTokens.toLocaleString()} />
+                  <PropertyRow label="Sent" value={usage.promptTokens.toLocaleString()} />
+                  <PropertyRow label="Received" value={usage.completionTokens.toLocaleString()} />
+                  {cost !== null ? (
+                    <PropertyRow label="Cost" value={`$${cost.toFixed(4)}`} />
+                  ) : null}
+                </>
+              ) : null}
+              {fill ? (
+                <PropertyRow label="Context window" value={`${fill.label} · ${fill.percent}`} />
+              ) : null}
+            </>
+          }
+        />
       ) : null}
 
       {rows.length ? (
         <>
           <Separator />
           <View className="gap-2">
-            <Muted>What the last request was made of</Muted>
+            <Text className={MUTED}>What the last request was made of</Text>
             <View className="h-2 flex-row overflow-hidden rounded-full bg-muted">
               {rows.map((row) => (
                 <View
@@ -729,7 +780,7 @@ function TokensDialog({
             {rows.map((row) => (
               <View key={row.key} className="flex-row items-center gap-2">
                 <View className={cn("h-2 w-2 rounded-full", PART_COLOR[row.key])} />
-                <Muted className="flex-1">{row.label}</Muted>
+                <Text className={cn(MUTED, "flex-1")}>{row.label}</Text>
                 <Text className="text-sm text-foreground">
                   {formatTokens(row.tokens)}
                   <Text className="text-muted-foreground">
@@ -747,7 +798,7 @@ function TokensDialog({
             {cleared > 0 ? (
               <View className="flex-row items-center gap-2">
                 <View className="h-2 w-2 rounded-full border border-muted-foreground" />
-                <Muted className="flex-1">Old tool results left out</Muted>
+                <Text className={cn(MUTED, "flex-1")}>Old tool results left out</Text>
                 <Text className="text-sm text-foreground">−{formatTokens(cleared)}</Text>
               </View>
             ) : null}
@@ -756,15 +807,28 @@ function TokensDialog({
               many prompt tokens it read and nothing about where they came from, so the shares
               are measured from the request we sent and only the total is the server's.
             */}
-            <Muted>
+            <Text className={MUTED}>
               The total is the server's; the split is measured from the request and is approximate.
-            </Muted>
+            </Text>
           </View>
         </>
       ) : null}
 
-      {!usage && !rows.length ? <Empty>Nothing measured yet — send a message.</Empty> : null}
-    </Dialog>
+      {!usage && !rows.length ? (
+        <EmptyState compact title="Nothing measured yet — send a message." />
+      ) : null}
+    </>
+  );
+
+  return (
+    <DialogLayout
+      open={visible}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title="Tokens"
+      content={<View className="gap-3">{body}</View>}
+    />
   );
 }
 
@@ -779,7 +843,7 @@ function ContextMeter({ fill }: { fill: NonNullable<ReturnType<typeof contextFil
           style={{ width: `${fill.ratio * 100}%` }}
         />
       </View>
-      <Muted>{fill.label}</Muted>
+      <Text className={MUTED}>{fill.label}</Text>
     </View>
   );
 }
@@ -804,15 +868,15 @@ function LiveMeter({ startedAt, live }: { startedAt: number; live: LivePart[] })
 
   return (
     <View className="mt-2 flex-row items-center gap-2">
-      <Muted>{formatDuration(elapsed)}</Muted>
+      <Text className={MUTED}>{formatDuration(elapsed)}</Text>
       {tokens > 0 ? (
         <>
-          <Muted>·</Muted>
-          <Muted>~{formatTokens(tokens)} tok</Muted>
+          <Text className={MUTED}>·</Text>
+          <Text className={MUTED}>~{formatTokens(tokens)} tok</Text>
           {seconds > 0.5 ? (
             <>
-              <Muted>·</Muted>
-              <Muted>~{formatRate(tokens / seconds)}</Muted>
+              <Text className={MUTED}>·</Text>
+              <Text className={MUTED}>~{formatRate(tokens / seconds)}</Text>
             </>
           ) : null}
         </>
