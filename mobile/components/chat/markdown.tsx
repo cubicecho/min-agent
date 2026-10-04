@@ -1,6 +1,6 @@
 import Markdown, { type RenderRules } from "@ronradtke/react-native-markdown-display";
 import { memo } from "react";
-import { CodeBlock } from "@/components/code-block.tsx";
+import { CodeBlock } from "@/components/chat/code-block.tsx";
 import { colors } from "@/lib/theme.ts";
 
 /**
@@ -93,10 +93,10 @@ const rules: RenderRules = {
  * any message says — a reply starting to be read aloud, a turn finishing and being read back.
  * Every stored body was re-parsed on each of those.
  */
-export const MarkdownBody = memo(function MarkdownBody({ children }: { children: string }) {
+export const MarkdownBody = memo(function MarkdownBody({ text }: { text: string }) {
   return (
     <Markdown style={styles} rules={rules}>
-      {children}
+      {text}
     </Markdown>
   );
 });

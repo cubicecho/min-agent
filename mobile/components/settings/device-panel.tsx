@@ -1,17 +1,18 @@
+import { useStore } from "@tanstack/react-form";
 import * as Updates from "expo-updates";
 import { useState } from "react";
-import { Platform, Text, View } from "react-native";
-import {
-  Badge,
-  Button,
-  Card,
-  CardDescription,
-  CardTitle,
-  Muted,
-  Screen,
-  Switch,
-} from "@/components/ui.tsx";
+import { Platform, Text } from "react-native";
+import { useAppForm } from "@/components/app/app-form";
+import { CardLayout } from "@/components/card-layout";
+import { DescriptionList, PropertyRow } from "@/components/description-list";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Form } from "@/components/ui/form";
+import { CircleCheck, Download, RefreshCw } from "@/components/ui/icons";
+import { Spinner } from "@/components/ui/spinner";
 import { setVoiceSettings, useVoiceSettings } from "@/lib/voice-settings.ts";
+import { useReportDirty } from "./dirty.tsx";
+import { PanelBody } from "./panel-body.tsx";
 
 /**
  * The settings that belong to this install rather than to the agent.
@@ -45,21 +46,70 @@ function Running() {
   const built = Updates.createdAt;
   const id = Updates.updateId;
   return (
-    <View className="gap-1">
-      <Muted>
-        {Updates.channel ? `Channel ${Updates.channel}` : "No channel"} · runtime{" "}
-        {Updates.runtimeVersion || "unknown"}
-      </Muted>
-      <Muted>
-        {id ? `Update ${id.slice(0, 8)}` : "The JavaScript this app was built with"}
-        {built ? ` · ${built.toLocaleString()}` : ""}
-      </Muted>
-    </View>
+    <DescriptionList
+      content={
+        <>
+          <PropertyRow label="Channel" value={Updates.channel || "None"} />
+          <PropertyRow label="Runtime" value={Updates.runtimeVersion || "Unknown"} />
+          <PropertyRow
+            label="Update"
+            value={id ? id.slice(0, 8) : "The JavaScript this app was built with"}
+          />
+          {built ? <PropertyRow label="Published" value={built.toLocaleString()} /> : null}
+        </>
+      }
+    />
+  );
+}
+
+/**
+ * What the microphone does when it finishes, as a form with a Save like every other setting:
+ * the switch is a draft until it is saved.
+ */
+function Dictation() {
+  const voice = useVoiceSettings();
+  const form = useAppForm({
+    defaultValues: { autoSend: voice.autoSend },
+    onSubmit: async ({ value, formApi }) => {
+      await setVoiceSettings({ autoSend: value.autoSend });
+      formApi.reset(value);
+    },
+  });
+
+  const dirty = useStore(form.store, (state) => !state.isDefaultValue);
+  useReportDirty("device", dirty);
+
+  return (
+    <form.AppForm>
+      <CardLayout
+        title="Dictation"
+        description="What the microphone button does when it finishes. Stored on this device, not on the server, so each phone and tablet answers for itself."
+        content={
+          <Form className="gap-3">
+            <form.AppField name="autoSend">
+              {(field) => <field.SwitchField label="Send as soon as the microphone is done" />}
+            </form.AppField>
+            {/* Which is not the same moment on both engines, and the difference is the whole
+                question of whether you have to touch the phone again. */}
+            <Text className="text-muted-foreground text-sm">
+              Android's recogniser decides that itself, when you stop talking — so with this on, a
+              message can be spoken and sent without touching the phone again. A transcription model
+              records until you press the button a second time, and sends then.
+            </Text>
+            <Text className="text-muted-foreground text-sm">
+              With this off the button is the only thing that sends, and what was said is added to
+              whatever is already in the box — so a message can be dictated in as many goes as it
+              takes.
+            </Text>
+          </Form>
+        }
+        footerActions={<form.SubmitButton createLabel="Save" disabled={!dirty} />}
+      />
+    </form.AppForm>
   );
 }
 
 export function DevicePanel() {
-  const voice = useVoiceSettings();
   const [progress, setProgress] = useState<Progress>({ kind: "idle" });
 
   /**
@@ -90,88 +140,59 @@ export function DevicePanel() {
   const busy = progress.kind === "checking" || progress.kind === "downloading";
 
   return (
-    <Screen>
-      <Card>
-        <CardTitle>Dictation</CardTitle>
-        <CardDescription>
-          What the microphone button does when it finishes. Stored on this device, not on the
-          server, so each phone and tablet answers for itself.
-        </CardDescription>
+    <PanelBody
+      content={
+        <>
+          <Dictation />
 
-        <View className="flex-row items-center gap-3">
-          <Switch
-            value={voice.autoSend}
-            onValueChange={(autoSend) => void setVoiceSettings({ autoSend })}
+          <CardLayout
+            title="Updates"
+            description="This app installs its JavaScript over the air: a change that does not touch the native side is published as an update and picked up on the next launch. This is how to pick one up without waiting for that."
+            contentClassName="flex flex-col gap-3"
+            content={
+              <>
+                <Running />
+                {updatable ? null : (
+                  <Text className="text-muted-foreground text-sm">
+                    {Platform.OS === "web"
+                      ? "A browser reloads the page instead; there is nothing to fetch here."
+                      : "This build is attached to Metro, which serves its own JavaScript. Updates apply to installed builds."}
+                  </Text>
+                )}
+                {progress.kind === "none" ? (
+                  <Alert icon={<CircleCheck />} title="Already up to date" />
+                ) : null}
+                {progress.kind === "ready" ? (
+                  <Alert
+                    icon={<Download />}
+                    title="Downloaded"
+                    description="It runs after a restart. Anything half-typed goes with it."
+                  />
+                ) : null}
+                {progress.kind === "failed" ? (
+                  <Alert variant="destructive" title="Failed" description={progress.detail} />
+                ) : null}
+              </>
+            }
+            footerActions={
+              updatable ? (
+                <>
+                  {progress.kind === "ready" ? (
+                    <Button variant="outline" onPress={() => void Updates.reloadAsync()}>
+                      <RefreshCw className="size-4" />
+                      Restart now
+                    </Button>
+                  ) : null}
+                  <Button onPress={check} disabled={busy}>
+                    {busy ? <Spinner /> : <Download className="size-4" />}
+                    {progress.kind === "downloading" ? "Downloading" : "Check for updates"}
+                  </Button>
+                </>
+              ) : undefined
+            }
           />
-          <Text className="flex-1 text-sm text-foreground">
-            Send as soon as the microphone is done
-          </Text>
-        </View>
-
-        {/* Which is not the same moment on both engines, and the difference is the whole
-            question of whether you have to touch the phone again. */}
-        <Muted>
-          Android's recogniser decides that itself, when you stop talking — so with this on, a
-          message can be spoken and sent without touching the phone again. A transcription model
-          records until you press the button a second time, and sends then.
-        </Muted>
-        <Muted>
-          With this off the button is the only thing that sends, and what was said is added to
-          whatever is already in the box — so a message can be dictated in as many goes as it takes.
-        </Muted>
-      </Card>
-
-      <Card>
-        <CardTitle>Updates</CardTitle>
-        <CardDescription>
-          This app installs its JavaScript over the air: a change that does not touch the native
-          side is published as an update and picked up on the next launch. This is how to pick one
-          up without waiting for that.
-        </CardDescription>
-
-        <Running />
-
-        {updatable ? (
-          <>
-            <View className="flex-row gap-2">
-              <Button onPress={check} busy={busy} icon="download">
-                {progress.kind === "downloading" ? "Downloading" : "Check for updates"}
-              </Button>
-              {progress.kind === "ready" ? (
-                <Button
-                  variant="outline"
-                  icon="refresh-cw"
-                  onPress={() => void Updates.reloadAsync()}
-                >
-                  Restart now
-                </Button>
-              ) : null}
-            </View>
-
-            {progress.kind === "none" ? <Muted>Already up to date.</Muted> : null}
-            {progress.kind === "ready" ? (
-              <View className="flex-row items-center gap-2">
-                <Badge variant="secondary">Downloaded</Badge>
-                <Text className="flex-1 text-xs text-muted-foreground">
-                  It runs after a restart. Anything half-typed goes with it.
-                </Text>
-              </View>
-            ) : null}
-            {progress.kind === "failed" ? (
-              <View className="flex-row items-center gap-2">
-                <Badge variant="destructive">Failed</Badge>
-                <Text className="flex-1 text-xs text-muted-foreground">{progress.detail}</Text>
-              </View>
-            ) : null}
-          </>
-        ) : (
-          <Muted>
-            {Platform.OS === "web"
-              ? "A browser reloads the page instead; there is nothing to fetch here."
-              : "This build is attached to Metro, which serves its own JavaScript. Updates apply to installed builds."}
-          </Muted>
-        )}
-      </Card>
-    </Screen>
+        </>
+      }
+    />
   );
 }

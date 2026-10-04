@@ -1,22 +1,42 @@
 import { MODEL_TASKS } from "@shared/model-tasks.ts";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Text, View } from "react-native";
-import {
-  Badge,
-  Button,
-  Card,
-  CardDescription,
-  CardTitle,
-  ErrorNote,
-  Field,
-  Input,
-  Muted,
-  NumberInput,
-  Select,
-} from "@/components/ui.tsx";
-import { ConfigForm } from "./config-form.tsx";
+import { CardLayout } from "@/components/card-layout";
+import { QueryError } from "@/components/query-state";
+import { Section } from "@/components/section";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { FieldRow } from "@/components/ui/form";
+import { Check } from "@/components/ui/icons";
+import { api } from "@/lib/client.ts";
+import { ConfigForm, type ConfigSlice, type Draft } from "./config-form.tsx";
+import { OptionalSelectField, TextField } from "./fields.tsx";
 
-/** Select needs a non-empty value, so "unset" gets a sentinel that never reaches the config. */
-const NO_TASK_MODEL = "__none__";
+type ModelDraft = Pick<Draft, "baseUrl" | "apiKey" | "model" | "taskModels" | "pricing">;
+
+/**
+ * A draft in the shape the stored row would be in, for comparing the two.
+ *
+ * An unset task model is stored by leaving the key out and unset here by writing an empty
+ * string into it, so picking a model for a task and then picking "off" again is a round trip
+ * back to where you started — and should not leave the panel claiming an unsaved change.
+ */
+const tidy = (draft: ModelDraft) => ({
+  ...draft,
+  taskModels: Object.fromEntries(
+    Object.entries(draft.taskModels)
+      .filter(([, model]) => model)
+      .sort(([a], [b]) => a.localeCompare(b)),
+  ),
+});
+
+/** How the endpoint button last went, and the address it was asked about. */
+type Probe = { ok: boolean; detail: string; baseUrl: string; apiKey: string } | null;
+
+const endpointOf = ({ baseUrl, apiKey }: ModelDraft) => ({ baseUrl, apiKey });
+
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
  * Where the models come from and which ones are used.
@@ -27,160 +47,223 @@ const NO_TASK_MODEL = "__none__";
  * screen has anything to show until it is.
  */
 export function ModelPanel() {
+  const queryClient = useQueryClient();
   return (
-    <ConfigForm tab="model">
-      {({
-        draft,
-        view,
-        set,
-        modelOptions,
-        models,
-        endpointPending,
-        applyEndpoint,
-        endpointBusy,
-        probe,
-      }) => (
-        <>
-          <Card>
-            <CardTitle>Endpoint</CardTitle>
-            <CardDescription>
-              An OpenAI-compatible server. The model list below is fetched by the agent from this
-              address, so it has to be stored before there is anything to pick from — which is what
-              the button does. Settings are stored in Postgres.
-            </CardDescription>
+    <ConfigForm
+      tab="model"
+      // The key box starts empty, because leaving it that way is what keeps the stored key.
+      fields={({ baseUrl, model, taskModels, pricing }): ModelDraft => ({
+        baseUrl,
+        apiKey: "",
+        model,
+        taskModels,
+        pricing,
+      })}
+      tidy={tidy}
+      // The model list belongs to the provider, so a new base URL or key means a new list.
+      onSaved={() => void queryClient.invalidateQueries({ queryKey: ["models"] })}
+      content={(slice) => <ModelFields {...slice} />}
+    />
+  );
+}
 
-            <Field
-              label="Base URL"
-              hint="Ollama :11434/v1, LM Studio :1234/v1, OpenAI https://api.openai.com/v1."
-            >
-              <Input
-                value={draft.baseUrl}
-                onChangeText={(value) => set("baseUrl", value)}
-                onSubmitEditing={applyEndpoint}
-                placeholder="http://localhost:11434/v1"
-                autoCapitalize="none"
-                autoCorrect={false}
-                inputMode="url"
-              />
-            </Field>
+/**
+ * The panel's cards. A component rather than the render prop's body, because the endpoint
+ * button has state and a query of its own.
+ */
+function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
+  const queryClient = useQueryClient();
+  const models = useQuery({ queryKey: ["models"], queryFn: api.models });
+  const [endpointBusy, setEndpointBusy] = useState(false);
+  const [held, setProbe] = useState<Probe>(null);
 
-            <Field label="API key">
-              <Input
-                value={draft.apiKey}
-                onChangeText={(value) => set("apiKey", value)}
-                onSubmitEditing={applyEndpoint}
-                secureTextEntry
-                autoCapitalize="none"
-                placeholder={view.hasApiKey ? "•••••••• (leave blank to keep)" : "optional"}
-              />
-            </Field>
+  const modelOptions = (models.data?.models ?? []).map((entry) => ({
+    label: entry.id,
+    value: entry.id,
+  }));
+
+  /**
+   * The endpoint in the boxes is not the one the model list came from.
+   *
+   * The whole reason the endpoint has a button of its own: the list is fetched by the server
+   * from the provider it is configured with, so until the typed address is stored there is
+   * nothing behind the model pickers but the last provider's answers.
+   */
+  const endpointPending = draft.baseUrl !== view.baseUrl || Boolean(draft.apiKey);
+
+  // The badge describes the provider that was asked. Once the boxes say something else it is
+  // the wrong thing to believe — a green "Connected" beside a half-retyped address.
+  const probe =
+    held && held.baseUrl === draft.baseUrl && held.apiKey === draft.apiKey ? held : null;
+
+  /**
+   * Store just the endpoint, then ask the provider what it serves.
+   *
+   * A patch rather than the panel's save: this button answers "point at this provider", and it
+   * would be a poor answer to it that also committed a half-picked model further down. For the
+   * same reason only the two fields it wrote are refreshed in the form — a reset to the
+   * response would throw away every other unsaved edit.
+   */
+  const applyEndpoint = async () => {
+    setEndpointBusy(true);
+    setProbe(null);
+    try {
+      const { baseUrl, apiKey } = form.state.values;
+      const fresh = await api.saveConfig({ baseUrl, apiKey });
+      queryClient.setQueryData(["config"], fresh);
+      form.setFieldValue("baseUrl", fresh.baseUrl);
+      form.setFieldValue("apiKey", "");
+      const result = await models.refetch();
+      if (result.error) throw result.error;
+      const count = result.data?.models.length ?? 0;
+      setProbe({
+        ok: true,
+        baseUrl: fresh.baseUrl,
+        apiKey: "",
+        detail: `${fresh.baseUrl || "the default endpoint"} — ${count} model(s)`,
+      });
+    } catch (error) {
+      setProbe({ ok: false, ...endpointOf(form.state.values), detail: messageOf(error) });
+    } finally {
+      setEndpointBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <CardLayout
+        title="Endpoint"
+        description="An OpenAI-compatible server. The model list below is fetched by the agent from this address, so it has to be stored before there is anything to pick from — which is what the button does. Settings are stored in Postgres."
+        contentClassName="flex flex-col gap-4"
+        content={
+          <>
+            <form.AppField name="baseUrl">
+              {() => (
+                <TextField
+                  label="Base URL"
+                  description="Ollama :11434/v1, LM Studio :1234/v1, OpenAI https://api.openai.com/v1."
+                  placeholder="http://localhost:11434/v1"
+                  inputMode="url"
+                  onSubmitEditing={() => void applyEndpoint()}
+                />
+              )}
+            </form.AppField>
+
+            <form.AppField name="apiKey">
+              {(field) => (
+                <field.PasswordField
+                  label="API key"
+                  placeholder={view.hasApiKey ? "•••••••• (leave blank to keep)" : "optional"}
+                  onSubmitEditing={() => void applyEndpoint()}
+                />
+              )}
+            </form.AppField>
 
             {/* Its own button, and not the Save bar's job, because these two fields are the
-                only ones on the settings screen that something else on the screen depends on:
-                the pickers below are filled in by asking the provider, and the agent asks the
-                one it has stored. Pressing this stores just these two and asks again. */}
+                only ones on the settings screen that something else on the screen depends
+                on: the pickers below are filled in by asking the provider, and the agent
+                asks the one it has stored. Pressing this stores just these two and asks
+                again. */}
             <View className="flex-row items-center gap-2">
-              <Button icon="check" busy={endpointBusy} onPress={applyEndpoint}>
-                {endpointPending ? "Apply and load models" : "Reload models"}
+              <Button disabled={endpointBusy} onPress={() => void applyEndpoint()}>
+                <Check className="size-4" />
+                {endpointBusy
+                  ? "Asking the provider…"
+                  : endpointPending
+                    ? "Apply and load models"
+                    : "Reload models"}
               </Button>
               {endpointPending ? (
-                <Muted className="flex-1">Not applied yet — the list below is the old one.</Muted>
+                <Text className="flex-1 text-muted-foreground text-sm">
+                  Not applied yet — the list below is the old one.
+                </Text>
               ) : null}
             </View>
 
-            {probe && (
+            {probe ? (
               <View className="flex-row items-center gap-2">
                 <Badge variant={probe.ok ? "secondary" : "destructive"}>
                   {probe.ok ? "Connected" : "Failed"}
                 </Badge>
-                <Text className="flex-1 text-xs text-muted-foreground">{probe.detail}</Text>
+                <Text className="flex-1 text-muted-foreground text-xs">{probe.detail}</Text>
               </View>
-            )}
-          </Card>
+            ) : null}
+          </>
+        }
+      />
 
-          <Card>
-            <CardTitle>Models</CardTitle>
-
-            <Field
-              label="Default model"
-              hint={
-                models.error
-                  ? undefined
-                  : `${models.count} model(s) reported by the saved endpoint.`
-              }
-            >
-              <Select
-                value={draft.model}
-                options={modelOptions}
-                disabled={endpointPending}
-                onChange={(value) => set("model", value)}
-                placeholder={
-                  endpointPending
-                    ? "apply the endpoint first"
-                    : models.error
-                      ? "server unreachable"
-                      : "select a model"
-                }
-              />
-            </Field>
-            {models.error && !endpointPending ? <ErrorNote error={models.error} /> : null}
-
-            <View className="gap-1">
-              <Text className="text-sm font-medium text-foreground">Task models</Text>
-              <Muted>
-                Side jobs that need not run on the chat model. Each is short and frequent, so a
-                small fast model usually serves them better.
-              </Muted>
-            </View>
-
-            {MODEL_TASKS.map((task) => (
-              <Field key={task.key} label={task.label} hint={task.hint}>
-                <Select
-                  value={draft.taskModels[task.key] || NO_TASK_MODEL}
-                  options={[{ label: task.empty, value: NO_TASK_MODEL }, ...modelOptions]}
+      <CardLayout
+        title="Models"
+        contentClassName="flex flex-col gap-4"
+        content={
+          <>
+            <form.AppField name="model">
+              {(field) => (
+                <field.OptionSelectField
+                  label="Default model"
+                  description={
+                    models.error
+                      ? undefined
+                      : `${modelOptions.length} model(s) reported by the saved endpoint.`
+                  }
+                  options={modelOptions}
                   disabled={endpointPending}
-                  onChange={(value) =>
-                    set("taskModels", {
-                      ...draft.taskModels,
-                      [task.key]: value === NO_TASK_MODEL ? "" : value,
-                    })
+                  placeholder={
+                    endpointPending
+                      ? "apply the endpoint first"
+                      : models.error
+                        ? "server unreachable"
+                        : "select a model"
                   }
                 />
-              </Field>
-            ))}
-          </Card>
+              )}
+            </form.AppField>
+            {models.error && !endpointPending ? (
+              <QueryError
+                compact
+                error={models.error}
+                what="the model list"
+                onRetry={() => void models.refetch()}
+              />
+            ) : null}
 
-          <Card>
-            <CardTitle>Pricing</CardTitle>
-            <CardDescription>
-              Only used to turn the token counts into a cost. Leave both at 0 — the default for a
-              local model — and min-agent shows tokens alone.
-            </CardDescription>
-            <View className="flex-row gap-3">
-              <View className="flex-1">
-                <Field label="Input $ / 1M">
-                  <NumberInput
-                    value={draft.pricing.inputPer1M}
-                    onChangeValue={(value) =>
-                      set("pricing", { ...draft.pricing, inputPer1M: value })
-                    }
-                  />
-                </Field>
-              </View>
-              <View className="flex-1">
-                <Field label="Output $ / 1M">
-                  <NumberInput
-                    value={draft.pricing.outputPer1M}
-                    onChangeValue={(value) =>
-                      set("pricing", { ...draft.pricing, outputPer1M: value })
-                    }
-                  />
-                </Field>
-              </View>
-            </View>
-          </Card>
-        </>
-      )}
-    </ConfigForm>
+            <Section
+              level={4}
+              title="Task models"
+              description="Side jobs that need not run on the chat model. Each is short and frequent, so a small fast model usually serves them better."
+              contentClassName="flex flex-col gap-4"
+              content={MODEL_TASKS.map((task) => (
+                <form.AppField key={task.key} name={`taskModels.${task.key}`}>
+                  {() => (
+                    <OptionalSelectField
+                      label={task.label}
+                      description={task.hint}
+                      emptyLabel={task.empty}
+                      options={modelOptions}
+                      disabled={endpointPending}
+                    />
+                  )}
+                </form.AppField>
+              ))}
+            />
+          </>
+        }
+      />
+
+      <CardLayout
+        title="Pricing"
+        description="Only used to turn the token counts into a cost. Leave both at 0 — the default for a local model — and min-agent shows tokens alone."
+        content={
+          <FieldRow>
+            <form.AppField name="pricing.inputPer1M">
+              {(field) => <field.NumberField label="Input $ / 1M" />}
+            </form.AppField>
+            <form.AppField name="pricing.outputPer1M">
+              {(field) => <field.NumberField label="Output $ / 1M" />}
+            </form.AppField>
+          </FieldRow>
+        }
+      />
+    </>
   );
 }

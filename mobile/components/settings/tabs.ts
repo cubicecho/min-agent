@@ -1,9 +1,17 @@
-import type { IconName } from "@/components/ui.tsx";
+import {
+  Cpu,
+  LayoutDashboard,
+  LinkIcon,
+  Mic,
+  Server,
+  SlidersHorizontal,
+  Smartphone,
+} from "@/components/app/app-icons";
 
 /**
  * The panels behind `/settings`, in the order they are shown.
  *
- * Model, Agent and Voice are three views of one settings row — see `config-form.tsx` — and
+ * Model, Agent and Voice are three forms over one settings row — see `config-form.tsx` — and
  * they lead because nothing further down has anything to show until the first of them is
  * filled in. The four after them each store their settings somewhere else.
  *
@@ -12,14 +20,14 @@ import type { IconName } from "@/components/ui.tsx";
  * unsticks them and wants to spell its name the same way the tab does.
  */
 export const SETTINGS_TABS = [
-  { key: "model", label: "Model", icon: "cpu" },
-  { key: "agent", label: "Agent", icon: "sliders" },
-  { key: "voice", label: "Voice", icon: "mic" },
-  { key: "mcp", label: "MCP", icon: "server" },
-  { key: "apps", label: "Apps", icon: "layout" },
-  { key: "server", label: "Server", icon: "link" },
-  { key: "device", label: "Device", icon: "smartphone" },
-] as const satisfies readonly { key: string; label: string; icon: IconName }[];
+  { key: "model", label: "Model", icon: Cpu },
+  { key: "agent", label: "Agent", icon: SlidersHorizontal },
+  { key: "voice", label: "Voice", icon: Mic },
+  { key: "mcp", label: "MCP", icon: Server },
+  { key: "apps", label: "Apps", icon: LayoutDashboard },
+  { key: "server", label: "Server", icon: LinkIcon },
+  { key: "device", label: "Device", icon: Smartphone },
+] as const satisfies readonly { key: string; label: string; icon: typeof Cpu }[];
 
 export type SettingsTab = (typeof SETTINGS_TABS)[number]["key"];
 

@@ -23,6 +23,12 @@
       "*.ts",
       "*.json",
       "!shared/gql",
+      "!mobile/components/ui",
+      "!mobile/components/*.tsx",
+      "!mobile/lib/cubeui-theme.ts",
+      "!mobile/lib/color.ts",
+      "!mobile/lib/utils.ts",
+      "!mobile/lib/web-as.d.ts",
       "!.claude"
     ]
   },

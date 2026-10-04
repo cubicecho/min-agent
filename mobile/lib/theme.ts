@@ -1,23 +1,30 @@
+import { Appearance, Platform } from "react-native";
+import { dark } from "@/lib/cubeui-theme";
+
 /**
- * The palette again, in TypeScript. React Native props that take a colour — icon
- * tints, `placeholderTextColor`, the navigator's own chrome — are plain strings and
- * cannot read a CSS variable, so those values live here as well as in `global.css`.
- * The two must be changed together.
+ * cubeui's dark palette, for the React Native props that take a colour as a plain string —
+ * `placeholderTextColor`, a `style` built at runtime — and so cannot read a CSS variable.
+ * A class name is the first choice everywhere else; this is for where there is no class to give.
  *
- * There is only the dark set, because the app is dark and has no switch.
+ * Only the dark set, because the app is pinned dark: see `pinDarkAppearance`.
  */
-export const colors = {
-  background: "#0a0a0a",
-  foreground: "#fafafa",
-  card: "#171717",
-  muted: "#262626",
-  mutedForeground: "#a1a1a1",
-  primary: "#e5e5e5",
-  primaryForeground: "#171717",
-  secondaryForeground: "#fafafa",
-  destructive: "#ff6467",
-  border: "rgba(255,255,255,0.12)",
-};
+export const colors = dark;
+
+/**
+ * Holds the app on cubeui's dark tokens whatever the device or browser prefers.
+ *
+ * The token sheet follows `prefers-color-scheme`, and this app has only ever had a dark look —
+ * the code colours below are a dark set with no light twin. On device the override is the
+ * appearance API; on web it is the `dark` class on `<html>`, which the sheet honours over the
+ * media query.
+ */
+export function pinDarkAppearance() {
+  if (Platform.OS === "web") {
+    document.documentElement.classList.add("dark");
+    return;
+  }
+  Appearance.setColorScheme("dark");
+}
 
 export type Colors = typeof colors;
 

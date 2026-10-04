@@ -1,35 +1,44 @@
-import { Feather } from "@react-native-vector-icons/feather";
 import { SETTINGS_STALE_TIME } from "@shared/client/queries.ts";
-import { embedTitle } from "@shared/types.ts";
+import { type EmbedConfig, embedTitle } from "@shared/types.ts";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { DarkTheme, ThemeProvider, useRouter } from "expo-router";
 import {
-  Drawer,
-  type DrawerContentComponentProps,
-  DrawerContentScrollView,
-  DrawerItem,
-  DrawerItemList,
-} from "expo-router/drawer";
+  DarkTheme,
+  type ErrorBoundaryProps,
+  Link,
+  Stack,
+  ThemeProvider,
+  usePathname,
+  useRouter,
+} from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { type ColorValue, Linking, Platform, Pressable, View } from "react-native";
+import { Linking, Platform, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import "../global.css";
-import { useNewChat } from "@/components/session-list.tsx";
-import { Separator } from "@/components/ui.tsx";
+import { ActionButton } from "@/components/action-button";
+import { MessageSquare } from "@/components/app/app-icons";
+import { EMBED_ICON } from "@/components/apps/embed-icon.ts";
+import { useNewChat } from "@/components/chat/session-list.tsx";
+import { RouteError } from "@/components/route-error";
+import { BarNavItem, Sidebar, SidebarNavItem, SidebarSection } from "@/components/sidebar";
+import { SidebarLayout } from "@/components/split-layout";
+import { Button } from "@/components/ui/button";
+import { Plus, Settings } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
 import { EMBEDS_STALE_TIME, visibleEmbeds } from "@/lib/embeds.ts";
 import { useShortcut } from "@/lib/keys.ts";
-import { useBottomInset, useWide } from "@/lib/layout.ts";
+import { useBottomInset } from "@/lib/layout.ts";
 import { loadServerUrl } from "@/lib/server-url.ts";
-import { colors } from "@/lib/theme.ts";
+import { colors, pinDarkAppearance } from "@/lib/theme.ts";
+import { cn } from "@/lib/utils";
 import { loadVoiceSettings } from "@/lib/voice-settings.ts";
 
 /**
- * The drawer, its header and the screen behind them are painted by react-navigation, not
- * by Tailwind, so the palette has to be handed over here as well or the frame stays light
- * around dark content. The theming primitives come from expo-router rather than from
- * @react-navigation/native, which SDK 56 refuses to let app code import directly.
+ * The stack behind every screen is react-navigation's, not Tailwind's, so the palette has to
+ * be handed over here as well or a screen flashes light before its own background paints.
+ * The theming primitives come from expo-router rather than from @react-navigation/native,
+ * which the SDK refuses to let app code import directly.
  */
 const navigationTheme = {
   ...DarkTheme,
@@ -43,6 +52,9 @@ const navigationTheme = {
   },
 };
 
+// Before the first frame, so nothing is painted in the system's scheme and then repainted.
+pinDarkAppearance();
+
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
 });
@@ -51,42 +63,32 @@ const queryClient = new QueryClient({
 queryClient.setQueryDefaults(["config"], { staleTime: SETTINGS_STALE_TIME });
 queryClient.setQueryDefaults(["models"], { staleTime: SETTINGS_STALE_TIME });
 
-type IconName = React.ComponentProps<typeof Feather>["name"];
+const MAIN = cn("min-h-0 min-w-0", Platform.select({ web: "h-full", default: "flex-1" }));
 
-const icon = (name: IconName) =>
-  function DrawerIcon({ color, size }: { color: ColorValue; size: number }) {
-    return <Feather name={name} color={color as string} size={size} />;
-  };
+const Brand = () => <Text className="px-1 font-semibold text-foreground text-lg">min-agent</Text>;
 
-const SIDEBAR_WIDE = 232;
-const SIDEBAR_RAIL = 64;
+/** An app set to `external` is not a place in this app: its row hands the URL to the browser. */
+const openExternally = (embed: EmbedConfig) => Linking.openURL(embed.url);
 
 /**
- * The nav. It differs from the stock drawer content in three things: the button at the top,
- * which opens the web rail out to the full list and folds it back, the configured apps under
- * the separator, and Settings pinned to the bottom. The screens above are still
- * react-navigation's `DrawerItemList`, so the active row and the routing behave as they
- * always did.
+ * The frame every screen sits in: cubeui's rail beside the page on a wide window, and its bar
+ * over the page on a narrow one. Which of the two is drawn is a breakpoint in the stylesheet,
+ * so nothing here opens, closes or measures the window.
  *
- * The apps cannot be `Drawer.Screen`s — there is no route per app, only `embed/[id]` and a
- * list of rows in the database — so they are `DrawerItem`s driven by the query. A row in
- * `external` mode is not a destination in this app at all and hands its URL straight to the
- * browser rather than routing anywhere.
- *
- * Settings is a route like any other, but it is drawn by hand for its position: it sits
- * under a spacer at the foot of the list, away from the things you came here to open, so it
- * is hidden from `DrawerItemList` above and repeated here.
+ * The places are listed twice, once as rows for the rail and once as icons for the bar,
+ * because the two are different components with one prop list. The configured apps are rows
+ * in the database rather than routes, so both lists are built from the query: an `iframe` app
+ * goes to `embed/[id]`, and an `external` one leaves for the browser.
  */
-function Sidebar({
-  expanded,
-  onToggle,
-  ...props
-}: DrawerContentComponentProps & { expanded: boolean; onToggle?: () => void }) {
+function Shell() {
   const router = useRouter();
+  const pathname = usePathname();
+  const top = useSafeAreaInsets().top;
+  const bottom = useBottomInset();
 
   /*
     The two shortcuts that are about the app rather than about a screen live here, because
-    the nav is the one thing mounted on every route — bound in the session list they would
+    the frame is the one thing mounted on every route — bound in the session list they would
     stop working the moment you opened Settings. They are web-only, like everything in
     `lib/keys.ts`; a phone has no keyboard to press them with.
   */
@@ -101,78 +103,148 @@ function Sidebar({
   });
   const apps = visibleEmbeds(embeds.data);
 
-  // Which app the frame is currently showing, so its row is the highlighted one. The drawer
-  // has a single `embed/[id]` route, so the id has to come out of that route's params rather
-  // than from the route name the way every other item's does.
-  const route = props.state.routes[props.state.index];
-  const activeId =
-    route?.name === "embed/[id]" ? (route.params as { id?: string } | undefined)?.id : undefined;
-
-  // The rail keeps labels in the tree and only takes them out of the layout, matching what
-  // `drawerLabelStyle` does for the screens above.
-  const railed = Platform.OS === "web" && !expanded;
+  const onChats = pathname === "/" || pathname.startsWith("/chat/");
+  const onSettings = pathname === "/settings";
+  const appHref = (embed: EmbedConfig) => `/embed/${embed.id}`;
 
   return (
-    <DrawerContentScrollView
-      {...props}
-      /*
-        `DrawerContentScrollView` pads its top by the status bar's height, which the web has
-        none of: there the padding is only a gap above the fold button, so it goes. On a
-        phone the drawer is drawn edge to edge under the status bar and the padding is the
-        only thing keeping the first row out from under the clock.
-      */
-      contentContainerStyle={
-        Platform.OS === "web" ? { flexGrow: 1, paddingTop: 0 } : { flexGrow: 1 }
-      }
-    >
-      {onToggle && (
-        <View style={{ alignItems: expanded ? "flex-end" : "center", paddingHorizontal: 8 }}>
-          <Pressable
-            onPress={onToggle}
-            accessibilityRole="button"
-            accessibilityLabel={expanded ? "Collapse the sidebar" : "Expand the sidebar"}
-            style={{ alignItems: "center", height: 40, justifyContent: "center", width: 40 }}
+    /*
+      Android draws this app edge to edge — under the status bar, under the bar at the foot
+      of the display, and under the keyboard, which no longer resizes the window — so the
+      frame is padded by all three and each screen is free to simply fill what it is given.
+      Here rather than in each screen, because a screen that forgets is a screen with its
+      last button under the gesture pill.
+    */
+    <View className="flex-1 bg-background" style={{ paddingTop: top, paddingBottom: bottom }}>
+      <SidebarLayout
+        className="flex-1"
+        sidebarPosition="start"
+        sidebarWidth="auto"
+        divider="none"
+        sidebarHideBelow="md"
+        sidebar={
+          <Sidebar
+            label="min-agent"
+            header={
+              <>
+                <Brand />
+                <Button
+                  size="sm"
+                  className="w-full gap-2"
+                  disabled={newChat.isPending}
+                  onPress={() => newChat.mutate()}
+                >
+                  <Plus className="size-4" />
+                  New chat
+                </Button>
+              </>
+            }
+            content={
+              <View role="navigation" aria-label="Main">
+                <SidebarSection
+                  content={
+                    <Link href="/" asChild>
+                      <SidebarNavItem label="Chats" icon={<MessageSquare />} active={onChats} />
+                    </Link>
+                  }
+                />
+                {apps.length > 0 ? (
+                  <SidebarSection
+                    title="Apps"
+                    content={apps.map((embed) => {
+                      const Icon = EMBED_ICON[embed.icon];
+                      return embed.mode === "external" ? (
+                        <SidebarNavItem
+                          key={embed.id}
+                          label={embedTitle(embed)}
+                          icon={<Icon />}
+                          onPress={() => openExternally(embed)}
+                        />
+                      ) : (
+                        <Link key={embed.id} href={appHref(embed)} asChild>
+                          <SidebarNavItem
+                            label={embedTitle(embed)}
+                            icon={<Icon />}
+                            active={pathname === appHref(embed)}
+                          />
+                        </Link>
+                      );
+                    })}
+                  />
+                ) : null}
+              </View>
+            }
+            footer={
+              <Link href="/settings" asChild>
+                <SidebarNavItem label="Settings" icon={<Settings />} active={onSettings} />
+              </Link>
+            }
+          />
+        }
+        brand={<Brand />}
+        navLabel="Main"
+        nav={
+          <>
+            <Link href="/" asChild>
+              <BarNavItem label="Chats" icon={<MessageSquare />} active={onChats} />
+            </Link>
+            {apps.map((embed) => {
+              const Icon = EMBED_ICON[embed.icon];
+              return embed.mode === "external" ? (
+                // Always a link in the bar, so the address is its `href` on the web; the
+                // press is what a device, which has no `href`, goes by.
+                <BarNavItem
+                  key={embed.id}
+                  label={embedTitle(embed)}
+                  icon={<Icon />}
+                  href={embed.url}
+                  onPress={(event) => {
+                    event.preventDefault();
+                    openExternally(embed);
+                  }}
+                />
+              ) : (
+                <Link key={embed.id} href={appHref(embed)} asChild>
+                  <BarNavItem
+                    label={embedTitle(embed)}
+                    icon={<Icon />}
+                    active={pathname === appHref(embed)}
+                  />
+                </Link>
+              );
+            })}
+            <Link href="/settings" asChild>
+              <BarNavItem label="Settings" icon={<Settings />} active={onSettings} />
+            </Link>
+          </>
+        }
+        action={
+          <ActionButton
+            label="New chat"
+            variant="ghost"
+            size="icon-sm"
+            disabled={newChat.isPending}
+            onPress={() => newChat.mutate()}
           >
-            <Feather
-              name={expanded ? "chevrons-left" : "chevrons-right"}
-              size={18}
-              color={colors.mutedForeground}
+            <Plus className="size-4" />
+          </ActionButton>
+        }
+        content={
+          // `role="main"` is what react-native-web turns into a <main>. It does not scroll:
+          // each screen divides the height it is given between its own header and body.
+          // cubeui's panes are block boxes on the web, where `flex-1` claims nothing, so the
+          // height is asked for outright there.
+          <View role="main" className={MAIN}>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: "transparent" },
+              }}
             />
-          </Pressable>
-        </View>
-      )}
-      <DrawerItemList {...props} />
-      {apps.length > 0 && (
-        <>
-          <Separator className="my-2" />
-          {apps.map((embed) => (
-            <DrawerItem
-              key={embed.id}
-              label={embedTitle(embed)}
-              icon={({ color, size }) => <Feather name={embed.icon} color={color} size={size} />}
-              focused={embed.id === activeId}
-              labelStyle={railed ? { display: "none" } : undefined}
-              style={railed ? { paddingRight: 0 } : undefined}
-              onPress={() =>
-                embed.mode === "external"
-                  ? Linking.openURL(embed.url)
-                  : router.navigate(`/embed/${embed.id}`)
-              }
-            />
-          ))}
-        </>
-      )}
-      <View style={{ flex: 1, minHeight: 8 }} />
-      <Separator className="mb-2" />
-      <DrawerItem
-        label="Settings"
-        icon={({ color, size }) => <Feather name="settings" color={color} size={size} />}
-        focused={route?.name === "settings"}
-        labelStyle={railed ? { display: "none" } : undefined}
-        style={railed ? { paddingRight: 0 } : undefined}
-        onPress={() => router.navigate("/settings")}
+          </View>
+        }
       />
-    </DrawerContentScrollView>
+    </View>
   );
 }
 
@@ -186,20 +258,6 @@ export default function RootLayout() {
     Promise.all([loadServerUrl(), loadVoiceSettings()]).finally(() => setReady(true));
   }, []);
 
-  // On the web the nav is a sidebar, not something hidden behind a hamburger: `permanent`
-  // pins it open beside the content and drops the toggle from the header. A window with
-  // room for it gets the labels; a narrow one keeps the icons and opens out on request,
-  // which is still a nav you can see rather than one you have to remember. On a phone it
-  // stays the drawer that slides over the content, because 64px of rail is a lot of a
-  // phone.
-  const onWeb = Platform.OS === "web";
-  const wide = useWide();
-  const bottom = useBottomInset();
-  const [expanded, setExpanded] = useState(wide);
-  // A window dragged across the breakpoint gets the shape that fits it. Toggling by hand
-  // afterwards sticks until the next crossing.
-  useEffect(() => setExpanded(wide), [wide]);
-
   if (!ready) return null;
 
   return (
@@ -207,68 +265,23 @@ export default function RootLayout() {
       <ThemeProvider value={navigationTheme}>
         <QueryClientProvider client={queryClient}>
           <StatusBar style="light" />
-          <Drawer
-            drawerContent={(props) => (
-              <Sidebar
-                {...props}
-                expanded={expanded}
-                // A drawer that slides over the content is never a rail, so it has nothing
-                // to fold: the button is the web sidebar's alone.
-                onToggle={onWeb ? () => setExpanded((open) => !open) : undefined}
-              />
-            )}
-            screenOptions={{
-              /*
-                Every screen's bottom clearance, set once. Android draws this app edge to
-                edge — under the bar at the foot of the display, and under the keyboard,
-                which no longer resizes the window — so the scene is padded by both and each
-                screen is free to simply fill what it is given. On the scene rather than on
-                the frame around it, because the drawer beside it is react-navigation's and
-                insets itself; and here rather than in each screen, because a screen that
-                forgets is a screen with its last button under the gesture pill.
-              */
-              sceneStyle: { paddingBottom: bottom },
-              drawerType: onWeb ? "permanent" : "slide",
-              // A permanent drawer cannot be opened or closed, so the header's toggle is a
-              // dead control; the sidebar's own button is the one that does something.
-              headerLeft: onWeb ? () => null : undefined,
-              drawerStyle: onWeb ? { width: expanded ? SIDEBAR_WIDE : SIDEBAR_RAIL } : undefined,
-              // The rail keeps the labels in the tree for screen readers and only takes
-              // them out of the layout, so an icon is still announced by name.
-              drawerLabelStyle: onWeb && !expanded ? { display: "none" } : undefined,
-              drawerItemStyle: onWeb && !expanded ? { paddingRight: 0 } : undefined,
-            }}
-          >
-            <Drawer.Screen
-              name="index"
-              options={{ title: "Chats", drawerIcon: icon("message-square") }}
-            />
-            {/* Reached by tapping a session, so it is not a destination of its own. */}
-            <Drawer.Screen
-              name="chat/[id]"
-              options={{ title: "Chat", drawerItemStyle: { display: "none" } }}
-            />
-            {/*
-              One route behind every configured app. It is hidden for the same reason
-              `chat/[id]` is — the rows the sidebar draws for it are the destinations, and
-              they are built from the database rather than from the file tree.
-            */}
-            <Drawer.Screen
-              name="embed/[id]"
-              options={{ title: "App", drawerItemStyle: { display: "none" } }}
-            />
-            {/*
-              The agent, the MCP servers, the apps and the server address were four screens
-              here; they are tabs within this one now. It is hidden from the generated list
-              because the sidebar draws its own row for it, at the bottom.
-            */}
-            <Drawer.Screen
-              name="settings"
-              options={{ title: "Settings", drawerItemStyle: { display: "none" } }}
-            />
-          </Drawer>
+          <Shell />
         </QueryClientProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
+  );
+}
+
+/**
+ * The last thing between a thrown render and a blank page. Expo Router looks for this named
+ * export on a route file and wraps the route in it, so exporting it from the root layout
+ * covers every screen. It sits outside the providers above — the throw may well have come
+ * from inside them — so it uses nothing that needs one.
+ */
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  return (
+    <View className="flex-1 bg-background">
+      <RouteError error={error} reset={() => void retry()} details />
+    </View>
   );
 }

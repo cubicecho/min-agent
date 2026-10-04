@@ -216,12 +216,12 @@ export const mcpServerSchema = z
 export type McpServerConfig = z.infer<typeof mcpServerSchema>;
 
 /**
- * The Feather glyphs an embed may pick for its sidebar row.
+ * The icons an embed may pick for its sidebar row.
  *
- * A closed list rather than the whole icon set: the name is stored, and a name Feather does
- * not know draws nothing at all — a nav item that is a blank space. Every one of these is a
- * name `@react-native-vector-icons/feather` ships, checked by `IconName` where the sidebar
- * renders them.
+ * A closed list rather than a whole icon set: the name is stored, and a name the app has no
+ * glyph for draws nothing at all — a nav item that is a blank space. The names are Feather's,
+ * from when the app drew that set, and stay as they are because rows already hold them;
+ * `EMBED_ICON` in the mobile app maps each one to the glyph drawn today.
  */
 export const EMBED_ICONS = [
   "grid",

@@ -1,6 +1,7 @@
 import { useRouter } from "expo-router";
 import { type SettingsTab, settingsHref, settingsTabLabel } from "@/components/settings/tabs.ts";
-import { Button } from "@/components/ui.tsx";
+import { Button } from "@/components/ui/button";
+import { Settings } from "@/components/ui/icons";
 
 /**
  * The way out of a dead end.
@@ -12,24 +13,21 @@ import { Button } from "@/components/ui.tsx";
  */
 export function SettingsLink({
   tab,
-  children,
+  label,
   variant = "outline",
   size = "sm",
 }: {
   tab: SettingsTab;
-  children?: string;
+  /** What the button says. Left out, it names the panel: "Settings → Model". */
+  label?: string | undefined;
   variant?: "outline" | "ghost" | "secondary";
   size?: "sm" | "default";
 }) {
   const router = useRouter();
   return (
-    <Button
-      variant={variant}
-      size={size}
-      icon="settings"
-      onPress={() => router.navigate(settingsHref(tab))}
-    >
-      {children ?? `Settings → ${settingsTabLabel(tab)}`}
+    <Button variant={variant} size={size} onPress={() => router.navigate(settingsHref(tab))}>
+      <Settings className="size-4" />
+      {label ?? `Settings → ${settingsTabLabel(tab)}`}
     </Button>
   );
 }

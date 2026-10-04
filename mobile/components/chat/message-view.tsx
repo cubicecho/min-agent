@@ -1,25 +1,33 @@
-import { Feather } from "@react-native-vector-icons/feather";
 import type { LivePart } from "@shared/client/live.ts";
 import { messageText } from "@shared/client/transcript.ts";
 import { statsLine } from "@shared/client/usage.ts";
 import { shownCall } from "@shared/tool-proxy.ts";
 import type { HookNote, LlmConfig, StoredMessage, TurnStats } from "@shared/types.ts";
-import { memo, type ReactNode, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
-import { MarkdownBody } from "@/components/markdown.tsx";
-import { CopyButton, IconAction } from "@/components/ui.tsx";
-import { colors } from "@/lib/theme.ts";
+import { type ComponentType, memo, type ReactNode, useMemo, useState } from "react";
+import { ScrollView, Text, View } from "react-native";
+import { ActionButton } from "@/components/action-button";
+import { Cpu, Volume2, Wrench, Zap } from "@/components/app/app-icons";
+import { MarkdownBody } from "@/components/chat/markdown.tsx";
+import { DisclosureRow } from "@/components/disclosure-row";
+import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
+import { CircleAlert, Pencil, RefreshCw, Square } from "@/components/ui/icons";
 import { cn } from "@/lib/utils.ts";
 
+type Glyph = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+
+/** A bubble holds either plain words or something already drawn — markdown, for a reply. */
 function Bubble({
   from,
   aside,
-  children,
+  text,
+  content,
 }: {
   from: "user" | "assistant";
   /** Sits outside the bubble, on the side the bubble is not: the edit button on a question. */
   aside?: ReactNode;
-  children: ReactNode;
+  text?: string;
+  content?: ReactNode;
 }) {
   return (
     <View
@@ -35,17 +43,15 @@ function Bubble({
           from === "user" ? "bg-primary" : "bg-muted",
         )}
       >
-        {typeof children === "string" ? (
+        {content ?? (
           <Text
             className={cn(
               "text-sm leading-5",
               from === "user" ? "text-primary-foreground" : "text-foreground",
             )}
           >
-            {children}
+            {text}
           </Text>
-        ) : (
-          children
         )}
       </View>
     </View>
@@ -59,63 +65,53 @@ function preview(value: string, limit = 60) {
 }
 
 /**
- * A browser would use `<details>`; React Native has no equivalent, so open state is held
- * here. Everything else about the two collapsible rows is kept the same.
+ * The collapsible rows of a transcript — a tool call, thinking, what a hook added. The row is
+ * cubeui's; what is held here is whether it is open, since nothing outside a row opens it.
  */
 function Details({
-  icon,
+  icon: Icon,
   title,
   summary,
   tone,
   defaultOpen,
-  children,
+  content,
 }: {
-  icon: React.ComponentProps<typeof Feather>["name"];
+  icon: Glyph;
   title: string;
   summary?: string;
   tone?: "error" | "dashed";
   defaultOpen?: boolean;
-  children: ReactNode;
+  content: ReactNode;
 }) {
   const [open, setOpen] = useState(Boolean(defaultOpen));
 
   return (
-    <View
+    <DisclosureRow
+      open={open}
+      onOpenChange={setOpen}
+      badges={
+        <Icon
+          aria-hidden
+          className={cn(
+            "size-3.5",
+            tone === "error" ? "text-destructive" : "text-muted-foreground",
+          )}
+        />
+      }
+      title={title}
+      // Only while closed: once the row is open the whole of it is right underneath.
+      description={!open && summary ? summary : undefined}
+      content={content}
       className={cn(
-        "rounded-lg border bg-card",
-        tone === "error" ? "border-destructive/40" : "border-border",
+        "bg-card",
+        tone === "error" && "border-destructive/40",
         tone === "dashed" && "border-dashed",
       )}
-    >
-      <Pressable
-        onPress={() => setOpen((value) => !value)}
-        className="flex-row items-center gap-1.5 px-3 py-2"
-      >
-        <Feather
-          name={open ? "chevron-down" : "chevron-right"}
-          size={13}
-          color={colors.mutedForeground}
-        />
-        <Feather
-          name={icon}
-          size={13}
-          color={tone === "error" ? colors.destructive : colors.mutedForeground}
-        />
-        <Text className="font-medium text-xs text-foreground" numberOfLines={1}>
-          {title}
-        </Text>
-        {!open && summary ? (
-          <Text className="flex-1 text-xs text-muted-foreground" numberOfLines={1}>
-            {summary}
-          </Text>
-        ) : null}
-      </Pressable>
-      {open ? <View className="border-t border-border px-3 py-2">{children}</View> : null}
-    </View>
+    />
   );
 }
 
-const Mono = ({ children, tone }: { children: string; tone?: "error" }) => (
+const Mono = ({ text, tone }: { text: string; tone?: "error" }) => (
   // Long tool output would otherwise stretch the bubble past the screen.
   <ScrollView horizontal showsHorizontalScrollIndicator={false}>
     <Text
@@ -124,14 +120,14 @@ const Mono = ({ children, tone }: { children: string; tone?: "error" }) => (
         tone === "error" ? "text-destructive" : "text-muted-foreground",
       )}
     >
-      {children}
+      {text}
     </Text>
   </ScrollView>
 );
 
-const Caption = ({ children }: { children: string }) => (
-  <Text className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
-    {children}
+const Caption = ({ text }: { text: string }) => (
+  <Text className="mb-1 font-medium text-[10px] text-muted-foreground/70 uppercase tracking-wide">
+    {text}
   </Text>
 );
 
@@ -148,34 +144,38 @@ function ToolCall({
 }) {
   return (
     <Details
-      icon={isError ? "alert-circle" : "tool"}
+      icon={isError ? CircleAlert : Wrench}
       title={name}
       tone={isError ? "error" : undefined}
       summary={result === undefined ? "running…" : preview(result) || "(no output)"}
-    >
-      <Caption>arguments</Caption>
-      <Mono>{input || "{}"}</Mono>
-      {result !== undefined ? (
-        <View className="mt-3">
-          <Caption>{isError ? "error" : "result"}</Caption>
-          <Mono tone={isError ? "error" : undefined}>{result}</Mono>
-        </View>
-      ) : null}
-    </Details>
+      content={
+        <>
+          <View>
+            <Caption text="arguments" />
+            <Mono text={input || "{}"} />
+          </View>
+          {result !== undefined ? (
+            <View className="mt-1">
+              <Caption text={isError ? "error" : "result"} />
+              <Mono text={result} tone={isError ? "error" : undefined} />
+            </View>
+          ) : null}
+        </>
+      }
+    />
   );
 }
 
-function Reasoning({ children, defaultOpen }: { children: string; defaultOpen?: boolean }) {
+function Reasoning({ text, defaultOpen }: { text: string; defaultOpen?: boolean }) {
   return (
     <Details
-      icon="cpu"
+      icon={Cpu}
       title="Thinking"
       tone="dashed"
-      summary={preview(children)}
+      summary={preview(text)}
       defaultOpen={defaultOpen}
-    >
-      <Text className="text-xs text-muted-foreground">{children}</Text>
-    </Details>
+      content={<Text className="text-muted-foreground text-xs">{text}</Text>}
+    />
   );
 }
 
@@ -187,13 +187,15 @@ function Followups({ items, onPick }: { items: string[]; onPick: (text: string) 
   return (
     <View className="flex-row flex-wrap gap-1.5">
       {items.map((item) => (
-        <Pressable
+        <Button
           key={item}
+          variant="outline"
+          size="xs"
+          className="h-auto rounded-full py-1"
           onPress={() => onPick(item)}
-          className="rounded-full border border-border px-2.5 py-1 active:bg-accent"
         >
-          <Text className="text-xs text-muted-foreground">{item}</Text>
-        </Pressable>
+          {item}
+        </Button>
       ))}
     </View>
   );
@@ -215,20 +217,19 @@ const Stats = ({ stats, pricing }: { stats: TurnStats; pricing?: LlmConfig["pric
 const HookLine = ({ hook }: { hook: HookNote }) =>
   hook.text ? (
     <Details
-      icon="zap"
+      icon={Zap}
       title={`${hook.source} · added ~${hook.tokens ?? 0} tokens`}
       tone="dashed"
       summary={preview(hook.text)}
-    >
-      <Text className="text-xs text-muted-foreground">{hook.text}</Text>
-    </Details>
+      content={<Text className="text-muted-foreground text-xs">{hook.text}</Text>}
+    />
   ) : (
     <View className="flex-row items-center gap-1.5 px-1">
-      <Feather
-        name={hook.error ? "alert-circle" : "zap"}
-        size={11}
-        color={hook.error ? colors.destructive : colors.mutedForeground}
-      />
+      {hook.error ? (
+        <CircleAlert aria-hidden className="size-3 text-destructive" />
+      ) : (
+        <Zap aria-hidden className="size-3 text-muted-foreground" />
+      )}
       <Text
         className={cn(
           "flex-1 text-[11px]",
@@ -296,16 +297,18 @@ const StoredMessages = memo(function StoredMessages({
               // question would double the space a short exchange takes up.
               aside={
                 onEdit ? (
-                  <IconAction
-                    icon="edit-2"
+                  <ActionButton
+                    variant="ghost"
+                    size="icon-sm"
                     label="Edit this message"
                     onPress={() => onEdit(index)}
-                  />
+                  >
+                    <Pencil aria-hidden className="size-3.5 text-muted-foreground" />
+                  </ActionButton>
                 ) : null
               }
-            >
-              {messageText(item)}
-            </Bubble>
+              text={messageText(item)}
+            />
           );
         }
         if (item.role !== "assistant") return null;
@@ -313,12 +316,8 @@ const StoredMessages = memo(function StoredMessages({
         const body = messageText(item);
         return (
           <View key={key} className="gap-2">
-            {item.reasoning_content ? <Reasoning>{item.reasoning_content}</Reasoning> : null}
-            {body ? (
-              <Bubble from="assistant">
-                <MarkdownBody>{body}</MarkdownBody>
-              </Bubble>
-            ) : null}
+            {item.reasoning_content ? <Reasoning text={item.reasoning_content} /> : null}
+            {body ? <Bubble from="assistant" content={<MarkdownBody text={body} />} /> : null}
             {(item.tool_calls ?? []).map((call) => {
               if (call.type !== "function") return null;
               const result = results.get(call.id);
@@ -339,24 +338,34 @@ const StoredMessages = memo(function StoredMessages({
             */}
             {body || item.stats ? (
               <View className="flex-row items-center gap-1">
-                {body ? <CopyButton text={body} label="Copy reply" /> : null}
+                {body ? <CopyButton value={body} label="Copy reply" /> : null}
                 {onRetry ? (
-                  <IconAction
-                    icon="refresh-cw"
+                  <ActionButton
+                    variant="ghost"
+                    size="icon-sm"
                     label="Retry this reply"
                     onPress={() => onRetry(index)}
-                  />
+                  >
+                    <RefreshCw aria-hidden className="size-3.5 text-muted-foreground" />
+                  </ActionButton>
                 ) : null}
                 {/*
                   One button for both directions: whatever is being read is the only thing
                   that can be stopped, so pressing it again is the way to stop it.
                 */}
                 {onSpeak && body ? (
-                  <IconAction
-                    icon={speakingIndex === index ? "square" : "volume-2"}
+                  <ActionButton
+                    variant="ghost"
+                    size="icon-sm"
                     label={speakingIndex === index ? "Stop reading" : "Read this reply aloud"}
                     onPress={() => onSpeak(index, body)}
-                  />
+                  >
+                    {speakingIndex === index ? (
+                      <Square aria-hidden className="size-3.5 text-muted-foreground" />
+                    ) : (
+                      <Volume2 aria-hidden className="size-3.5 text-muted-foreground" />
+                    )}
+                  </ActionButton>
                 ) : null}
                 {item.stats ? <Stats stats={item.stats} pricing={pricing} /> : null}
               </View>
@@ -387,12 +396,8 @@ const LiveRow = memo(function LiveRow({ part }: { part: LivePart }) {
   }
   if (part.kind === "hook") return <HookLine hook={part.hook} />;
   // Thinking that is arriving right now is worth watching; stored thinking is not.
-  if (part.kind === "reasoning") return <Reasoning defaultOpen>{part.text}</Reasoning>;
-  return (
-    <Bubble from="assistant">
-      <MarkdownBody>{part.text}</MarkdownBody>
-    </Bubble>
-  );
+  if (part.kind === "reasoning") return <Reasoning defaultOpen text={part.text} />;
+  return <Bubble from="assistant" content={<MarkdownBody text={part.text} />} />;
 });
 
 /**
@@ -439,7 +444,7 @@ export function MessageView({
       {/* Dimmed: it is on screen before the server has said it has it. */}
       {pending ? (
         <View className="opacity-70">
-          <Bubble from="user">{pending}</Bubble>
+          <Bubble from="user" text={pending} />
         </View>
       ) : null}
       {live.map((part) => (
