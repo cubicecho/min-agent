@@ -15,14 +15,14 @@ import { useEffect, useState } from "react";
 import { type ColorValue, Linking, Platform, Pressable, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "../global.css";
-import { useNewChat } from "@/components/session-list.tsx";
+import { useNewChat } from "@/components/chat/session-list.tsx";
 import { Separator } from "@/components/ui.tsx";
 import { api } from "@/lib/client.ts";
 import { EMBEDS_STALE_TIME, visibleEmbeds } from "@/lib/embeds.ts";
 import { useShortcut } from "@/lib/keys.ts";
 import { useBottomInset, useWide } from "@/lib/layout.ts";
 import { loadServerUrl } from "@/lib/server-url.ts";
-import { colors } from "@/lib/theme.ts";
+import { colors, pinDarkAppearance } from "@/lib/theme.ts";
 import { loadVoiceSettings } from "@/lib/voice-settings.ts";
 
 /**
@@ -42,6 +42,9 @@ const navigationTheme = {
     primary: colors.foreground,
   },
 };
+
+// Before the first frame, so nothing is painted in the system's scheme and then repainted.
+pinDarkAppearance();
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },

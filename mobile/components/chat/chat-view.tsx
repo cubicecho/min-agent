@@ -26,9 +26,9 @@ import {
   Text,
   View,
 } from "react-native";
-import { MessageView } from "@/components/message-view.tsx";
-import { PromptPicker, useMcpPrompts } from "@/components/prompt-picker.tsx";
-import { SessionsPanel, SessionsScreen } from "@/components/session-list.tsx";
+import { MessageView } from "@/components/chat/message-view.tsx";
+import { PromptPicker, useMcpPrompts } from "@/components/chat/prompt-picker.tsx";
+import { SessionsPanel, SessionsScreen } from "@/components/chat/session-list.tsx";
 import { SettingsLink } from "@/components/settings/link.tsx";
 import {
   Button,

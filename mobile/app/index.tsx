@@ -1,4 +1,4 @@
-import { ChatsView } from "@/components/chat-view.tsx";
+import { ChatsView } from "@/components/chat/chat-view.tsx";
 
 /**
  * Wide, this is the whole chats view with nothing open yet; narrow, it is just the list.

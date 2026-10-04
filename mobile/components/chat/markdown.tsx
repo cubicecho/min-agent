@@ -1,6 +1,6 @@
 import Markdown, { type RenderRules } from "@ronradtke/react-native-markdown-display";
 import { memo } from "react";
-import { CodeBlock } from "@/components/code-block.tsx";
+import { CodeBlock } from "@/components/chat/code-block.tsx";
 import { colors } from "@/lib/theme.ts";
 
 /**

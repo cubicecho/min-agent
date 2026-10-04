@@ -6,7 +6,7 @@ import { shownCall } from "@shared/tool-proxy.ts";
 import type { HookNote, LlmConfig, StoredMessage, TurnStats } from "@shared/types.ts";
 import { memo, type ReactNode, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { MarkdownBody } from "@/components/markdown.tsx";
+import { MarkdownBody } from "@/components/chat/markdown.tsx";
 import { CopyButton, IconAction } from "@/components/ui.tsx";
 import { colors } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
