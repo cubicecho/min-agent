@@ -11,7 +11,7 @@ import {
 /**
  * The panels behind `/settings`, in the order they are shown.
  *
- * Model, Agent and Voice are three views of one settings row — see `config-form.tsx` — and
+ * Model, Agent and Voice are three forms over one settings row — see `config-form.tsx` — and
  * they lead because nothing further down has anything to show until the first of them is
  * filled in. The four after them each store their settings somewhere else.
  *

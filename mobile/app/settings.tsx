@@ -6,7 +6,6 @@ import { HeaderContentFooter } from "@/components/header-content-footer";
 import { PageHeader } from "@/components/page-header";
 import { AgentPanel } from "@/components/settings/agent-panel.tsx";
 import { AppsPanel } from "@/components/settings/apps-panel.tsx";
-import { ConfigDraftProvider } from "@/components/settings/config-form.tsx";
 import { DevicePanel } from "@/components/settings/device-panel.tsx";
 import { DirtyProvider, useDirtyPanels } from "@/components/settings/dirty.tsx";
 import { McpPanel } from "@/components/settings/mcp-panel.tsx";
@@ -41,9 +40,8 @@ import { cn } from "@/lib/utils";
  * component and its queries, not a snapshot: the cost of that is a hidden panel that polls,
  * which is why each is told whether it is the one on screen.
  *
- * Model, Agent and Voice are the exception to a panel owning its draft: they are three views
- * of one settings row, so the draft is held by `ConfigDraftProvider` here instead. See
- * `components/settings/config-form.tsx` for why it cannot be three of them.
+ * Model, Agent and Voice are three views of one settings row, and still a form each: a panel
+ * holds and saves only its own fields. See `components/settings/config-form.tsx`.
  */
 
 /** What every panel is handed: whether it is the tab currently on screen. */
@@ -166,11 +164,7 @@ export default function SettingsScreen() {
       }
       // The body is a block on the web; the panels need a column to take its height from.
       contentClassName="flex flex-col"
-      content={
-        <DirtyProvider value={report}>
-          <ConfigDraftProvider content={panels} />
-        </DirtyProvider>
-      }
+      content={<DirtyProvider value={{ dirty, report }}>{panels}</DirtyProvider>}
     />
   );
 }

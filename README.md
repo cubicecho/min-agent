@@ -1092,10 +1092,12 @@ one, because a `Modal` is drawn outside the tree it is written in.
 Nothing blocks you from leaving a draft behind. `components/settings/dirty.tsx` is how the tab
 row finds out: a panel reports whether it is holding something unsaved, and the tab gets a dot
 (drawn inside the `TabsTrigger` — a muted dot for unsaved, a red one for the MCP servers that
-stopped answering, which outranks it). The Agent panel is three cards long, so its Save is pinned under
-the form instead of at the end of it, and shows up only when there is a change to keep or a
-save to confirm — with a Revert beside it, now that a draft can outlive the tab it was typed
-in. Dirty is measured against the stored row rather than set by a keystroke, so putting a value
+stopped answering, which outranks it). Model, Agent and Voice are a form each, though
+they edit one Postgres row: a panel holds only its own fields and its Save writes only those, so
+keeping a system prompt cannot put the voice settings back to what they were when that panel
+loaded. A panel is cards long, so its Save is pinned under the form instead of at the end of it,
+and shows up only when there is a change to keep or a save to confirm — with a Revert beside it,
+now that a draft can outlive the tab it was typed in. Dirty is measured against the stored row rather than set by a keystroke, so putting a value
 back the way it was is not a change.
 
 The tab table is `mobile/components/settings/tabs.ts`, and `SettingsLink` reads it too. Every

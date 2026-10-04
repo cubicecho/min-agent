@@ -12,13 +12,18 @@ import type { SettingsTab } from "./tabs.ts";
 
 type Report = (tab: SettingsTab, dirty: boolean) => void;
 
-const DirtyContext = createContext<Report>(() => {});
+type Dirty = Partial<Record<SettingsTab, boolean>>;
+
+const DirtyContext = createContext<{ dirty: Dirty; report: Report }>({
+  dirty: {},
+  report: () => {},
+});
 
 export const DirtyProvider = DirtyContext.Provider;
 
 /** Held by the settings shell, which owns the map the tab row reads. */
 export function useDirtyPanels() {
-  const [dirty, setDirty] = useState<Partial<Record<SettingsTab, boolean>>>({});
+  const [dirty, setDirty] = useState<Dirty>({});
   // Identity matters: it is a dependency of the effect below, and a new function every render
   // would report on every render.
   const report = useCallback<Report>((tab, value) => {
@@ -31,8 +36,14 @@ export function useDirtyPanels() {
 
 /** Called by a panel with its own answer to "is there anything unsaved in here". */
 export function useReportDirty(tab: SettingsTab, dirty: boolean) {
-  const report = useContext(DirtyContext);
+  const { report } = useContext(DirtyContext);
   useEffect(() => report(tab, dirty), [report, tab, dirty]);
   // A panel that goes away takes its dot with it, however it left.
   useEffect(() => () => report(tab, false), [report, tab]);
+}
+
+/** Whether any of these panels is holding a change — for something that reads what they store. */
+export function useAnyDirty(tabs: readonly SettingsTab[]) {
+  const { dirty } = useContext(DirtyContext);
+  return tabs.some((tab) => dirty[tab]);
 }

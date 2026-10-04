@@ -22,7 +22,15 @@ export function VoicePanel() {
   return (
     <ConfigForm
       tab="voice"
-      content={({ form, draft }) => (
+      fields={({ voiceBaseUrl, sttModel, ttsModel, ttsVoice, speakReplies }) => ({
+        voiceBaseUrl,
+        sttModel,
+        ttsModel,
+        ttsVoice,
+        speakReplies,
+      })}
+      // The chat endpoint is the Model panel's field, so what is quoted here is the saved one.
+      content={({ form, draft, view }) => (
         <>
           <CardLayout
             title="Where the audio runs"
@@ -32,8 +40,8 @@ export function VoicePanel() {
                 {() => (
                   <TextField
                     label="Audio base URL"
-                    description={`Where the transcription and speech endpoints are, when that is not where the chat model is — a local Ollama serves no audio. Blank uses ${voiceBaseUrlFor(draft) || "the endpoint under Model"}. The same API key is sent either way.`}
-                    placeholder={draft.baseUrl || "https://api.openai.com/v1"}
+                    description={`Where the transcription and speech endpoints are, when that is not where the chat model is — a local Ollama serves no audio. Blank uses ${voiceBaseUrlFor({ ...view, ...draft }) || "the endpoint under Model"}. The same API key is sent either way.`}
+                    placeholder={view.baseUrl || "https://api.openai.com/v1"}
                     inputMode="url"
                   />
                 )}

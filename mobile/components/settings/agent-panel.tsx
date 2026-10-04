@@ -9,6 +9,7 @@ import { Check, Copy } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
 import { useCopy } from "@/lib/copy.ts";
 import { ConfigForm } from "./config-form.tsx";
+import { useAnyDirty } from "./dirty.tsx";
 
 /**
  * The reasoning menu, in the order `REASONING_EFFORTS` gives it.
@@ -38,6 +39,9 @@ const DISCOVERY_OPTIONS = [
   { label: "Eager — send every definition every time", value: "eager" },
 ];
 
+/** The panels whose settings the spec is built from: an unsaved change on any of them is not in it. */
+const SPEC_TABS = ["model", "agent", "voice"] as const;
+
 /**
  * Copies the saved settings out as an agent spec.
  *
@@ -46,15 +50,15 @@ const DISCOVERY_OPTIONS = [
  * taken a minute after the panel loaded should not be a minute old. For the same reason the
  * button is off while anything is unsaved — what would be copied is the row, not the form, and
  * a button that quietly copied the settings from before your edits would be the wrong one to
- * trust.
+ * trust. Any of the three panels counts, since the spec covers all of them.
  *
  * Fetching first means the write is no longer inside the press by the time it happens, and a
  * browser that only lends the clipboard to a gesture refuses it. That is said as an error: the
  * other copy buttons can stay quiet about a refusal because they have nothing to wait for.
- * @param props.dirty Something on Model, Agent or Voice is unsaved; the three share one row.
  * @returns The button, its hint, and the error if the fetch or the copy failed.
  */
-function CopySpec({ dirty }: { dirty: boolean }) {
+function CopySpec() {
+  const dirty = useAnyDirty(SPEC_TABS);
   const { copied, copy } = useCopy();
   const fetched = useMutation({
     mutationFn: async () => {
@@ -106,7 +110,24 @@ export function AgentPanel() {
   return (
     <ConfigForm
       tab="agent"
-      content={({ form, dirty }) => (
+      fields={({
+        maxTokens,
+        temperature,
+        maxToolIterations,
+        contextLimit,
+        toolDiscovery,
+        reasoningEffort,
+        systemPrompt,
+      }) => ({
+        maxTokens,
+        temperature,
+        maxToolIterations,
+        contextLimit,
+        toolDiscovery,
+        reasoningEffort,
+        systemPrompt,
+      })}
+      content={({ form }) => (
         <>
           <CardLayout
             title="Limits"
@@ -196,7 +217,7 @@ export function AgentPanel() {
           <CardLayout
             title="Agent spec"
             description="These settings as one JSON document, in the format other apps built on agent-core read. It covers Model and Voice as well as this panel."
-            content={<CopySpec dirty={dirty} />}
+            content={<CopySpec />}
           />
         </>
       )}
