@@ -1,11 +1,11 @@
 import { voiceBaseUrlFor } from "@shared/types.ts";
 import { View } from "react-native";
-import { CardLayout } from "@/components/card-layout";
 import { SettingRow } from "@/components/setting-row";
 import { FieldRow } from "@/components/ui/form";
 import { ConfigForm } from "./config-form.tsx";
 import { TextField } from "./fields.tsx";
 import { SettingsLink } from "./link.tsx";
+import { SettingsCard } from "./settings-card.tsx";
 
 /**
  * Speaking and listening: which models do it, and where they are.
@@ -32,7 +32,7 @@ export function VoicePanel() {
       // The chat endpoint is the Model panel's field, so what is quoted here is the saved one.
       content={({ form, draft, view }) => (
         <>
-          <CardLayout
+          <SettingsCard
             title="Where the audio runs"
             description="Leave both models blank and voice runs on whatever the device already has: a browser and an Android build both read replies aloud and take dictation with the recogniser they ship with. Naming a model moves that work to the server, which is the only way the desktop build gets a microphone button of its own. A tcp://host:port in place of a model name is a Wyoming server — the voice services Home Assistant speaks to — and the audio base URL and API key are not used for it."
             content={
@@ -49,9 +49,8 @@ export function VoicePanel() {
             }
           />
 
-          <CardLayout
+          <SettingsCard
             title="Models"
-            contentClassName="flex flex-col gap-4"
             content={
               <>
                 <FieldRow>
@@ -88,9 +87,8 @@ export function VoicePanel() {
             }
           />
 
-          <CardLayout
+          <SettingsCard
             title="Playback"
-            contentClassName="flex flex-col gap-4"
             content={
               <>
                 <form.AppField name="speakReplies">

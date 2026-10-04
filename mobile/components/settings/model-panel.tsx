@@ -2,7 +2,6 @@ import { MODEL_TASKS } from "@shared/model-tasks.ts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Text, View } from "react-native";
-import { CardLayout } from "@/components/card-layout";
 import { QueryError } from "@/components/query-state";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +11,7 @@ import { Check } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
 import { ConfigForm, type ConfigSlice, type Draft } from "./config-form.tsx";
 import { OptionalSelectField, TextField } from "./fields.tsx";
+import { SettingsCard } from "./settings-card.tsx";
 
 type ModelDraft = Pick<Draft, "baseUrl" | "apiKey" | "model" | "taskModels" | "pricing">;
 
@@ -131,10 +131,9 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
 
   return (
     <>
-      <CardLayout
+      <SettingsCard
         title="Endpoint"
         description="An OpenAI-compatible server. The model list below is fetched by the agent from this address, so it has to be stored before there is anything to pick from — which is what the button does. Settings are stored in Postgres."
-        contentClassName="flex flex-col gap-4"
         content={
           <>
             <form.AppField name="baseUrl">
@@ -192,9 +191,8 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
         }
       />
 
-      <CardLayout
+      <SettingsCard
         title="Models"
-        contentClassName="flex flex-col gap-4"
         content={
           <>
             <form.AppField name="model">
@@ -231,7 +229,6 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
               level={4}
               title="Task models"
               description="Side jobs that need not run on the chat model. Each is short and frequent, so a small fast model usually serves them better."
-              contentClassName="flex flex-col gap-4"
               content={MODEL_TASKS.map((task) => (
                 <form.AppField key={task.key} name={`taskModels.${task.key}`}>
                   {() => (
@@ -250,7 +247,7 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
         }
       />
 
-      <CardLayout
+      <SettingsCard
         title="Pricing"
         description="Only used to turn the token counts into a cost. Leave both at 0 — the default for a local model — and min-agent shows tokens alone."
         content={

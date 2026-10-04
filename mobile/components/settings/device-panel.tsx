@@ -3,7 +3,6 @@ import * as Updates from "expo-updates";
 import { useState } from "react";
 import { Platform, Text } from "react-native";
 import { useAppForm } from "@/components/app/app-form";
-import { CardLayout } from "@/components/card-layout";
 import { DescriptionList, PropertyRow } from "@/components/description-list";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -13,6 +12,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { setVoiceSettings, useVoiceSettings } from "@/lib/voice-settings.ts";
 import { useReportDirty } from "./dirty.tsx";
 import { PanelBody } from "./panel-body.tsx";
+import { SettingsCard } from "./settings-card.tsx";
 
 /**
  * The settings that belong to this install rather than to the agent.
@@ -81,7 +81,7 @@ function Dictation() {
 
   return (
     <form.AppForm>
-      <CardLayout
+      <SettingsCard
         title="Dictation"
         description="What the microphone button does when it finishes. Stored on this device, not on the server, so each phone and tablet answers for itself."
         content={
@@ -145,7 +145,7 @@ export function DevicePanel() {
         <>
           <Dictation />
 
-          <CardLayout
+          <SettingsCard
             title="Updates"
             description="This app installs its JavaScript over the air: a change that does not touch the native side is published as an update and picked up on the next launch. This is how to pick one up without waiting for that."
             contentClassName="flex flex-col gap-3"

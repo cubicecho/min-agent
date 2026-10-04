@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
-import { HeaderContentFooter } from "@/components/header-content-footer";
+import { TITLE_ROW } from "@/components/app/title-row";
+import { HeaderContentFooter, PROSE_COLUMN } from "@/components/header-content-footer";
 import { PageHeader } from "@/components/page-header";
 import { AgentPanel } from "@/components/settings/agent-panel.tsx";
 import { AppsPanel } from "@/components/settings/apps-panel.tsx";
@@ -129,10 +130,13 @@ export default function SettingsScreen() {
   return (
     <HeaderContentFooter
       className="h-full flex-1 bg-background"
+      // The rule runs the width of the screen; the title and the tabs sit in the panels' column,
+      // so the first tab is over the first card rather than out at the edge of the window.
+      headerClassName="border-border border-b"
       header={
         <PageHeader
           title="Settings"
-          className="border-border border-b"
+          className={cn(PROSE_COLUMN, TITLE_ROW)}
           content={
             <Tabs value={active} onValueChange={open}>
               {/* Sideways rather than wrapped or shrunk: the set is short and a phone is

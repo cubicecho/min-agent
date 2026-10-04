@@ -2,7 +2,6 @@ import { useStore } from "@tanstack/react-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAppForm } from "@/components/app/app-form";
-import { CardLayout } from "@/components/card-layout";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
@@ -18,6 +17,7 @@ import {
 import { useReportDirty } from "./dirty.tsx";
 import { TextField } from "./fields.tsx";
 import { PanelBody } from "./panel-body.tsx";
+import { SettingsCard } from "./settings-card.tsx";
 
 type Probe = { ok: boolean; detail: string } | null;
 
@@ -77,7 +77,7 @@ export function ServerPanel() {
       content={
         <>
           <form.AppForm>
-            <CardLayout
+            <SettingsCard
               title="Server"
               description="The address of the min-agent server, including its port. Saving checks the connection before it is used."
               content={
@@ -125,7 +125,7 @@ export function ServerPanel() {
             />
           </form.AppForm>
 
-          <CardLayout
+          <SettingsCard
             title="About"
             description="This build talks to the same server as the browser build, and is the same code: the types, the API client and the formatting are shared. There is no authentication — keep the server on a trusted network."
           />

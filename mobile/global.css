@@ -13,3 +13,14 @@ html,
 body {
   background-color: var(--background);
 }
+
+/*
+ * One more line of preflight than the token sheet carries. A cubeui `.web.tsx` half that renders
+ * a radix part renders a raw `<h2>` or `<p>` — a dialog's title and description — and the
+ * user-agent sheet gives each a margin: 15px over and under the title, 14px over and under the
+ * description, so a dialog opened on a 35px hole between the two. `:where()`, so any utility
+ * still wins (cubicecho/cubeui#250).
+ */
+:where(h1, h2, h3, h4, h5, h6, p) {
+  margin: 0;
+}
