@@ -80,7 +80,7 @@ export function ServerPanel() {
             <SettingsCard
               title="Server"
               description="The address of the min-agent server, including its port. Saving checks the connection before it is used."
-              content={
+              contentSlot={
                 <Form className="gap-4">
                   <form.AppField name="url">
                     {() => (
@@ -103,7 +103,7 @@ export function ServerPanel() {
                   ) : null}
                 </Form>
               }
-              footerActions={
+              footerActionsSlot={
                 <>
                   {/* Nothing to reset to on a build that was given no address; the button would
                       only ever clear the box, which is not what "Reset" says. */}
@@ -111,12 +111,11 @@ export function ServerPanel() {
                     <Button
                       variant="outline"
                       onPress={() => form.setFieldValue("url", defaultServerUrl())}
-                    >
-                      Reset
-                    </Button>
+                      content="Reset"
+                    />
                   ) : null}
                   <form.SubmitButton
-                    icon={<Check className="size-4" />}
+                    iconSlot={<Check className="size-4" />}
                     createLabel="Save and test"
                     savingLabel="Testing…"
                   />

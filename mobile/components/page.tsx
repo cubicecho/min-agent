@@ -1,4 +1,4 @@
-import { Children, type ReactNode } from "react";
+import { Children, Fragment, isValidElement, type ReactElement, type ReactNode } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { PageHeader, type PageHeaderProps } from "@/components/page-header";
 import {
@@ -9,11 +9,12 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import type { IconComponent } from "@/components/ui/icons-base";
-import { cn } from "@/lib/utils";
+import { cn, type SlotNode } from "@/lib/utils";
 
 type PageProps = {
   className?: string;
-  children: ReactNode;
+  /** The screen's body: the header, the grid, the rows, in the order they are drawn. */
+  contentSlot: SlotNode;
   /**
    * Full-height flex column (`h-full min-h-0`) instead of the default `flex-1`.
    * For a view whose body scrolls internally rather than as a whole.
@@ -25,17 +26,17 @@ type PageProps = {
   width?: "narrow";
 };
 
-export function Page({ className, children, fill = false, scroll = true, width }: PageProps) {
+export function Page({ className, contentSlot, fill = false, scroll = true, width }: PageProps) {
   const content = cn("container mx-auto px-4 py-6", width === "narrow" && "max-w-2xl", className);
   const outer = fill ? "h-full min-h-0" : "flex-1";
 
   if (!scroll) {
-    return <View className={cn(outer, "flex-col", content)}>{children}</View>;
+    return <View className={cn(outer, "flex-col", content)}>{contentSlot}</View>;
   }
 
   return (
     <ScrollView className={outer} contentContainerClassName={content}>
-      {children}
+      {contentSlot}
     </ScrollView>
   );
 }
@@ -44,7 +45,7 @@ export function Page({ className, children, fill = false, scroll = true, width }
  * The title row at the top of a page. There is one `PageHeader` in this set, and it lives in
  * `page-header`; it is re-exported here so a screen importing it from its page shell keeps
  * working. It took over from the small one this file used to carry, whose props were renamed on
- * the way: `subtitle` is `description`, `actions` is `action`, the heading is an `h1` unless
+ * the way: `subtitle` is `description`, `actions` is `actionSlot`, the heading is an `h1` unless
  * `level` says otherwise, and the `mb-4` under it is gone — space it with the page's own gap.
  */
 export { PageHeader, type PageHeaderProps };
@@ -53,29 +54,51 @@ export { PageHeader, type PageHeaderProps };
  * The responsive card grid shared by list pages.
  *
  * `grid` has no native equivalent, so the columns come from flex wrapping plus
- * a percentage width on each cell. Each child is wrapped here rather than at the
+ * a percentage width on each cell. Each card is wrapped here rather than at the
  * call sites: the width has to sit on the cell, and a `Card` that carried it
  * would then only be layout-correct inside a grid.
+ *
+ * The cards are `contentSlot`, as an array or a fragment. Both are opened, so a
+ * fragment of three cards is three cells and not one.
  */
-export function CardGrid({ className, children }: { className?: string; children: ReactNode }) {
+export function CardGrid({
+  className,
+  contentSlot,
+}: {
+  className?: string;
+  contentSlot: SlotNode;
+}) {
   return (
     <View className={cn("flex-row flex-wrap gap-4", className)}>
-      {Children.map(children, (child) =>
-        child == null || child === false ? null : (
-          // The basis is a fraction of the row minus its share of the `gap-4`
-          // above, which flex-basis percentages do not account for.
-          <View className="w-full sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.667rem)] xl:w-[calc(25%-0.75rem)]">
-            {child}
-          </View>
-        ),
-      )}
+      {cells(contentSlot).map(({ key, cell }) => (
+        // The basis is a fraction of the row minus its share of the `gap-4`
+        // above, which flex-basis percentages do not account for.
+        <View
+          key={key}
+          className="w-full sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.667rem)] xl:w-[calc(25%-0.75rem)]"
+        >
+          {cell}
+        </View>
+      ))}
     </View>
   );
 }
 
+/**
+ * A slot's elements, one per cell: arrays and fragments opened, the nothing values dropped. A
+ * card's key is prefixed with its fragment's, since two opened fragments number their cards alike.
+ */
+function cells(slot: SlotNode, prefix = ""): { key: string; cell: ReactElement }[] {
+  return Children.toArray(slot).flatMap((child) => {
+    if (!isValidElement<{ children?: SlotNode }>(child)) return [];
+    const key = `${prefix}${child.key}`;
+    return child.type === Fragment ? cells(child.props.children, key) : [{ key, cell: child }];
+  });
+}
+
 type EmptyStateProps = {
   title: string;
-  action?: ReactNode;
+  actionSlot?: SlotNode;
   /** The root. Mostly for an inset: `px-2` lines the `compact` line up with a sidebar's rows. */
   className?: string | undefined;
 } & (
@@ -86,7 +109,8 @@ type EmptyStateProps = {
        * for a whole list or page. On, it keeps the left edge of what it sits in, draws no icon
        * bubble and no padding past a `py-2`, and takes no `description` and no `level`: a line
        * inside a region that already has its heading is never what a screen reader lands on. The
-       * same word, for the same place, as `QueryState`'s `compact` — whose `empty` it usually is.
+       * same word, for the same place, as `QueryState`'s `compact` — whose `emptySlot` it usually
+       * is.
        */
       compact?: false | undefined;
       icon: IconComponent;
@@ -129,7 +153,7 @@ export function EmptyState({
   icon: Icon,
   title,
   description,
-  action,
+  actionSlot,
   level,
   compact,
   className,
@@ -139,9 +163,9 @@ export function EmptyState({
       <View
         className={cn("w-full flex-row flex-wrap items-center gap-x-2 gap-y-1 py-2", className)}
       >
-        {Icon ? <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden /> : null}
-        <Text className="shrink text-sm text-muted-foreground">{title}</Text>
-        {action}
+        {Icon ? <Icon className="h-4 w-4 shrink-0 text-foreground/60" aria-hidden /> : null}
+        <Text className="shrink text-sm text-foreground/60">{title}</Text>
+        {actionSlot}
       </View>
     );
   }
@@ -160,7 +184,7 @@ export function EmptyState({
         )}
         {description ? <EmptyDescription>{description}</EmptyDescription> : null}
       </EmptyHeader>
-      {action}
+      {actionSlot}
     </Empty>
   );
 }

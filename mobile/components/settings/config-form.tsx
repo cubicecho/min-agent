@@ -1,7 +1,7 @@
 import type { LlmConfigView, ReasoningEffort } from "@shared/types.ts";
 import { useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { useAppForm } from "@/components/app/app-form";
 import { Save } from "@/components/app/app-icons";
@@ -10,6 +10,7 @@ import { QueryState } from "@/components/query-state";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/client.ts";
+import type { SlotNode } from "@/lib/utils.ts";
 import { useReportDirty } from "./dirty.tsx";
 import type { SettingsTab } from "./tabs.ts";
 
@@ -111,7 +112,7 @@ type ConfigFormProps<T extends Partial<Draft>> = {
   tidy?: ((draft: T) => unknown) | undefined;
   /** Called with the row as it was written, after a save. */
   onSaved?: (() => void) | undefined;
-  content: (slice: ConfigSlice<T>) => ReactNode;
+  content: (slice: ConfigSlice<T>) => SlotNode;
 };
 
 /**
@@ -129,7 +130,7 @@ export function ConfigForm<T extends Partial<Draft>>(props: ConfigFormProps<T>) 
       width="prose"
       className="flex-1"
       contentClassName="py-4"
-      content={<QueryState query={config} what="the settings" count={1} />}
+      contentSlot={<QueryState query={config} what="the settings" count={1} />}
     />
   );
 }
@@ -203,13 +204,12 @@ function Loaded<T extends Partial<Draft>>({
                     save.reset();
                     form.reset();
                   }}
-                >
-                  Revert
-                </Button>
+                  content="Revert"
+                />
                 <form.SubmitButton
                   createLabel="Save"
                   savingLabel="Saving…"
-                  icon={<Save className="size-4" />}
+                  iconSlot={<Save className="size-4" />}
                 />
               </>
             ) : null}
@@ -224,8 +224,8 @@ function Loaded<T extends Partial<Draft>>({
       className="flex-1"
       // The body is a block on the web, where a slot wraps a caller's nodes; the cards want a column.
       contentClassName="flex flex-col gap-4 py-4"
-      content={content({ form, draft, view, dirty })}
-      footer={bar}
+      contentSlot={content({ form, draft, view, dirty })}
+      footerSlot={bar}
     />
   );
 }

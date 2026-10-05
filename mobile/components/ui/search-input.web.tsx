@@ -4,13 +4,15 @@ import { Search, X } from "@/components/ui/icons";
 import { Input, type InputHandle, type InputProps } from "@/components/ui/input";
 import {
   SEARCH_CLEAR_LABEL,
+  SEARCH_DEBOUNCE_MS,
   SEARCH_INPUT_CLASS,
   type SearchInputOwnProps,
   searchInputName,
+  useSettledText,
 } from "@/components/ui/search-input-base";
 import { cn } from "@/lib/utils";
 
-export type SearchInputProps = Omit<InputProps, "type" | "leading" | "trailing"> &
+export type SearchInputProps = Omit<InputProps, "type" | "leadingSlot" | "trailingSlot"> &
   SearchInputOwnProps;
 
 export function SearchInput({
@@ -20,6 +22,9 @@ export function SearchInput({
   value,
   defaultValue,
   onChangeText,
+  onSettledText,
+  debounce = SEARCH_DEBOUNCE_MS,
+  onSubmitEditing,
   disabled,
   id,
   className,
@@ -43,6 +48,17 @@ export function SearchInput({
     [ref],
   );
 
+  const settled = useSettledText(onSettledText, debounce);
+
+  // Enter asks now. Left as the caller's own when nothing is settling: `Input` holds Enter back
+  // from the browser once it has a handler, and a form that submits on it has to keep the key.
+  const submit = onSettledText
+    ? () => {
+        settled.now(element.current?.value ?? "");
+        onSubmitEditing?.();
+      }
+    : onSubmitEditing;
+
   const clear = () => {
     const box = element.current;
     if (!box) return;
@@ -64,21 +80,25 @@ export function SearchInput({
       onChangeText={(text) => {
         setTyped(text !== "");
         onChangeText?.(text);
+        // An emptied box is not someone part-way through a word, so there is nothing to wait for.
+        if (text === "") settled.now(text);
+        else settled.later(text);
       }}
+      onSubmitEditing={submit}
       disabled={disabled}
       id={id}
       aria-label={searchInputName({ label, ariaLabel, ariaLabelledBy, id })}
       aria-labelledby={ariaLabelledBy}
       className={cn(SEARCH_INPUT_CLASS, className)}
-      leading={<Search />}
-      trailing={
+      leadingSlot={<Search />}
+      trailingSlot={
         clearable && filled && !disabled ? (
           <button
             type="button"
             data-slot="search-input-clear"
             aria-label={clearLabel}
             onClick={clear}
-            className={buttonVariants({ variant: "ghost", size: "icon-xs" })}
+            className={buttonVariants({ variant: "secondary", size: "icon-xs" })}
           >
             <X />
           </button>

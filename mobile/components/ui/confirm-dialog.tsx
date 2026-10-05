@@ -156,12 +156,13 @@ function ConfirmDialogBody({
         </View>
       ) : null}
       <DialogFooter>
-        <Button variant="outline" onPress={onCancel}>
-          {cancelLabel}
-        </Button>
-        <Button variant="destructive" disabled={locked} onPress={onConfirm}>
-          {confirmLabel}
-        </Button>
+        <Button variant="outline" onPress={onCancel} content={cancelLabel} />
+        <Button
+          variant="destructive"
+          disabled={locked}
+          onPress={onConfirm}
+          content={confirmLabel}
+        />
       </DialogFooter>
     </>
   );

@@ -13,7 +13,7 @@ import { DisclosureRow } from "@/components/disclosure-row";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { CircleAlert, Pencil, RefreshCw, Square } from "@/components/ui/icons";
-import { cn } from "@/lib/utils.ts";
+import { cn, type SlotNode } from "@/lib/utils.ts";
 
 type Glyph = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
 
@@ -82,7 +82,7 @@ function Details({
   summary?: string;
   tone?: "error" | "dashed";
   defaultOpen?: boolean;
-  content: ReactNode;
+  content: SlotNode;
 }) {
   const [open, setOpen] = useState(Boolean(defaultOpen));
 
@@ -90,7 +90,7 @@ function Details({
     <DisclosureRow
       open={open}
       onOpenChange={setOpen}
-      badges={
+      badgesSlot={
         <Icon
           aria-hidden
           className={cn(
@@ -102,7 +102,7 @@ function Details({
       title={title}
       // Only while closed: once the row is open the whole of it is right underneath.
       description={!open && summary ? summary : undefined}
-      content={content}
+      contentSlot={content}
       className={cn(
         "bg-card",
         tone === "error" && "border-destructive/40",
@@ -194,9 +194,8 @@ function Followups({ items, onPick }: { items: string[]; onPick: (text: string) 
           size="xs"
           className="h-auto rounded-full py-1"
           onPress={() => onPick(item)}
-        >
-          {item}
-        </Button>
+          content={item}
+        />
       ))}
     </View>
   );
@@ -303,9 +302,8 @@ const StoredMessages = memo(function StoredMessages({
                     size="icon-sm"
                     label="Edit this message"
                     onPress={() => onEdit(index)}
-                  >
-                    <Pencil aria-hidden className="size-3.5 text-muted-foreground" />
-                  </ActionButton>
+                    iconSlot={<Pencil aria-hidden className="size-3.5 text-muted-foreground" />}
+                  />
                 ) : null
               }
               text={messageText(item)}
@@ -354,9 +352,8 @@ const StoredMessages = memo(function StoredMessages({
                     size="icon-sm"
                     label="Retry this reply"
                     onPress={() => onRetry(index)}
-                  >
-                    <RefreshCw aria-hidden className="size-3.5 text-muted-foreground" />
-                  </ActionButton>
+                    iconSlot={<RefreshCw aria-hidden className="size-3.5 text-muted-foreground" />}
+                  />
                 ) : null}
                 {/*
                   One button for both directions: whatever is being read is the only thing
@@ -368,13 +365,14 @@ const StoredMessages = memo(function StoredMessages({
                     size="icon-sm"
                     label={speakingIndex === index ? "Stop reading" : "Read this reply aloud"}
                     onPress={() => onSpeak(index, body)}
-                  >
-                    {speakingIndex === index ? (
-                      <Square aria-hidden className="size-3.5 text-muted-foreground" />
-                    ) : (
-                      <Volume2 aria-hidden className="size-3.5 text-muted-foreground" />
-                    )}
-                  </ActionButton>
+                    iconSlot={
+                      speakingIndex === index ? (
+                        <Square aria-hidden className="size-3.5 text-muted-foreground" />
+                      ) : (
+                        <Volume2 aria-hidden className="size-3.5 text-muted-foreground" />
+                      )
+                    }
+                  />
                 ) : null}
                 {item.stats ? <Stats stats={item.stats} pricing={pricing} /> : null}
               </View>

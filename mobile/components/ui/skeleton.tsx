@@ -5,7 +5,7 @@ import { PULSE_DURATION, PULSE_LOW, skeletonClass } from "@/components/ui/skelet
 import { cn } from "@/lib/utils";
 
 type SkeletonProps = Omit<React.ComponentProps<typeof View>, "className"> & {
-  /** Its size, and anything else about its box: `h-4 w-1/3`. Rounded and `bg-accent` already. */
+  /** Its size, and anything else about its box: `h-4 w-1/3`. Rounded and `bg-hover` already. */
   className?: string | undefined;
 };
 

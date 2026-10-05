@@ -4,7 +4,7 @@ export type SpinnerProps = {
    * loading when the screen has more than one thing that could be.
    */
   label?: string | undefined;
-  /** Size and colour: `size-6`, `text-muted-foreground`. The default is `size-4`. */
+  /** Size and colour: `size-6`, `text-foreground/60`. The default is `size-4`. */
   className?: string | undefined;
 };
 

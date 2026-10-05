@@ -32,7 +32,7 @@ export function TextField({ label, description, required, ...props }: TextFieldP
       label={label}
       description={description}
       required={required}
-      control={
+      controlSlot={
         <Input
           {...props}
           value={field.state.value ?? ""}
@@ -56,7 +56,7 @@ export function LongTextField({ label, description, ...props }: LongTextFieldPro
     <FieldWrapper
       label={label}
       description={description}
-      control={
+      controlSlot={
         <Textarea
           {...props}
           value={field.state.value ?? ""}
@@ -78,6 +78,9 @@ type OptionalSelectFieldProps = {
   emptyLabel: string;
   options: readonly SelectEntry[];
   disabled?: boolean | undefined;
+  /** A search box over the list, for one too long to scroll. */
+  searchable?: boolean | undefined;
+  searchPlaceholder?: string | undefined;
 };
 
 /**
@@ -90,16 +93,20 @@ export function OptionalSelectField({
   emptyLabel,
   options,
   disabled,
+  searchable,
+  searchPlaceholder,
 }: OptionalSelectFieldProps) {
   const field = useFieldContext<string | undefined>();
   return (
     <FieldWrapper
       label={label}
       description={description}
-      control={
+      controlSlot={
         <OptionSelect
           aria-label={label}
           disabled={disabled}
+          searchable={searchable}
+          searchPlaceholder={searchPlaceholder}
           options={[{ label: emptyLabel, value: UNSET }, ...options]}
           value={field.state.value || UNSET}
           onValueChange={(next) => {

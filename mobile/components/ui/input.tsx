@@ -30,6 +30,8 @@ function Input({
   onKeyPress,
   onEscape,
   placeholder,
+  autoCapitalize,
+  autoCorrect,
   maxLength,
   disabled,
   readOnly,
@@ -39,8 +41,8 @@ function Input({
   "aria-labelledby": ariaLabelledBy,
   "aria-describedby": ariaDescribedBy,
   "aria-invalid": ariaInvalid,
-  leading,
-  trailing,
+  leadingSlot,
+  trailingSlot,
   wrapperClassName,
   ref,
 }: InputProps) {
@@ -62,6 +64,8 @@ function Input({
         if (event.nativeEvent.key === "Escape") onEscape?.();
       }}
       placeholder={placeholder}
+      autoCapitalize={autoCapitalize}
+      autoCorrect={autoCorrect}
       maxLength={maxLength}
       editable={!disabled && !readOnly}
       autoFocus={autoFocus}
@@ -83,22 +87,22 @@ function Input({
       role={type === "search" ? "searchbox" : undefined}
       className={cn(
         INPUT_CLASS,
-        leading != null && INPUT_LEADING_PAD_CLASS,
-        trailing != null && INPUT_TRAILING_PAD_CLASS,
+        leadingSlot != null && INPUT_LEADING_PAD_CLASS,
+        trailingSlot != null && INPUT_TRAILING_PAD_CLASS,
         disabled && "opacity-50",
         className,
       )}
     />
   );
 
-  if (leading == null && trailing == null) return field;
+  if (leadingSlot == null && trailingSlot == null) return field;
 
   return (
     <View className={cn(INPUT_WRAPPER_CLASS, wrapperClassName)}>
       {field}
       <IconClassContext.Provider value={INPUT_SLOT_ICON_CLASS}>
-        {leading != null ? <View className={INPUT_LEADING_CLASS}>{leading}</View> : null}
-        {trailing != null ? <View className={INPUT_TRAILING_CLASS}>{trailing}</View> : null}
+        {leadingSlot != null ? <View className={INPUT_LEADING_CLASS}>{leadingSlot}</View> : null}
+        {trailingSlot != null ? <View className={INPUT_TRAILING_CLASS}>{trailingSlot}</View> : null}
       </IconClassContext.Provider>
     </View>
   );

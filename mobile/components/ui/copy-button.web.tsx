@@ -24,7 +24,7 @@ async function write(text: string) {
 export function CopyButton({
   value,
   label = "Copy",
-  variant = "ghost",
+  variant = "outline",
   size = "icon-sm",
   onCopied,
   onError,
@@ -40,8 +40,7 @@ export function CopyButton({
       aria-label={copied ? "Copied" : label}
       className={className}
       onPress={() => void copy()}
-    >
-      {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-    </Button>
+      iconSlot={copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+    />
   );
 }

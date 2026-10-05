@@ -8,7 +8,6 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
 import { CircleCheck, Download, RefreshCw } from "@/components/ui/icons";
-import { Spinner } from "@/components/ui/spinner";
 import { setVoiceSettings, useVoiceSettings } from "@/lib/voice-settings.ts";
 import { useReportDirty } from "./dirty.tsx";
 import { PanelBody } from "./panel-body.tsx";
@@ -47,7 +46,7 @@ function Running() {
   const id = Updates.updateId;
   return (
     <DescriptionList
-      content={
+      contentSlot={
         <>
           <PropertyRow label="Channel" value={Updates.channel || "None"} />
           <PropertyRow label="Runtime" value={Updates.runtimeVersion || "Unknown"} />
@@ -84,7 +83,7 @@ function Dictation() {
       <SettingsCard
         title="Dictation"
         description="What the microphone button does when it finishes. Stored on this device, not on the server, so each phone and tablet answers for itself."
-        content={
+        contentSlot={
           <Form className="gap-3">
             <form.AppField name="autoSend">
               {(field) => <field.SwitchField label="Send as soon as the microphone is done" />}
@@ -103,7 +102,7 @@ function Dictation() {
             </Text>
           </Form>
         }
-        footerActions={<form.SubmitButton createLabel="Save" disabled={!dirty} />}
+        footerActionsSlot={<form.SubmitButton createLabel="Save" disabled={!dirty} />}
       />
     </form.AppForm>
   );
@@ -149,7 +148,7 @@ export function DevicePanel() {
             title="Updates"
             description="This app installs its JavaScript over the air: a change that does not touch the native side is published as an update and picked up on the next launch. This is how to pick one up without waiting for that."
             contentClassName="flex flex-col gap-3"
-            content={
+            contentSlot={
               <>
                 <Running />
                 {updatable ? null : (
@@ -160,11 +159,11 @@ export function DevicePanel() {
                   </Text>
                 )}
                 {progress.kind === "none" ? (
-                  <Alert icon={<CircleCheck />} title="Already up to date" />
+                  <Alert iconSlot={<CircleCheck />} title="Already up to date" />
                 ) : null}
                 {progress.kind === "ready" ? (
                   <Alert
-                    icon={<Download />}
+                    iconSlot={<Download />}
                     title="Downloaded"
                     description="It runs after a restart. Anything half-typed goes with it."
                   />
@@ -174,19 +173,23 @@ export function DevicePanel() {
                 ) : null}
               </>
             }
-            footerActions={
+            footerActionsSlot={
               updatable ? (
                 <>
                   {progress.kind === "ready" ? (
-                    <Button variant="outline" onPress={() => void Updates.reloadAsync()}>
-                      <RefreshCw className="size-4" />
-                      Restart now
-                    </Button>
+                    <Button
+                      variant="outline"
+                      onPress={() => void Updates.reloadAsync()}
+                      iconSlot={<RefreshCw className="size-4" />}
+                      content="Restart now"
+                    />
                   ) : null}
-                  <Button onPress={check} disabled={busy}>
-                    {busy ? <Spinner /> : <Download className="size-4" />}
-                    {progress.kind === "downloading" ? "Downloading" : "Check for updates"}
-                  </Button>
+                  <Button
+                    onPress={check}
+                    loading={busy}
+                    iconSlot={<Download className="size-4" />}
+                    content={progress.kind === "downloading" ? "Downloading" : "Check for updates"}
+                  />
                 </>
               ) : undefined
             }

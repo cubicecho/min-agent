@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import * as React from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import { IconClassContext } from "@/components/ui/icons-base";
-import { cn } from "@/lib/utils";
+import { cn, type SlotNode } from "@/lib/utils";
 
 /**
  * The container class, for a pill the caller renders itself.
@@ -14,8 +14,8 @@ export function segmentedItemClass(active: boolean, className?: string) {
   return cn(
     "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
     active
-      ? "bg-selection text-selection-foreground"
-      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+      ? "bg-active text-active-foreground"
+      : "text-foreground/60 hover:bg-hover hover:text-foreground",
     className,
   );
 }
@@ -29,13 +29,13 @@ export function segmentedItemClass(active: boolean, className?: string) {
 export function segmentedTextClass(active: boolean, className?: string) {
   return cn(
     "text-sm font-medium",
-    active ? "text-selection-foreground" : "text-muted-foreground",
+    active ? "text-active-foreground" : "text-foreground/60",
     className,
   );
 }
 
 /**
- * Where a pill with an `icon` stops drawing its label: at every width, or under
+ * Where a pill with an `iconSlot` stops drawing its label: at every width, or under
  * one. `inline` on the web and `flex` on device are the display each platform's
  * text has when it is not hidden.
  */
@@ -79,7 +79,7 @@ const SegmentedGroupContext = React.createContext<SegmentedGroupContextValue | n
  * page with nothing round them, for a toolbar or a nav bar.
  */
 const SEGMENTED_GROUP_VARIANTS = {
-  framed: "h-10 rounded-md border border-input bg-background p-1",
+  framed: "h-10 rounded-md border border-foreground/15 bg-background p-1",
   plain: "",
 } as const;
 
@@ -97,10 +97,10 @@ export type SegmentedGroupProps = Omit<
   /** `framed` (the default) draws the input-height box; `plain` draws the row alone. */
   variant?: keyof typeof SEGMENTED_GROUP_VARIANTS | undefined;
   /**
-   * Under this width a pill with an `icon` draws the icon alone; `always` is a
+   * Under this width a pill with an `iconSlot` draws the icon alone; `always` is a
    * row of icons at every width. Said here and not on each pill because the
    * pills in a row should agree. The label is still the pill's name, read by a
-   * screen reader, and a pill with no `icon` keeps its label.
+   * screen reader, and a pill with no `iconSlot` keeps its label.
    */
   labelHideBelow?: keyof typeof LABEL_HIDE_BELOW | undefined;
   /**
@@ -178,7 +178,7 @@ export type SegmentedButtonProps = Omit<
    * the label's colour, chosen or not, on both platforms. With the group's
    * `labelHideBelow` it is all the pill draws, and the string child is its name.
    */
-  icon?: ReactNode | undefined;
+  iconSlot?: SlotNode | undefined;
   // Re-declared rather than inherited: nativewind types it as `className?:
   // string`, which under `exactOptionalPropertyTypes` rejects the conditional
   // `cond ? "x" : undefined` that call sites pass.
@@ -193,7 +193,7 @@ export type SegmentedButtonProps = Omit<
  * case it is wrapped in a `<Text>` carrying the active colour — the common case,
  * and the one where forgetting the wrapper is a runtime error on native.
  *
- * `icon` is the slot for the glyph beside that string, so a pill with both is
+ * `iconSlot` is the slot for the glyph beside that string, so a pill with both is
  * still a string child and nothing the caller lays out. An icon put in
  * `children` instead is passed through like any other node: on the web it
  * inherits the pill's colour, on device it takes none.
@@ -204,12 +204,12 @@ export type SegmentedButtonProps = Omit<
  * `aria-*`, an `onLongPress`, a `testID` — with nothing erroring to say so.
  */
 const SegmentedButton = React.forwardRef<React.ElementRef<typeof Pressable>, SegmentedButtonProps>(
-  ({ active, value, icon, className, children, onPress, ...props }, ref) => {
+  ({ active, value, iconSlot, className, children, onPress, ...props }, ref) => {
     const group = React.useContext(SegmentedGroupContext);
     const current = active ?? (group !== null && value !== undefined && group.value === value);
-    const ink = current ? "text-selection-foreground" : "text-muted-foreground";
+    const ink = current ? "text-active-foreground" : "text-foreground/60";
     // Only a pill with an icon has something left to draw once its label is gone.
-    const labelHideBelow = icon ? group?.labelHideBelow : undefined;
+    const labelHideBelow = iconSlot ? group?.labelHideBelow : undefined;
     return (
       <Pressable
         ref={ref}
@@ -238,24 +238,24 @@ const SegmentedButton = React.forwardRef<React.ElementRef<typeof Pressable>, Seg
           // Inside the frame a pill is 4px shorter, so it fits the input-height
           // box instead of spilling past its padding.
           group?.framed ? "rounded-md px-3 py-1" : "rounded-md px-3 py-1.5",
-          current ? "bg-selection" : "hover:bg-accent",
+          current ? "bg-active" : "hover:bg-hover",
           // The label colour on the container too, which native ignores and web
           // reads: an element child passes through untouched below, so on web its
           // colour can only come from inheriting it here.
           ink,
-          icon ? WITH_ICON : undefined,
+          iconSlot ? WITH_ICON : undefined,
           // The label's line is what gives a pill its height, and an icon is
           // shorter than it: with the label hidden the pill would shrink, so it
           // is held at the height a labelled pill beside it has.
-          icon ? (group?.framed ? "min-h-7" : "min-h-8") : undefined,
+          iconSlot ? (group?.framed ? "min-h-7" : "min-h-8") : undefined,
           className,
         )}
         {...props}
       >
         {/* Colour does not inherit on device, so the icon is handed the label's. */}
-        {icon ? (
+        {iconSlot ? (
           <IconClassContext.Provider value={cn("size-4 shrink-0", ink)}>
-            {icon}
+            {iconSlot}
           </IconClassContext.Provider>
         ) : null}
         {typeof children === "string" ? (

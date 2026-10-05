@@ -20,13 +20,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  Platform,
   ScrollView,
   Text,
   View,
 } from "react-native";
 import { ActionButton } from "@/components/action-button";
 import { ArrowDown, BookOpen, MessageSquare, Mic, Send } from "@/components/app/app-icons";
-import { ComposerInput } from "@/components/chat/composer-input.tsx";
 import { MessageView } from "@/components/chat/message-view.tsx";
 import { PromptPicker, useMcpPrompts } from "@/components/chat/prompt-picker.tsx";
 import { SessionsPanel, SessionsScreen } from "@/components/chat/session-list.tsx";
@@ -41,8 +41,10 @@ import { SplitLayout } from "@/components/split-layout";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Square } from "@/components/ui/icons";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
 import { api, streamTurn } from "@/lib/client.ts";
 import { useWide } from "@/lib/layout.ts";
 import { cn } from "@/lib/utils.ts";
@@ -72,8 +74,8 @@ export function ChatsView({ sessionId }: { sessionId?: string }) {
       secondWidth="auto"
       stackBelow="never"
       divider="none"
-      first={<ChatPane sessionId={sessionId} />}
-      second={<SessionsPanel activeId={sessionId} />}
+      firstSlot={<ChatPane sessionId={sessionId} />}
+      secondSlot={<SessionsPanel activeId={sessionId} />}
     />
   );
 }
@@ -442,13 +444,13 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
         // the scroll position, and the shell's own scroller does not report one.
         contentClassName="flex flex-col"
         footerClassName="border-border border-t px-4 py-3"
-        header={
+        headerSlot={
           <PageHeader
             level={3}
             // The page draws its own title now. The empty pane has no conversation to name, so
             // it is still "Chats".
             title={activeId ? (session.data?.title ?? "Chat") : "Chats"}
-            action={
+            actionSlot={
               <View className="flex-row flex-wrap items-center justify-end gap-3">
                 {/*
                   The readout is the way in to the breakdown: it is already the thing you look at
@@ -463,13 +465,14 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
                     label="What the tokens went on"
                     className="h-auto flex-wrap gap-3 px-1 py-0.5"
                     onPress={() => setTokensOpen(true)}
-                  >
-                    {fill ? <ContextMeter fill={fill} /> : null}
-                    {usageLine ? <Text className={MUTED}>{usageLine}</Text> : null}
-                  </ActionButton>
+                    iconSlot={fill ? <ContextMeter fill={fill} /> : null}
+                    content={usageLine ? <Text className={MUTED}>{usageLine}</Text> : null}
+                  />
                 ) : null}
                 <OptionSelect
                   aria-label="Model"
+                  searchable
+                  searchPlaceholder="Find a model…"
                   className="w-64 max-w-full"
                   value={activeModel}
                   options={(models.data?.models ?? []).map((entry) => ({
@@ -484,7 +487,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
             }
           />
         }
-        content={
+        contentSlot={
           <>
             <ScrollView
               ref={scroller}
@@ -526,10 +529,9 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
                     setPinned(true);
                     scroller.current?.scrollToEnd({ animated: true });
                   }}
-                >
-                  <ArrowDown aria-hidden className="size-3.5" />
-                  Jump to latest
-                </Button>
+                  iconSlot={<ArrowDown aria-hidden className="size-3.5" />}
+                  content="Jump to latest"
+                />
               </View>
             )}
           </>
@@ -540,7 +542,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
           so the column above simply ends higher up when the keys come up, and the transcript
           shrinks by the height of them rather than sliding behind them.
         */
-        footer={
+        footerSlot={
           <View className="mx-auto w-full max-w-3xl gap-2">
             {failure ? (
               <Alert variant="destructive" title="The turn failed" description={failure} />
@@ -570,13 +572,29 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
               </View>
             )}
             <View className="flex-row items-end gap-2">
-              <ComposerInput
-                label="Message"
+              {/*
+                The box's name. A placeholder is not one, and `Textarea` takes no `aria-label`,
+                so it is a label nobody sees — on the web, the one place `htmlFor` reaches.
+              */}
+              {Platform.OS === "web" ? (
+                <Label htmlFor={COMPOSER_ID} className="sr-only">
+                  Message
+                </Label>
+              ) : null}
+              {/*
+                cubeui's box: as tall as what is in it up to seven lines, and in a browser a bare
+                Enter sends. On a phone the return key is a new line and the send button is an
+                inch away.
+              */}
+              <Textarea
+                id={COMPOSER_ID}
+                rows={1}
+                maxRows={7}
                 value={draft}
                 onChangeText={setDraft}
-                onSubmit={() => void send()}
+                onSubmitEditing={() => void send()}
                 placeholder={activeModel ? "Send a message…" : "Pick a model to start"}
-                className="max-h-40 min-h-11 flex-1 py-2.5"
+                className="min-h-11 flex-1 py-2.5"
               />
               {/*
                 Absent where no server offers a prompt, for the same reason as the microphone
@@ -589,9 +607,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
                   size="icon-lg"
                   label="Insert an MCP prompt"
                   onPress={() => setPicking(true)}
-                >
-                  <BookOpen aria-hidden className="size-4" />
-                </ActionButton>
+                  iconSlot={<BookOpen aria-hidden className="size-4" />}
+                />
               ) : null}
               {/*
                 Absent rather than disabled where neither engine can run — a device build with no
@@ -605,15 +622,16 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
                   label={dictation.listening ? "Stop dictating" : "Dictate a message"}
                   disabled={dictation.transcribing}
                   onPress={dictation.toggle}
-                >
-                  {dictation.transcribing ? (
-                    <Spinner label="Transcribing" />
-                  ) : dictation.listening ? (
-                    <Square aria-hidden className="size-4" />
-                  ) : (
-                    <Mic aria-hidden className="size-4" />
-                  )}
-                </ActionButton>
+                  iconSlot={
+                    dictation.transcribing ? (
+                      <Spinner label="Transcribing" />
+                    ) : dictation.listening ? (
+                      <Square aria-hidden className="size-4" />
+                    ) : (
+                      <Mic aria-hidden className="size-4" />
+                    )
+                  }
+                />
               ) : null}
               {pending ? (
                 <ActionButton
@@ -621,18 +639,16 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
                   size="icon-lg"
                   label="Stop the turn"
                   onPress={() => abort.current?.abort()}
-                >
-                  <Square aria-hidden className="size-4" />
-                </ActionButton>
+                  iconSlot={<Square aria-hidden className="size-4" />}
+                />
               ) : (
                 <ActionButton
                   size="icon-lg"
                   label="Send"
                   disabled={!draft.trim()}
                   onPress={() => void send()}
-                >
-                  <Send aria-hidden className="size-4" />
-                </ActionButton>
+                  iconSlot={<Send aria-hidden className="size-4" />}
+                />
               )}
             </View>
           </View>
@@ -665,6 +681,9 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
 /** The small grey line: a readout, a hint, a footnote. */
 const MUTED = "text-muted-foreground text-xs";
 
+/** What ties the composer to its label. One composer is on screen at a time. */
+const COMPOSER_ID = "composer";
+
 /**
  * The empty pane, wide, with no conversation open. On a fresh install it is also the first
  * thing anyone sees, and "start a chat" is unhelpful advice to someone whose server has not
@@ -685,7 +704,7 @@ function Nothing({ configured }: { configured: boolean }) {
       icon={MessageSquare}
       title="No model yet"
       description="Point min-agent at an OpenAI-compatible server and pick a model, and this becomes a chat."
-      action={<SettingsLink tab="model" label="Set up a model" />}
+      actionSlot={<SettingsLink tab="model" label="Set up a model" />}
     />
   );
 }
@@ -743,7 +762,7 @@ function TokensDialog({
     <>
       {usage || fill ? (
         <DescriptionList
-          content={
+          contentSlot={
             <>
               {usage ? (
                 <>
@@ -827,7 +846,7 @@ function TokensDialog({
         if (!open) onClose();
       }}
       title="Tokens"
-      content={<View className="gap-3">{body}</View>}
+      contentSlot={<View className="gap-3">{body}</View>}
     />
   );
 }

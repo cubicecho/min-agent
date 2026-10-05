@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
-import { cn } from "@/lib/utils";
+import { cn, type SlotNode } from "@/lib/utils";
 
 type ListItemProps = {
   /** What the row is: a person's name, a todo's text. One line, truncated when it runs long. */
@@ -9,12 +9,12 @@ type ListItemProps = {
   description?: ReactNode | undefined;
   /**
    * The start of the row, before the title: an avatar, a checkbox, an icon. Placed as given — not
-   * sized or recoloured the way `icon` is, because a checkbox or an avatar is not a glyph. It sits
-   * **outside** the pressed area, so a checkbox here stays its own control.
+   * sized or recoloured the way `iconSlot` is, because a checkbox or an avatar is not a glyph. It
+   * sits **outside** the pressed area, so a checkbox here stays its own control.
    */
-  leading?: ReactNode | undefined;
+  leadingSlot?: SlotNode | undefined;
   /**
-   * The small grey facts at the row's far end, before `action`: "2 days ago", "12", a badge. A
+   * The small grey facts at the row's far end, before `actionSlot`: "2 days ago", "12", a badge. A
    * string is drawn muted and extra small; an element is placed as it is. Inside the pressed area.
    */
   meta?: ReactNode | undefined;
@@ -23,17 +23,23 @@ type ListItemProps = {
    * or a fragment of them. A control nested in a button is invalid HTML and, in practice, a click
    * that also opens the row.
    */
-  action?: ReactNode | undefined;
+  actionSlot?: SlotNode | undefined;
   /**
    * Makes the row something you press — open the person, edit the todo. The title, description and
-   * `meta` become one button between `leading` and `action`, so neither of those is nested in it.
+   * `meta` become one button between `leadingSlot` and `actionSlot`, so neither of those is nested
+   * in it.
    */
   onPress?: (() => void) | undefined;
+  /**
+   * The chosen row: the one open beside the list. Tinted in `active`, it stays that under the
+   * pointer, and a pressable row says so with `aria-current`.
+   */
+  selected?: boolean | undefined;
   className?: string | undefined;
   titleClassName?: string | undefined;
 };
 
-/** A string on its own is a crash on device, so a string slot gets a `Text` around it. */
+/** A string on its own is a crash on device, so a string `meta` gets a `Text` around it. */
 function asText(node: ReactNode, className: string) {
   return typeof node === "string" || typeof node === "number" ? (
     <Text className={className}>{node}</Text>
@@ -56,20 +62,21 @@ function asText(node: ReactNode, className: string) {
  * **The pressed area is the middle, and only the middle.** A row that opens *and* has buttons is
  * the common case, and the hand-written answer was either a button wrapping buttons (invalid
  * HTML, and every inner click also opens the row) or a stretched overlay whose inner controls
- * need `pointer-events` juggling on two platforms. So the row is three siblings — `leading`, the
- * pressable middle, `action` — and each control is reached, pressed and announced on its own.
- * On the web the middle is a real `<button>`, named by the text inside it.
+ * need `pointer-events` juggling on two platforms. So the row is three siblings — `leadingSlot`,
+ * the pressable middle, `actionSlot` — and each control is reached, pressed and announced on its
+ * own. On the web the middle is a real `<button>`, named by the text inside it.
  *
  * No surface: a row lives in a list, a card or a section, and that owns the border. Pass
- * `className="rounded-lg border border-border bg-card"` for the telos look.
+ * `className="rounded-lg border border-foreground/10 bg-secondary"` for the telos look.
  */
 export function ListItem({
   title,
   description,
-  leading,
+  leadingSlot,
   meta,
-  action,
+  actionSlot,
   onPress,
+  selected = false,
   className,
   titleClassName,
 }: ListItemProps) {
@@ -89,17 +96,14 @@ export function ListItem({
           {title}
         </Text>
         {description ? (
-          <Text
-            testID="list-item-description"
-            className="line-clamp-2 text-muted-foreground text-xs"
-          >
+          <Text testID="list-item-description" className="line-clamp-2 text-foreground/60 text-xs">
             {description}
           </Text>
         ) : null}
       </View>
       {meta ? (
         <View testID="list-item-meta" className="shrink-0 flex-row items-center gap-1">
-          {asText(meta, "text-muted-foreground text-xs tabular-nums")}
+          {asText(meta, "text-foreground/60 text-xs tabular-nums")}
         </View>
       ) : null}
     </>
@@ -110,13 +114,19 @@ export function ListItem({
       testID="list-item"
       className={cn(
         "min-w-0 flex-row items-center gap-3 rounded-md px-3 py-2.5",
-        onPress && Platform.select({ web: "transition-colors hover:bg-muted", default: undefined }),
+        selected
+          ? "bg-active/40"
+          : onPress &&
+              Platform.select({
+                web: "transition-colors hover:bg-hover has-[:focus-visible]:bg-hover",
+                default: undefined,
+              }),
         className,
       )}
     >
-      {leading ? (
+      {leadingSlot ? (
         <View testID="list-item-leading" className="shrink-0 flex-row items-center">
-          {leading}
+          {leadingSlot}
         </View>
       ) : null}
 
@@ -124,11 +134,12 @@ export function ListItem({
         <Pressable
           testID="list-item-body"
           role="button"
+          aria-current={selected ? true : undefined}
           onPress={onPress}
           className={cn(
             "min-w-0 flex-1 flex-row items-center gap-3 rounded-sm",
             Platform.select({
-              web: "text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              web: "text-left focus-visible:outline-none",
               default: "active:opacity-70",
             }),
           )}
@@ -141,9 +152,9 @@ export function ListItem({
         </View>
       )}
 
-      {action ? (
+      {actionSlot ? (
         <View testID="list-item-action" className="shrink-0 flex-row items-center gap-1">
-          {asText(action, "text-muted-foreground text-xs")}
+          {actionSlot}
         </View>
       ) : null}
     </View>

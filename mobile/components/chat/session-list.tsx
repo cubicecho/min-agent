@@ -25,7 +25,6 @@ import { FormDialog, FormDialogFooter } from "@/components/ui/form-dialog";
 import { Pencil, Plus, Trash2 } from "@/components/ui/icons";
 import type { InputHandle } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
-import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/client.ts";
 import { useShortcut } from "@/lib/keys.ts";
 import { cn } from "@/lib/utils.ts";
@@ -205,9 +204,8 @@ function RowActions({ list, id, title }: { list: List; id: string; title: string
         size="icon-sm"
         label={`Rename ${title}`}
         onPress={() => list.setRenaming({ id, title })}
-      >
-        <Pencil aria-hidden className="size-4" />
-      </ActionButton>
+        iconSlot={<Pencil aria-hidden className="size-4" />}
+      />
       <ConfirmButton
         variant="ghost"
         size="icon-sm"
@@ -215,9 +213,8 @@ function RowActions({ list, id, title }: { list: List; id: string; title: string
         title="Delete this chat?"
         description={`“${title}” and everything said in it will be gone. This cannot be undone.`}
         onConfirm={() => list.remove.mutate(id)}
-      >
-        <Trash2 aria-hidden className="size-4" />
-      </ConfirmButton>
+        iconSlot={<Trash2 aria-hidden className="size-4" />}
+      />
     </View>
   );
 }
@@ -226,14 +223,14 @@ function RowActions({ list, id, title }: { list: List; id: string; title: string
 function NewChatButton({ list }: { list: List }) {
   const { newChat } = list;
   return (
-    <Button size="sm" variant="ghost" disabled={newChat.isPending} onPress={() => newChat.mutate()}>
-      {newChat.isPending ? (
-        <Spinner label="Starting a chat" />
-      ) : (
-        <Plus aria-hidden className="size-4" />
-      )}
-      New
-    </Button>
+    <Button
+      size="sm"
+      variant="ghost"
+      loading={newChat.isPending}
+      onPress={() => newChat.mutate()}
+      iconSlot={<Plus aria-hidden className="size-4" />}
+      content="New"
+    />
   );
 }
 
@@ -251,7 +248,7 @@ function ListState({ list, compact }: { list: List; compact?: boolean }) {
         what="sessions"
         count={list.all.length}
         compact={compact}
-        empty={
+        emptySlot={
           compact ? (
             <EmptyState compact title="No sessions yet." />
           ) : (
@@ -259,7 +256,7 @@ function ListState({ list, compact }: { list: List; compact?: boolean }) {
               icon={MessageSquare}
               title="No sessions yet"
               description="Start a chat and it will be listed here."
-              action={<NewChatButton list={list} />}
+              actionSlot={<NewChatButton list={list} />}
             />
           )
         }
@@ -295,7 +292,7 @@ function SessionRow({
       title={item.title}
       description={when(item.updatedAt, bucket)}
       onPress={() => list.open(item.id)}
-      action={<RowActions list={list} id={item.id} title={item.title} />}
+      actionSlot={<RowActions list={list} id={item.id} title={item.title} />}
       className={cn(active && "bg-sidebar-accent", className)}
     />
   );
@@ -312,13 +309,13 @@ export function SessionsPanel({ activeId }: { activeId?: string }) {
         label="Sessions"
         // Wider than the rail's default: a row here is a title and two buttons, not a link.
         className="w-80"
-        header={<Search list={list} />}
-        content={
+        headerSlot={<Search list={list} />}
+        contentSlot={
           <>
             <SidebarSection
               title="Sessions"
               level={2}
-              action={<NewChatButton list={list} />}
+              actionSlot={<NewChatButton list={list} />}
               status={<ListState list={list} compact />}
             />
             {list.groups.map((group) => (
@@ -326,7 +323,7 @@ export function SessionsPanel({ activeId }: { activeId?: string }) {
                 key={group.bucket}
                 title={group.label}
                 level={3}
-                content={group.sessions.map((item) => (
+                contentSlot={group.sessions.map((item) => (
                   <SessionRow
                     key={item.id}
                     list={list}
@@ -357,9 +354,9 @@ export function SessionsScreen() {
         // In the header rather than in the list: it is the one place on the screen a long list
         // cannot scroll it out of. The search box is there for the same reason — it is how you
         // narrow a list too long to read, which is exactly the list that would scroll it away.
-        action={<NewChatButton list={list} />}
-        headerContent={searchable(list) ? <Search list={list} /> : undefined}
-        content={
+        actionSlot={<NewChatButton list={list} />}
+        headerContentSlot={searchable(list) ? <Search list={list} /> : undefined}
+        contentSlot={
           <View className="gap-4 pb-4">
             <ListState list={list} />
             {list.groups.map((group) => (
@@ -369,7 +366,7 @@ export function SessionsScreen() {
                 key={group.bucket}
                 title={group.label}
                 level={2}
-                content={
+                contentSlot={
                   <View className="overflow-hidden rounded-xl border border-border">
                     {group.sessions.map((item, index) => (
                       <SessionRow

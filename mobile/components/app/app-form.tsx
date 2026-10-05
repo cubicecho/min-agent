@@ -22,7 +22,7 @@ function PasswordField(props: PasswordFieldProps) {
   return (
     <FieldWrapper
       {...fieldProps}
-      control={
+      controlSlot={
         <PasswordInput
           // "Show API key", not "Show password": none of these is a password.
           showLabel={`Show ${props.label}`}
@@ -69,7 +69,7 @@ function NumberField(props: NumberFieldProps) {
   return (
     <FieldWrapper
       {...fieldProps}
-      control={
+      controlSlot={
         <Input
           inputMode={integer ? "numeric" : "decimal"}
           {...control}
@@ -100,6 +100,9 @@ type OptionSelectFieldProps = FieldText & {
   options: readonly SelectEntry[];
   placeholder?: string | undefined;
   disabled?: boolean | undefined;
+  /** A search box over the list, for one too long to scroll. */
+  searchable?: boolean | undefined;
+  searchPlaceholder?: string | undefined;
   onOpenChange?: ((open: boolean) => void) | undefined;
 };
 
@@ -113,7 +116,7 @@ function OptionSelectField(props: OptionSelectFieldProps) {
   return (
     <FieldWrapper
       {...fieldProps}
-      control={
+      controlSlot={
         <OptionSelect
           {...control}
           aria-label={props.label}

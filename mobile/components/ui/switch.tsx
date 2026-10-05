@@ -34,7 +34,7 @@ function Switch({
       onBlur={onBlur}
       className={cn(
         SWITCH_TRACK_CLASS,
-        checked ? "bg-selection" : "bg-input",
+        checked ? "bg-active" : "bg-foreground/15",
         // `disabled:` never applies to a Pressable — apply the state directly.
         disabled && "opacity-50",
         className,

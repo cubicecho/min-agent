@@ -115,7 +115,7 @@ function FieldDescription({ className, ...props }: TextProps) {
   return (
     <Text
       testID="field-description"
-      className={cn("text-muted-foreground text-sm", className)}
+      className={cn("text-foreground/60 text-sm", className)}
       {...props}
     />
   );
@@ -138,7 +138,7 @@ function FieldError({
   errors,
   ...props
 }: TextProps & { errors?: readonly FieldErrorEntry[] | undefined }) {
-  const classes = cn("text-destructive text-sm font-medium", className);
+  const classes = cn("text-negative text-sm font-medium", className);
   const messages = [
     ...new Set(
       (errors ?? [])
@@ -211,10 +211,10 @@ function FieldSeparator({ className, children, ...props }: ViewProps) {
       className={cn("relative h-5 w-full justify-center", className)}
       {...props}
     >
-      <View className="absolute inset-x-0 top-1/2 h-px bg-border" />
+      <View className="absolute inset-x-0 top-1/2 h-px bg-foreground/10" />
       {children ? (
         <View testID="field-separator-content" className="items-center">
-          <Text className="bg-background px-2 text-muted-foreground text-sm">{children}</Text>
+          <Text className="bg-background px-2 text-foreground/60 text-sm">{children}</Text>
         </View>
       ) : null}
     </View>

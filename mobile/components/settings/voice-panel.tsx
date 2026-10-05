@@ -35,7 +35,7 @@ export function VoicePanel() {
           <SettingsCard
             title="Where the audio runs"
             description="Leave both models blank and voice runs on whatever the device already has: a browser and an Android build both read replies aloud and take dictation with the recogniser they ship with. Naming a model moves that work to the server, which is the only way the desktop build gets a microphone button of its own. A tcp://host:port in place of a model name is a Wyoming server — the voice services Home Assistant speaks to — and the audio base URL and API key are not used for it."
-            content={
+            contentSlot={
               <form.AppField name="voiceBaseUrl">
                 {() => (
                   <TextField
@@ -51,7 +51,7 @@ export function VoicePanel() {
 
           <SettingsCard
             title="Models"
-            content={
+            contentSlot={
               <>
                 <FieldRow>
                   <form.AppField name="sttModel">
@@ -89,7 +89,7 @@ export function VoicePanel() {
 
           <SettingsCard
             title="Playback"
-            content={
+            contentSlot={
               <>
                 <form.AppField name="speakReplies">
                   {(field) => <field.SwitchField label="Read every reply aloud" />}
@@ -97,7 +97,7 @@ export function VoicePanel() {
 
                 <SettingRow
                   description="When the microphone button sends what you dictated is set per device, not here."
-                  action={
+                  actionSlot={
                     <View className="flex-row">
                       <SettingsLink tab="device" />
                     </View>

@@ -1,8 +1,17 @@
-import { Children, createContext, type ReactNode, useContext, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import {
+  Children,
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { IconClassContext } from "@/components/ui/icons-base";
 import {
   TABS_LIST_CLASS,
+  TABS_LIST_INSET,
   TABS_TRIGGER_CLASS,
   TABS_TRIGGER_TEXT_CLASS,
   type TabsContentProps,
@@ -30,21 +39,70 @@ function Tabs({ value: controlled, onValueChange, defaultValue, className, child
   );
 }
 
+/** Where a tab sits in the row: its near edge and its width. */
+type Span = { x: number; width: number };
+
+/** How a trigger tells its list where the selected tab is, so the list can bring it into view. */
+const TabsListContext = createContext<(tab: Span) => void>(() => {});
+
 function TabsList({
   "aria-label": ariaLabel,
   "aria-labelledby": ariaLabelledBy,
   className,
   children,
 }: TabsListProps) {
-  // A `tab` outside a `tablist` is an orphan to a screen reader, and axe says so.
+  const scroller = useRef<ScrollView>(null);
+  // Refs, not state: none of the three is drawn, and a scroll would otherwise render the row.
+  const viewport = useRef(0);
+  const offset = useRef(0);
+  const selected = useRef<Span | undefined>(undefined);
+
+  const reveal = () => {
+    const tab = selected.current;
+    // The triggers can be laid out before the scroller is; it calls back when it has a width.
+    if (!tab || viewport.current === 0) return;
+    const end = tab.x + tab.width;
+    if (tab.x < offset.current) {
+      scroller.current?.scrollTo({ x: Math.max(0, tab.x - TABS_LIST_INSET) });
+    } else if (end > offset.current + viewport.current) {
+      scroller.current?.scrollTo({ x: end - viewport.current + TABS_LIST_INSET });
+    }
+  };
+
+  // A `tab` outside a `tablist` is an orphan to a screen reader, and axe says so. The role is on
+  // the box rather than the scroller inside it, so the scrolling is part of the tablist.
   return (
     <View
       role="tablist"
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledBy}
-      className={cn("flex-row", TABS_LIST_CLASS, className)}
+      className={cn("max-w-full flex-row", TABS_LIST_CLASS, className)}
     >
-      {children}
+      <ScrollView
+        ref={scroller}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        onLayout={(event) => {
+          viewport.current = event.nativeEvent.layout.width;
+          reveal();
+        }}
+        onScroll={(event) => {
+          offset.current = event.nativeEvent.contentOffset.x;
+        }}
+        scrollEventThrottle={16}
+        className="shrink grow"
+        // `grow` so tabs that fit are centred in the list, as they were before it scrolled.
+        contentContainerClassName="grow flex-row items-center justify-center"
+      >
+        <TabsListContext.Provider
+          value={(tab) => {
+            selected.current = tab;
+            reveal();
+          }}
+        >
+          {children}
+        </TabsListContext.Provider>
+      </ScrollView>
     </View>
   );
 }
@@ -78,20 +136,41 @@ function label(children: ReactNode, className: string): ReactNode[] {
   return parts;
 }
 
-function TabsTrigger({ value, disabled = false, className, children }: TabsTriggerProps) {
+function TabsTrigger({
+  value,
+  disabled = false,
+  className,
+  children,
+  trailingSlot,
+}: TabsTriggerProps) {
   const tabs = useContext(TabsContext);
+  const reveal = useContext(TabsListContext);
+  const span = useRef<Span | undefined>(undefined);
   const active = tabs.value === value;
-  const color = active ? "text-selection-foreground" : "text-muted-foreground";
+  const color = active ? "text-active-foreground" : "text-foreground/60";
+
+  // Chosen from somewhere other than a press — a link, the caller's own state — the tab may be
+  // off the end of the row. `reveal` is the list's, new every render, and not what this follows.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the tab becomes active
+  useEffect(() => {
+    if (active && span.current) reveal(span.current);
+  }, [active]);
+
   return (
     <Pressable
       role="tab"
+      onLayout={(event) => {
+        const { x, width } = event.nativeEvent.layout;
+        span.current = { x, width };
+        if (active) reveal(span.current);
+      }}
       aria-selected={active}
       aria-disabled={disabled}
       disabled={disabled}
       onPress={() => tabs.setValue(value)}
       className={cn(
         TABS_TRIGGER_CLASS,
-        active ? "bg-selection" : "hover:bg-accent",
+        active ? "bg-active" : "hover:bg-hover",
         disabled && "opacity-50",
         className,
       )}
@@ -101,6 +180,7 @@ function TabsTrigger({ value, disabled = false, className, children }: TabsTrigg
           container's colour reaches neither. */}
       <IconClassContext.Provider value={cn("size-4 shrink-0", color)}>
         {label(children, cn(TABS_TRIGGER_TEXT_CLASS, color))}
+        {trailingSlot}
       </IconClassContext.Provider>
     </Pressable>
   );

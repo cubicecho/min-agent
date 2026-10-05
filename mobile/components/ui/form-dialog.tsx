@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { cn, type SlotNode } from "@/lib/utils";
 
 type FormDialogProps = {
   open: boolean;
@@ -45,7 +45,7 @@ type FormDialogFooterProps = {
   onCancel: () => void;
   cancelLabel?: string;
   /** Left-aligned action — a Delete or a Mark complete. Drawn only when set. */
-  secondary?: ReactNode;
+  secondarySlot?: SlotNode;
   /**
    * A rejected mutation's message, shown above the buttons. Field validation
    * stays inline beneath its field — this is for what only the server knows,
@@ -59,23 +59,21 @@ type FormDialogFooterProps = {
 export function FormDialogFooter({
   onCancel,
   cancelLabel = "Cancel",
-  secondary,
+  secondarySlot,
   error,
   children,
 }: FormDialogFooterProps) {
   return (
     <>
       {error ? (
-        <Text role="alert" className="text-sm text-destructive">
+        <Text role="alert" className="text-sm text-negative">
           {error}
         </Text>
       ) : null}
-      <DialogFooter className={cn("items-center", secondary && "sm:justify-between")}>
-        {secondary ? <View>{secondary}</View> : null}
+      <DialogFooter className={cn("items-center", secondarySlot && "sm:justify-between")}>
+        {secondarySlot ? <View>{secondarySlot}</View> : null}
         <View className="flex-row gap-2">
-          <Button variant="outline" onPress={onCancel}>
-            {cancelLabel}
-          </Button>
+          <Button variant="outline" onPress={onCancel} content={cancelLabel} />
           {children}
         </View>
       </DialogFooter>

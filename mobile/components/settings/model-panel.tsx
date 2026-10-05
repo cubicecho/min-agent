@@ -134,7 +134,7 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
       <SettingsCard
         title="Endpoint"
         description="An OpenAI-compatible server. The model list below is fetched by the agent from this address, so it has to be stored before there is anything to pick from — which is what the button does. Settings are stored in Postgres."
-        content={
+        contentSlot={
           <>
             <form.AppField name="baseUrl">
               {() => (
@@ -164,14 +164,18 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
                 asks the one it has stored. Pressing this stores just these two and asks
                 again. */}
             <View className="flex-row items-center gap-2">
-              <Button disabled={endpointBusy} onPress={() => void applyEndpoint()}>
-                <Check className="size-4" />
-                {endpointBusy
-                  ? "Asking the provider…"
-                  : endpointPending
-                    ? "Apply and load models"
-                    : "Reload models"}
-              </Button>
+              <Button
+                disabled={endpointBusy}
+                onPress={() => void applyEndpoint()}
+                iconSlot={<Check className="size-4" />}
+                content={
+                  endpointBusy
+                    ? "Asking the provider…"
+                    : endpointPending
+                      ? "Apply and load models"
+                      : "Reload models"
+                }
+              />
               {endpointPending ? (
                 <Text className="flex-1 text-muted-foreground text-sm">
                   Not applied yet — the list below is the old one.
@@ -193,7 +197,7 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
 
       <SettingsCard
         title="Models"
-        content={
+        contentSlot={
           <>
             <form.AppField name="model">
               {(field) => (
@@ -205,6 +209,8 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
                       : `${modelOptions.length} model(s) reported by the saved endpoint.`
                   }
                   options={modelOptions}
+                  searchable
+                  searchPlaceholder="Find a model…"
                   disabled={endpointPending}
                   placeholder={
                     endpointPending
@@ -229,7 +235,7 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
               level={4}
               title="Task models"
               description="Side jobs that need not run on the chat model. Each is short and frequent, so a small fast model usually serves them better."
-              content={MODEL_TASKS.map((task) => (
+              contentSlot={MODEL_TASKS.map((task) => (
                 <form.AppField key={task.key} name={`taskModels.${task.key}`}>
                   {() => (
                     <OptionalSelectField
@@ -237,6 +243,8 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
                       description={task.hint}
                       emptyLabel={task.empty}
                       options={modelOptions}
+                      searchable
+                      searchPlaceholder="Find a model…"
                       disabled={endpointPending}
                     />
                   )}
@@ -250,7 +258,7 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
       <SettingsCard
         title="Pricing"
         description="Only used to turn the token counts into a cost. Leave both at 0 — the default for a local model — and min-agent shows tokens alone."
-        content={
+        contentSlot={
           <FieldRow>
             <form.AppField name="pricing.inputPer1M">
               {(field) => <field.NumberField label="Input $ / 1M" />}

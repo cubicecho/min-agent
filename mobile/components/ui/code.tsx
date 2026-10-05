@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Platform, ScrollView, Text, View } from "react-native";
-import { cn } from "@/lib/utils";
+import { cn, type SlotNode } from "@/lib/utils";
 
 export function Code({
   className,
@@ -11,7 +11,10 @@ export function Code({
 }) {
   return (
     <Text
-      className={cn("rounded bg-muted px-1 py-0.5 font-mono text-xs text-foreground", className)}
+      className={cn(
+        "rounded bg-foreground/10 px-1 py-0.5 font-mono text-xs text-foreground",
+        className,
+      )}
     >
       {children}
     </Text>
@@ -40,7 +43,7 @@ export type CodeBlockProps = {
    * it, so the room it needs is the block's to reserve — the hand-written version floated the
    * button over the text and remembered a `pr-12` to keep the first line out from under it.
    */
-  action?: ReactNode;
+  actionSlot?: SlotNode;
   /**
    * What a line too long for the block does. Off, the default, it runs on and the block scrolls
    * sideways, which is right for code and config: a wrapped line of JSON reads as two. On, it
@@ -129,25 +132,35 @@ function CodeBlockText({ content, wrap, maxHeight }: CodeBlockTextProps) {
  * A block of preformatted text: a config file, a command, a payload, a log.
  *
  * - `content` is a string and is drawn as written. There is no syntax highlighting.
- * - `action` is the far end, top-aligned, in a column of its own — the text never runs under it.
+ * - `actionSlot` is the far end, top-aligned, in a column of its own — the text never runs under
+ *   it.
  * - `wrap` chooses between wrapping a long line and scrolling sideways (the default).
  * - `maxHeight` caps the block, which then scrolls inside itself.
  *
  * A value to copy — an endpoint, a token, a command — is this with `wrap` and a `CopyButton`
- * as its `action`, not a second component: one line of text is a short block.
+ * as its `actionSlot`, not a second component: one line of text is a short block.
  */
-export function CodeBlock({ content, action, wrap = false, maxHeight, className }: CodeBlockProps) {
+export function CodeBlock({
+  content,
+  actionSlot,
+  wrap = false,
+  maxHeight,
+  className,
+}: CodeBlockProps) {
   return (
     <View
       testID="code-block"
-      className={cn("flex-row items-start rounded-md border border-border bg-muted/50", className)}
+      className={cn(
+        "flex-row items-start rounded-md border border-foreground/10 bg-foreground/10",
+        className,
+      )}
     >
       <CodeBlockText content={content} wrap={wrap} maxHeight={maxHeight} />
-      {action ? (
+      {actionSlot ? (
         // `p-0.5` and not the text's `p-3`: an icon button is as tall as a line of text and its
         // padding together, so a one-line block stays one line tall with the button in it.
         <View testID="code-block-action" className="shrink-0 p-0.5">
-          {action}
+          {actionSlot}
         </View>
       ) : null}
     </View>
