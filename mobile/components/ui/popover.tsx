@@ -57,14 +57,16 @@ function PopoverContent({ className, children }: PopoverContentProps) {
   const { open, setOpen } = useContext(PopoverContext);
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-      <View className="flex-1 items-center justify-center bg-black/60 p-6">
+      <View className="flex-1 items-center justify-center bg-overlay/60 p-6">
         <Pressable
           className="absolute inset-0"
           onPress={() => setOpen(false)}
           role="button"
           aria-label="Close"
         />
-        <View className={cn("w-72 rounded-md border border-border bg-popover p-4", className)}>
+        <View
+          className={cn("w-72 rounded-md border border-foreground/10 bg-secondary p-4", className)}
+        >
           {children}
         </View>
       </View>
@@ -97,13 +99,11 @@ function PopoverHeader({ className, children }: PopoverSectionProps) {
 }
 
 function PopoverTitle({ className, children }: PopoverSectionProps) {
-  return (
-    <Text className={cn("text-sm font-medium text-popover-foreground", className)}>{children}</Text>
-  );
+  return <Text className={cn("text-sm font-medium text-foreground", className)}>{children}</Text>;
 }
 
 function PopoverDescription({ className, children }: PopoverSectionProps) {
-  return <Text className={cn("text-sm text-muted-foreground", className)}>{children}</Text>;
+  return <Text className={cn("text-sm text-foreground/60", className)}>{children}</Text>;
 }
 
 export {

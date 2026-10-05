@@ -113,7 +113,7 @@ function SelectContent({ className, children }: SelectContentProps) {
   const { open, setOpen } = useContext(SelectContext);
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-      <View className="flex-1 items-center justify-center bg-black/60 p-6">
+      <View className="flex-1 items-center justify-center bg-overlay/60 p-6">
         {/* Sibling, not parent: `Pressable` has no `stopPropagation`. */}
         <Pressable
           className="absolute inset-0"
@@ -123,7 +123,7 @@ function SelectContent({ className, children }: SelectContentProps) {
         />
         <View
           className={cn(
-            "max-h-96 w-full max-w-sm rounded-md border border-border bg-popover p-1",
+            "max-h-96 w-full max-w-sm rounded-md border border-foreground/10 bg-secondary p-1",
             className,
           )}
         >
@@ -148,7 +148,7 @@ function SelectItem({ value, disabled = false, className, children }: SelectItem
       }}
       className={cn(
         SELECT_ITEM_CLASS,
-        selected && "bg-selection/15",
+        selected && "bg-active/40",
         disabled && "opacity-50",
         className,
       )}

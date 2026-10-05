@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { Platform, Text, View } from "react-native";
+import { Platform, View } from "react-native";
 import { HeaderContentFooter } from "@/components/header-content-footer";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { cn, type SlotNode } from "@/lib/utils";
 
 /** How wide the dialog wants to be, past the phone width every size shares. */
 const SIZES = {
@@ -48,29 +48,14 @@ const SR_ONLY = Platform.select({
 });
 
 /**
- * A string slot's colour, on every platform. The compiled half would inherit one, but
- * react-native-web is web too and gives every `Text` its own black `color`.
- */
-const INK = "text-foreground";
-
-/**
- * The `footerActions` row: shrinks to the footer and wraps, right-aligned, rather than running its
- * buttons past the dialog's edge on a narrow screen — the same row `CardLayout` draws.
+ * The `footerActionsSlot` row: shrinks to the footer and wraps, right-aligned, rather than running
+ * its buttons past the dialog's edge on a narrow screen — the same row `CardLayout` draws.
  */
 const ACTIONS = "min-w-0 shrink flex-row flex-wrap items-center justify-end gap-2";
 
-/** A string on its own is a crash on device, so a string slot gets a `Text` around it. */
-function asText(node: ReactNode) {
-  return typeof node === "string" || typeof node === "number" ? (
-    <Text className={cn(INK)}>{node}</Text>
-  ) : (
-    node
-  );
-}
-
 export type DialogLayoutProps = {
   /** The body. It is the only part that scrolls. */
-  content: ReactNode;
+  contentSlot: SlotNode;
   /**
    * Required, because a dialog without a title is one no screen reader can announce. A dialog
    * whose design has no room for a heading passes `hideTitle` and keeps this.
@@ -84,13 +69,13 @@ export type DialogLayoutProps = {
    * What opens it, wrapped in `DialogTrigger asChild` — pass a `<Button>`, not a bare string.
    * With a trigger and no `open`, the dialog owns its own state and the caller holds none.
    */
-  trigger?: ReactNode | undefined;
+  triggerSlot?: SlotNode | undefined;
   /** Controlled open state. Omit both this and `onOpenChange` to let the trigger drive it. */
   open?: boolean | undefined;
   onOpenChange?: ((open: boolean) => void) | undefined;
   size?: keyof typeof SIZES | undefined;
   /** The footer's start. A destructive action, or a word on why the confirm is refusing. */
-  footer?: ReactNode | undefined;
+  footerSlot?: SlotNode | undefined;
   /**
    * The footer's end. Cancel and confirm. Given alone, the footer is simply right-aligned.
    *
@@ -101,18 +86,18 @@ export type DialogLayoutProps = {
    * unsaved work asks on the way through it too.
    *
    * ```tsx
-   * footerActions={(close) => (
+   * footerActionsSlot={(close) => (
    *   <>
-   *     <Button variant="ghost" onClick={close}>Cancel</Button>
-   *     <Button onClick={save}>Save</Button>
+   *     <Button variant="outline" onClick={close} content="Cancel" />
+   *     <Button onClick={save} content="Save" />
    *   </>
    * )}
    * ```
    *
-   * Only this slot takes the function. `footer` is the other end — a destructive action, or a
+   * Only this slot takes the function. `footerSlot` is the other end — a destructive action, or a
    * word on why the confirm is refusing — and nothing there closes the dialog on the way out.
    */
-  footerActions?: ReactNode | ((close: () => void) => ReactNode) | undefined;
+  footerActionsSlot?: SlotNode | ((close: () => void) => SlotNode) | undefined;
   /**
    * Whether Escape and a click on the overlay close it. Off refuses to leave; prefer
    * `hasUnsavedChanges`, which asks on the way out instead.
@@ -120,7 +105,7 @@ export type DialogLayoutProps = {
   dismissible?: boolean | undefined;
   /**
    * There is work in the body that closing would throw away. Escape, a click on the overlay, the
-   * close button and a `footerActions` Cancel then ask first, and the dialog stays open if the
+   * close button and a `footerActionsSlot` Cancel then ask first, and the dialog stays open if the
    * answer is no.
    *
    * Asked for, never computed — only the caller knows what its fields are.
@@ -180,16 +165,16 @@ export type DialogLayoutProps = {
  * `overflow` and nothing else.
  */
 export function DialogLayout({
-  content,
+  contentSlot,
   title,
   description,
   hideTitle = false,
-  trigger,
+  triggerSlot,
   open,
   onOpenChange,
   size = "md",
-  footer,
-  footerActions,
+  footerSlot,
+  footerActionsSlot,
   dismissible = true,
   hasUnsavedChanges = false,
   discardTitle = "Discard your changes?",
@@ -240,11 +225,13 @@ export function DialogLayout({
   // The same close Escape, the overlay and the close button go through, handed to the footer so
   // a Cancel there is guarded by the thing that guards them.
   const actions =
-    typeof footerActions === "function" ? footerActions(closeFromFooter) : footerActions;
+    typeof footerActionsSlot === "function"
+      ? footerActionsSlot(closeFromFooter)
+      : footerActionsSlot;
 
   // Asked of what the footer actually rendered: a function that returns nothing should leave the
   // dialog with no footer, not with an empty one taking up a row.
-  const hasFooter = Boolean(footer || actions);
+  const hasFooter = Boolean(footerSlot || actions);
 
   // Keeping the question's answer from being given by accident: a click on the overlay does not
   // answer "discard?", which is what the web-only `alert-dialog` refused as well.
@@ -264,12 +251,8 @@ export function DialogLayout({
         </DialogHeader>
         <DialogFooter>
           {/* First, so it is where focus lands: the safe answer is the one a stray Enter gives. */}
-          <Button variant="outline" onPress={() => setAskingToDiscard(false)}>
-            {keepLabel}
-          </Button>
-          <Button variant="destructive" onPress={discard}>
-            {discardLabel}
-          </Button>
+          <Button variant="outline" onPress={() => setAskingToDiscard(false)} content={keepLabel} />
+          <Button variant="destructive" onPress={discard} content={discardLabel} />
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -278,7 +261,7 @@ export function DialogLayout({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={requestOpenChange}>
-        {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
+        {triggerSlot ? <DialogTrigger asChild>{triggerSlot}</DialogTrigger> : null}
 
         <DialogContent
           showCloseButton={showCloseButton}
@@ -293,7 +276,7 @@ export function DialogLayout({
           <HeaderContentFooter
             scroll
             className={CHASSIS}
-            header={
+            headerSlot={
               <DialogHeader
                 // The close button is positioned against the dialog, not the header, so a long
                 // title runs under it without this.
@@ -306,13 +289,16 @@ export function DialogLayout({
             // Four pixels of room either side, given back as padding: a focus ring is drawn
             // outside the element that owns it, and a scroll container clips at its edge.
             contentClassName={cn("-mx-1 px-1", contentClassName)}
-            content={content}
-            footer={
+            contentSlot={contentSlot}
+            footerSlot={
               hasFooter ? (
                 <DialogFooter
-                  className={cn(footer && footerActions && "sm:justify-between", footerClassName)}
+                  className={cn(
+                    footerSlot && footerActionsSlot && "sm:justify-between",
+                    footerClassName,
+                  )}
                 >
-                  {asText(footer)}
+                  {footerSlot}
                   {actions ? <View className={ACTIONS}>{actions}</View> : null}
                 </DialogFooter>
               ) : null

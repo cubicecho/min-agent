@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Children } from "react";
-import { Platform, Text, View } from "react-native";
+import { Platform, View } from "react-native";
 import {
   Card,
   CardContent,
@@ -9,11 +9,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { cn, type SlotNode } from "@/lib/utils";
 
 export type CardLayoutProps = {
   /** The body. */
-  content?: ReactNode | undefined;
+  contentSlot?: SlotNode | undefined;
   /**
    * A string, a heading, whatever names the card. Absent, no header row is drawn. On device it is
    * rendered inside a `Text`, so pass text or inline text nodes.
@@ -31,25 +31,30 @@ export type CardLayoutProps = {
    * Sits before the title. On the web it is sized to the text — pass a bare `<Plus />`. On device
    * an icon cannot be sized from outside it, so pass it at the size you want.
    */
-  icon?: ReactNode | undefined;
+  iconSlot?: SlotNode | undefined;
   /** The header's far end: an add button, a menu, a switch. */
-  action?: ReactNode | undefined;
-  /** Shown instead of `content` when there is nothing in it — an empty list, no results. */
-  empty?: ReactNode | undefined;
+  actionSlot?: SlotNode | undefined;
+  /** Shown instead of `contentSlot` when there is nothing in it — an empty list, no results. */
+  emptySlot?: SlotNode | undefined;
   /**
-   * Whether the body is still being fetched. On, a skeleton stands in for it and `empty` is not
+   * Whether the body is still being fetched. On, a skeleton stands in for it and `emptySlot` is not
    * consulted — data that has not arrived is not data that came back empty, and a card that says
    * "no members yet" for half a second before showing four of them is worse than one that waits.
    *
-   * A caller wanting its own placeholder passes it as `content` and leaves this off.
+   * A caller wanting its own placeholder passes it as `contentSlot` and leaves this off.
    */
   loading?: boolean | undefined;
-  /** The footer's start. A timestamp, a note, a destructive action held away from the rest. */
-  footer?: ReactNode | undefined;
+  /**
+   * The footer's start. A timestamp, a note, a destructive action held away from the rest. Words
+   * come in a `<Text>` of the caller's, as in every slot.
+   */
+  footerSlot?: SlotNode | undefined;
   /** The footer's end. The buttons. Given alone, the footer is simply right-aligned. */
-  footerActions?: ReactNode | undefined;
+  footerActionsSlot?: SlotNode | undefined;
   className?: string | undefined;
   headerClassName?: string | undefined;
+  /** On the title itself: its size, a `line-through`. */
+  titleClassName?: string | undefined;
   contentClassName?: string | undefined;
   footerClassName?: string | undefined;
 };
@@ -57,20 +62,8 @@ export type CardLayoutProps = {
 /** Sized from outside on the web; see the file comment for the device. */
 const ICON = Platform.select({ web: "[&_svg]:size-4", default: undefined });
 
-/**
- * A wrapper around a caller's node, not layout of its own: a block box on the web, where a compiled
- * view would otherwise be a flex column and lay a sentence and its link out as two rows.
- */
-const SLOT = Platform.select({ web: "block", default: undefined });
-
 /** A bar standing in for text that has not arrived — `Skeleton`'s look, on both platforms. */
-const BAR = cn("h-4 rounded-md bg-accent", Platform.OS === "web" && "animate-pulse");
-
-/**
- * A string slot's colour, on every platform. The compiled half would inherit the card's, but
- * react-native-web is web too and gives every `Text` its own black `color`.
- */
-const INK = "text-card-foreground";
+const BAR = cn("h-4 rounded-md bg-hover", Platform.OS === "web" && "animate-pulse");
 
 /**
  * The header, as a row that wraps: the title and description in one column, the action after it.
@@ -109,21 +102,12 @@ const HEADER_ACTION = cn(
 );
 
 /**
- * The `footerActions` row. It shrinks to the footer and wraps rather than holding its buttons on
- * one line: a view does not shrink by default on either half, so three buttons in a phone-width
+ * The `footerActionsSlot` row. It shrinks to the footer and wraps rather than holding its buttons
+ * on one line: a view does not shrink by default on either half, so three buttons in a phone-width
  * card ran past its left edge instead of moving the last one down. `justify-end` keeps a wrapped
  * line against the right edge, where the primary action is.
  */
 const ACTIONS = "min-w-0 shrink flex-row flex-wrap items-center justify-end gap-2";
-
-/** A string on its own is a crash on device, so a string slot gets a `Text` around it. */
-function asText(node: ReactNode) {
-  return typeof node === "string" || typeof node === "number" ? (
-    <Text className={cn(INK)}>{node}</Text>
-  ) : (
-    node
-  );
-}
 
 /**
  * A card with its slots already placed.
@@ -134,36 +118,37 @@ function asText(node: ReactNode) {
  * beside the title and some under it, some give the description a `text-sm` and some a `text-xs`,
  * and a card with nothing to show says so in a different voice on every screen.
  *
- * Every slot is a node, `content` included, so a card is one element at the call site and the
- * question "where does this go?" has one answer per prop. `empty` and `loading` are the two that
- * are not slots the caller places: they are what the body says when the data came back empty, and
- * while it has not come back at all. A list rendered from a `map` reaches the first state on its
- * own the moment its array is empty.
+ * Every slot is a node, `contentSlot` included, so a card is one element at the call site and the
+ * question "where does this go?" has one answer per prop. `emptySlot` and `loading` are the two
+ * that are not slots the caller places: they are what the body says when the data came back empty,
+ * and while it has not come back at all. A list rendered from a `map` reaches the first state on
+ * its own the moment its array is empty.
  */
 export function CardLayout({
-  content,
+  contentSlot,
   title,
   level = 3,
   description,
-  icon,
-  action,
-  empty,
+  iconSlot,
+  actionSlot,
+  emptySlot,
   loading = false,
-  footer,
-  footerActions,
+  footerSlot,
+  footerActionsSlot,
   className,
   headerClassName,
+  titleClassName,
   contentClassName,
   footerClassName,
 }: CardLayoutProps) {
   // `Children.count` rather than a truth test: `{items.map(…)}` on an empty array is an empty
   // array, not null, and it is the shape a card is nearly always handed.
-  const isEmpty = Children.count(content) === 0;
-  const body = loading ? <CardLayoutSkeleton /> : isEmpty && empty ? asText(empty) : content;
+  const isEmpty = Children.count(contentSlot) === 0;
+  const body = loading ? <CardLayoutSkeleton /> : isEmpty && emptySlot ? emptySlot : contentSlot;
 
   const hasText = Boolean(title || description);
-  const hasHeader = Boolean(hasText || action);
-  const hasFooter = Boolean(footer || footerActions);
+  const hasHeader = Boolean(hasText || actionSlot);
+  const hasFooter = Boolean(footerSlot || footerActionsSlot);
 
   return (
     <Card testID="card-layout" className={className}>
@@ -175,16 +160,19 @@ export function CardLayout({
                 // The icon sits beside the heading rather than inside it: a heading is a `Text`,
                 // and a view inside a `Text` is not something the device lays out.
                 <View className="min-w-0 flex-row items-center gap-2">
-                  {icon ? (
+                  {iconSlot ? (
                     // Sized here rather than by the caller, so an icon passed as `<Plus />` and
                     // one passed as `<Plus className="size-4" />` land at the same size.
-                    <View className={cn("shrink-0 text-muted-foreground", ICON)}>{icon}</View>
+                    <View className={cn("shrink-0 text-foreground/60", ICON)}>{iconSlot}</View>
                   ) : null}
                   {/* The padding is what stops `truncate` clipping the title: `CardTitle` is
                       `leading-none`, so the line box is exactly 1em and `overflow: hidden` cuts
                       the ascenders and descenders off it. The negative margin gives the space
                       back, so the header keeps the height shadcn drew it at. */}
-                  <CardTitle level={level} className="-my-1 min-w-0 shrink truncate py-1">
+                  <CardTitle
+                    level={level}
+                    className={cn("-my-1 min-w-0 shrink truncate py-1", titleClassName)}
+                  >
                     {title}
                   </CardTitle>
                 </View>
@@ -192,25 +180,23 @@ export function CardLayout({
               {description ? <CardDescription>{description}</CardDescription> : null}
             </View>
           ) : null}
-          {action ? <View className={HEADER_ACTION}>{action}</View> : null}
+          {actionSlot ? <View className={HEADER_ACTION}>{actionSlot}</View> : null}
         </CardHeader>
       ) : null}
 
       {/* The header keeps its real title while loading: only the part that is waiting waits. */}
-      {body ? (
-        <CardContent className={cn(SLOT, "min-w-0", contentClassName)}>{body}</CardContent>
-      ) : null}
+      {body ? <CardContent className={cn("min-w-0", contentClassName)}>{body}</CardContent> : null}
 
       {hasFooter ? (
         <CardFooter
           className={cn(
-            footer && footerActions && "justify-between",
-            !footer && "justify-end",
+            footerSlot && footerActionsSlot && "justify-between",
+            !footerSlot && "justify-end",
             footerClassName,
           )}
         >
-          {asText(footer)}
-          {footerActions ? <View className={ACTIONS}>{footerActions}</View> : null}
+          {footerSlot}
+          {footerActionsSlot ? <View className={ACTIONS}>{footerActionsSlot}</View> : null}
         </CardFooter>
       ) : null}
     </Card>

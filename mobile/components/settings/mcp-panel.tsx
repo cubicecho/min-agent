@@ -24,7 +24,6 @@ import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
 import { ChevronRight, Plus, RefreshCw, Trash2, X } from "@/components/ui/icons";
-import { Spinner } from "@/components/ui/spinner";
 import { SwitchField as SwitchRow } from "@/components/ui/switch-field";
 import { api } from "@/lib/client.ts";
 import { useReportDirty } from "./dirty.tsx";
@@ -46,7 +45,7 @@ import { PanelBody } from "./panel-body.tsx";
  */
 
 const STATUS_VARIANT: Record<McpStatus, BadgeVariant> = {
-  ready: "success",
+  ready: "positive",
   error: "destructive",
   connecting: "warning",
   idle: "secondary",
@@ -186,7 +185,7 @@ function Row({ state, onOpen }: { state: McpServerState; onOpen: () => void }) {
   return (
     <ListItem
       className="border border-border bg-card"
-      leading={
+      leadingSlot={
         <Glyph
           className={config.enabled ? "size-4 text-foreground" : "size-4 text-muted-foreground"}
         />
@@ -210,7 +209,7 @@ function Row({ state, onOpen }: { state: McpServerState; onOpen: () => void }) {
           <StatusBadge status={status} />
         </>
       }
-      action={<ChevronRight className="size-4 text-muted-foreground" />}
+      actionSlot={<ChevronRight className="size-4 text-muted-foreground" />}
       onPress={onOpen}
     />
   );
@@ -293,7 +292,7 @@ function Editor({
         title={existing ? name : "Add a server"}
         description="An MCP server, and what min-agent does with its tools."
         hasUnsavedChanges={() => !form.state.isDefaultValue}
-        footer={
+        footerSlot={
           existing ? (
             <ConfirmButton
               variant="ghost"
@@ -303,43 +302,39 @@ function Editor({
               description="The agent loses its tools, and its hooks stop running."
               confirmLabel="Remove"
               onConfirm={onRemove}
-            >
-              <Trash2 className="size-4" />
-            </ConfirmButton>
+              iconSlot={<Trash2 className="size-4" />}
+            />
           ) : null
         }
-        footerActions={(close) => (
+        footerActionsSlot={(close) => (
           <>
-            <Button variant="outline" onPress={close}>
-              Cancel
-            </Button>
+            <Button variant="outline" onPress={close} content="Cancel" />
             <form.SubmitButton isEdit={existing} createLabel="Add server" editLabel="Save" />
           </>
         )}
-        content={
+        contentSlot={
           <Form className="gap-4">
             {state ? (
               <Section
                 surface="card"
                 title="Connection"
                 level={3}
-                action={
+                actionSlot={
                   <>
                     <StatusBadge status={state.status} />
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={reconnecting}
+                      loading={reconnecting}
                       aria-label={`Reconnect ${name}`}
                       onPress={onReconnect}
-                    >
-                      {reconnecting ? <Spinner /> : <RefreshCw className="size-4" />}
-                      Reconnect
-                    </Button>
+                      iconSlot={<RefreshCw className="size-4" />}
+                      content="Reconnect"
+                    />
                   </>
                 }
                 contentClassName="flex flex-col gap-2"
-                content={
+                contentSlot={
                   <>
                     {state.error ? <Alert variant="destructive" description={state.error} /> : null}
                     {/*
@@ -438,14 +433,17 @@ function Editor({
               title="Hooks"
               level={3}
               description="This server's tools, called by min-agent at points in a chat rather than by the model. A hook that fails is noted under the reply and never stops the turn."
-              action={
-                <Button variant="outline" size="sm" onPress={addHook}>
-                  <Plus className="size-4" />
-                  Add hook
-                </Button>
+              actionSlot={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onPress={addHook}
+                  iconSlot={<Plus className="size-4" />}
+                  content="Add hook"
+                />
               }
               contentClassName="flex flex-col gap-3"
-              content={
+              contentSlot={
                 <form.AppField name="hooks" mode="array">
                   {(hooks) => (
                     <>
@@ -457,18 +455,17 @@ function Editor({
                           surface="card"
                           title={`Hook ${index + 1}`}
                           level={4}
-                          action={
+                          actionSlot={
                             <ActionButton
                               variant="ghost"
                               size="icon-sm"
                               label={`Remove hook ${index + 1}`}
                               onPress={() => hooks.removeValue(index)}
-                            >
-                              <X className="size-4" />
-                            </ActionButton>
+                              iconSlot={<X className="size-4" />}
+                            />
                           }
                           contentClassName="flex flex-col gap-3"
-                          content={
+                          contentSlot={
                             <>
                               <form.AppField name={`hooks[${index}].id`}>
                                 {() => <TextField label="Id" />}
@@ -602,19 +599,18 @@ export function McpPanel({ active = true }: { active?: boolean }) {
           <Section
             title="MCP servers"
             description="Connected servers expose their tools to the agent as <server id>__<tool>."
-            action={
+            actionSlot={
               servers.isSuccess ? (
                 <Button
                   variant="outline"
                   onPress={() => setEditing({ index: null, value: blank(configs) })}
-                >
-                  <Plus className="size-4" />
-                  Add server
-                </Button>
+                  iconSlot={<Plus className="size-4" />}
+                  content="Add server"
+                />
               ) : undefined
             }
             contentClassName="flex flex-col gap-2"
-            content={
+            contentSlot={
               <>
                 {/* The dialog reports its own failures; this is for the ones nothing is open to catch. */}
                 {!editing && save.error ? (
@@ -628,7 +624,7 @@ export function McpPanel({ active = true }: { active?: boolean }) {
                   query={servers}
                   what="MCP servers"
                   count={list.length}
-                  empty={
+                  emptySlot={
                     <EmptyState
                       icon={Server}
                       title="No servers yet"

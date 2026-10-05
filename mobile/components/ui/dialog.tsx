@@ -134,7 +134,7 @@ function DialogPortal({ children }: DialogPortalProps) {
  * draws is the one that does.
  */
 function DialogOverlay({ className }: DialogOverlayProps) {
-  return <View pointerEvents="none" className={cn("absolute inset-0 bg-black/80", className)} />;
+  return <View pointerEvents="none" className={cn("absolute inset-0 bg-overlay/60", className)} />;
 }
 
 function DialogContent({
@@ -158,7 +158,7 @@ function DialogContent({
     if (!event.defaultPrevented) close();
   };
   return (
-    <View className="flex-1 items-center justify-center bg-black/80 p-6">
+    <View className="flex-1 items-center justify-center bg-overlay/60 p-6">
       {/* The backdrop is a sibling laid out underneath rather than a parent of
           the card, because `Pressable` has no `stopPropagation` — nesting the
           card inside it would make every press on the card close the dialog. */}
@@ -171,7 +171,7 @@ function DialogContent({
       <View
         {...(role === undefined ? {} : { role })}
         className={cn(
-          "w-full max-w-lg gap-4 rounded-lg border border-border bg-background p-6",
+          "w-full max-w-lg gap-4 rounded-lg border border-foreground/10 bg-background p-6",
           className,
         )}
       >
@@ -205,7 +205,7 @@ function DialogFooter({ className, showCloseButton = false, children }: DialogFo
       {children}
       {showCloseButton ? (
         <DialogClose asChild>
-          <Button variant="outline">Close</Button>
+          <Button variant="outline" content="Close" />
         </DialogClose>
       ) : null}
     </View>
@@ -226,7 +226,7 @@ function DialogTitle({ className, children }: DialogSectionProps) {
 }
 
 function DialogDescription({ className, children }: DialogSectionProps) {
-  return <Text className={cn("text-sm text-muted-foreground", className)}>{children}</Text>;
+  return <Text className={cn("text-sm text-foreground/60", className)}>{children}</Text>;
 }
 
 export {

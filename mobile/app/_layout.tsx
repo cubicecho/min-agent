@@ -122,10 +122,10 @@ function Shell() {
         sidebarWidth="auto"
         divider="none"
         sidebarHideBelow="md"
-        sidebar={
+        sidebarSlot={
           <Sidebar
             label="min-agent"
-            header={
+            headerSlot={
               <>
                 <Brand />
                 <Button
@@ -133,38 +133,37 @@ function Shell() {
                   className="w-full gap-2"
                   disabled={newChat.isPending}
                   onPress={() => newChat.mutate()}
-                >
-                  <Plus className="size-4" />
-                  New chat
-                </Button>
+                  iconSlot={<Plus className="size-4" />}
+                  content="New chat"
+                />
               </>
             }
-            content={
+            contentSlot={
               <View role="navigation" aria-label="Main">
                 <SidebarSection
-                  content={
+                  contentSlot={
                     <Link href="/" asChild>
-                      <SidebarNavItem label="Chats" icon={<MessageSquare />} active={onChats} />
+                      <SidebarNavItem label="Chats" iconSlot={<MessageSquare />} active={onChats} />
                     </Link>
                   }
                 />
                 {apps.length > 0 ? (
                   <SidebarSection
                     title="Apps"
-                    content={apps.map((embed) => {
+                    contentSlot={apps.map((embed) => {
                       const Icon = EMBED_ICON[embed.icon];
                       return embed.mode === "external" ? (
                         <SidebarNavItem
                           key={embed.id}
                           label={embedTitle(embed)}
-                          icon={<Icon />}
+                          iconSlot={<Icon />}
                           onPress={() => openExternally(embed)}
                         />
                       ) : (
                         <Link key={embed.id} href={appHref(embed)} asChild>
                           <SidebarNavItem
                             label={embedTitle(embed)}
-                            icon={<Icon />}
+                            iconSlot={<Icon />}
                             active={pathname === appHref(embed)}
                           />
                         </Link>
@@ -174,19 +173,19 @@ function Shell() {
                 ) : null}
               </View>
             }
-            footer={
+            footerSlot={
               <Link href="/settings" asChild>
-                <SidebarNavItem label="Settings" icon={<Settings />} active={onSettings} />
+                <SidebarNavItem label="Settings" iconSlot={<Settings />} active={onSettings} />
               </Link>
             }
           />
         }
-        brand={<Brand />}
+        brandSlot={<Brand />}
         navLabel="Main"
-        nav={
+        navSlot={
           <>
             <Link href="/" asChild>
-              <BarNavItem label="Chats" icon={<MessageSquare />} active={onChats} />
+              <BarNavItem label="Chats" iconSlot={<MessageSquare />} active={onChats} />
             </Link>
             {apps.map((embed) => {
               const Icon = EMBED_ICON[embed.icon];
@@ -196,7 +195,7 @@ function Shell() {
                 <BarNavItem
                   key={embed.id}
                   label={embedTitle(embed)}
-                  icon={<Icon />}
+                  iconSlot={<Icon />}
                   href={embed.url}
                   onPress={(event) => {
                     event.preventDefault();
@@ -207,29 +206,28 @@ function Shell() {
                 <Link key={embed.id} href={appHref(embed)} asChild>
                   <BarNavItem
                     label={embedTitle(embed)}
-                    icon={<Icon />}
+                    iconSlot={<Icon />}
                     active={pathname === appHref(embed)}
                   />
                 </Link>
               );
             })}
             <Link href="/settings" asChild>
-              <BarNavItem label="Settings" icon={<Settings />} active={onSettings} />
+              <BarNavItem label="Settings" iconSlot={<Settings />} active={onSettings} />
             </Link>
           </>
         }
-        action={
+        actionSlot={
           <ActionButton
             label="New chat"
             variant="ghost"
             size="icon-sm"
             disabled={newChat.isPending}
             onPress={() => newChat.mutate()}
-          >
-            <Plus className="size-4" />
-          </ActionButton>
+            iconSlot={<Plus className="size-4" />}
+          />
         }
-        content={
+        contentSlot={
           // `role="main"` is what react-native-web turns into a <main>. It does not scroll:
           // each screen divides the height it is given between its own header and body.
           // cubeui's panes are block boxes on the web, where `flex-1` claims nothing, so the

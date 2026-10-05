@@ -77,10 +77,9 @@ function CopySpec() {
           disabled={dirty || fetched.isPending}
           aria-label={copied ? "Copied" : "Copy agent spec"}
           onPress={() => fetched.mutate()}
-        >
-          <Glyph className="size-4" />
-          {fetched.isPending ? "Copying…" : "Copy agent spec"}
-        </Button>
+          iconSlot={<Glyph className="size-4" />}
+          content={fetched.isPending ? "Copying…" : "Copy agent spec"}
+        />
         {dirty ? (
           <Text className="flex-1 text-muted-foreground text-sm">
             Save to copy the current settings.
@@ -132,7 +131,7 @@ export function AgentPanel() {
           <SettingsCard
             title="Limits"
             description="What one turn is allowed to spend. The context window is the whole conversation, and the reply limit is only the answer at the end of it."
-            content={
+            contentSlot={
               <>
                 <FieldRow>
                   <form.AppField name="maxTokens">
@@ -190,7 +189,7 @@ export function AgentPanel() {
 
           <SettingsCard
             title="Tools"
-            content={
+            contentSlot={
               <form.AppField name="toolDiscovery">
                 {(field) => (
                   <field.OptionSelectField
@@ -206,7 +205,7 @@ export function AgentPanel() {
           <SettingsCard
             title="System prompt"
             description="Sent at the head of every turn, before the conversation."
-            content={
+            contentSlot={
               <form.AppField name="systemPrompt">
                 {(field) => <field.TextAreaField label="Prompt" className="min-h-36" />}
               </form.AppField>
@@ -216,7 +215,7 @@ export function AgentPanel() {
           <SettingsCard
             title="Agent spec"
             description="These settings as one JSON document, in the format other apps built on agent-core read. It covers Model and Voice as well as this panel."
-            content={<CopySpec />}
+            contentSlot={<CopySpec />}
           />
         </>
       )}

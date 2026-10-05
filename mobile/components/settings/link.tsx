@@ -25,9 +25,12 @@ export function SettingsLink({
 }) {
   const router = useRouter();
   return (
-    <Button variant={variant} size={size} onPress={() => router.navigate(settingsHref(tab))}>
-      <Settings className="size-4" />
-      {label ?? `Settings → ${settingsTabLabel(tab)}`}
-    </Button>
+    <Button
+      variant={variant}
+      size={size}
+      onPress={() => router.navigate(settingsHref(tab))}
+      iconSlot={<Settings className="size-4" />}
+      content={label ?? `Settings → ${settingsTabLabel(tab)}`}
+    />
   );
 }

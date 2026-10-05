@@ -26,7 +26,7 @@ export function EmbedIconPicker({ value, onValueChange, ...props }: EmbedIconPic
       {EMBED_ICONS.map((name) => {
         const Glyph = EMBED_ICON[name];
         return (
-          <SegmentedButton key={name} value={name} icon={<Glyph />}>
+          <SegmentedButton key={name} value={name} iconSlot={<Glyph />}>
             {name}
           </SegmentedButton>
         );
@@ -49,7 +49,7 @@ export function EmbedIconField({
       asGroup
       label={label}
       description={description}
-      control={
+      controlSlot={
         <EmbedIconPicker
           value={field.state.value}
           onValueChange={(next) => {

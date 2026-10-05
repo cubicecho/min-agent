@@ -12,7 +12,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/client.ts";
 
 /**
@@ -90,22 +89,23 @@ export function PromptPicker({
       }}
       title={chosen ? titleOf(chosen) : "MCP prompts"}
       description={chosen?.description || undefined}
-      footer={
+      footerSlot={
         chosen ? (
-          <Button variant="outline" onPress={() => setChosen(null)}>
-            Back
-          </Button>
+          <Button variant="outline" onPress={() => setChosen(null)} content="Back" />
         ) : undefined
       }
-      footerActions={
+      footerActionsSlot={
         chosen ? (
-          <Button disabled={missing || expand.isPending} onPress={() => expand.mutate(chosen)}>
-            {expand.isPending ? <Spinner label="Inserting" /> : <CornerDownLeft aria-hidden />}
-            Insert
-          </Button>
+          <Button
+            disabled={missing}
+            loading={expand.isPending}
+            onPress={() => expand.mutate(chosen)}
+            iconSlot={<CornerDownLeft aria-hidden />}
+            content="Insert"
+          />
         ) : undefined
       }
-      content={
+      contentSlot={
         <View className="gap-4">
           {expand.error ? (
             <Alert
@@ -133,7 +133,7 @@ export function PromptPicker({
                 query={prompts}
                 what="prompts"
                 count={prompts.data?.length ?? 0}
-                empty={<EmptyState compact title="No connected MCP server offers prompts." />}
+                emptySlot={<EmptyState compact title="No connected MCP server offers prompts." />}
               />
               {prompts.data?.length ? (
                 <View className="gap-2">

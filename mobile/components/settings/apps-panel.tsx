@@ -61,7 +61,7 @@ function Row({ embed, onOpen }: { embed: EmbedConfig; onOpen: () => void }) {
   return (
     <ListItem
       className="border border-border bg-card"
-      leading={
+      leadingSlot={
         <Glyph
           className={embed.enabled ? "size-4 text-foreground" : "size-4 text-muted-foreground"}
         />
@@ -75,7 +75,7 @@ function Row({ embed, onOpen }: { embed: EmbedConfig; onOpen: () => void }) {
           {embed.enabled ? null : <Badge variant="secondary">hidden</Badge>}
         </>
       }
-      action={<ChevronRight className="size-4 text-muted-foreground" />}
+      actionSlot={<ChevronRight className="size-4 text-muted-foreground" />}
       onPress={onOpen}
     />
   );
@@ -131,7 +131,7 @@ function Editor({
         title={existing ? name : "Add an app"}
         description="A web app given a row in the sidebar."
         hasUnsavedChanges={() => !form.state.isDefaultValue}
-        footer={
+        footerSlot={
           <View className="flex-row items-center gap-1">
             {existing ? (
               <ConfirmButton
@@ -142,9 +142,8 @@ function Editor({
                 description="Its row leaves the sidebar. The app itself is not touched."
                 confirmLabel="Remove"
                 onConfirm={onRemove}
-              >
-                <Trash2 className="size-4" />
-              </ConfirmButton>
+                iconSlot={<Trash2 className="size-4" />}
+              />
             ) : null}
             <form.Subscribe selector={(state) => state.values.url}>
               {(url) => (
@@ -154,22 +153,19 @@ function Editor({
                   label="Open in the browser"
                   disabled={!url}
                   onPress={() => void Linking.openURL(url)}
-                >
-                  <ExternalLink className="size-4" />
-                </ActionButton>
+                  iconSlot={<ExternalLink className="size-4" />}
+                />
               )}
             </form.Subscribe>
           </View>
         }
-        footerActions={(close) => (
+        footerActionsSlot={(close) => (
           <>
-            <Button variant="outline" onPress={close}>
-              Cancel
-            </Button>
+            <Button variant="outline" onPress={close} content="Cancel" />
             <form.SubmitButton isEdit={existing} createLabel="Add app" editLabel="Save" />
           </>
         )}
-        content={
+        contentSlot={
           <Form className="gap-4">
             <form.AppField name="label">
               {() => <TextField label="Label" placeholder="Kanban" autoFocus={!existing} />}
@@ -272,10 +268,12 @@ export function AppsPanel({ active = true }: { active?: boolean }) {
   const remove = (index: number) => save.mutate(list.filter((_, i) => i !== index));
 
   const add = (
-    <Button variant="outline" onPress={() => setEditing({ index: null, value: blank(list) })}>
-      <Plus className="size-4" />
-      Add app
-    </Button>
+    <Button
+      variant="outline"
+      onPress={() => setEditing({ index: null, value: blank(list) })}
+      iconSlot={<Plus className="size-4" />}
+      content="Add app"
+    />
   );
 
   return (
@@ -289,9 +287,9 @@ export function AppsPanel({ active = true }: { active?: boolean }) {
                 ? "Other web apps, given a row in the sidebar. They are not part of min-agent — a framed app is the other server’s own UI, running on its own."
                 : "Other web apps, given a row in the sidebar. They are not part of min-agent, and this build has no frame to put them in, so every app opens in the browser."
             }
-            action={embeds.isSuccess ? add : undefined}
+            actionSlot={embeds.isSuccess ? add : undefined}
             contentClassName="flex flex-col gap-2"
-            content={
+            contentSlot={
               <>
                 {/* The dialog reports its own failures; this is for the ones nothing is open to catch. */}
                 {!editing && save.error ? (
@@ -305,7 +303,7 @@ export function AppsPanel({ active = true }: { active?: boolean }) {
                   query={embeds}
                   what="apps"
                   count={list.length}
-                  empty={
+                  emptySlot={
                     <EmptyState
                       icon={LayoutGrid}
                       title="No apps yet"

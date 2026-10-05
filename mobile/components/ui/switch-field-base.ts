@@ -9,4 +9,4 @@ export type SwitchFieldProps = {
 };
 
 /** The caption's type, shared so the two halves cannot drift on it. */
-export const SWITCH_FIELD_LABEL_CLASS = "text-sm text-muted-foreground";
+export const SWITCH_FIELD_LABEL_CLASS = "text-sm text-foreground/60";

@@ -1,9 +1,9 @@
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import { Text, View } from "react-native";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { RefreshCw, TriangleAlert } from "@/components/ui/icons";
-import { cn } from "@/lib/utils";
+import { cn, type SlotNode } from "@/lib/utils";
 
 /** What a list screen needs off its query, and nothing more. */
 type QueryLike = {
@@ -40,7 +40,7 @@ export function QueryState({
   query,
   what,
   count,
-  empty,
+  emptySlot,
   rows = 3,
   compact = false,
   describe,
@@ -58,7 +58,7 @@ export function QueryState({
    */
   count: number;
   /** What to say when there are none — whatever invites the first one. */
-  empty?: ReactNode | undefined;
+  emptySlot?: SlotNode | undefined;
   /** How many placeholder rows stand in for the list while it loads. */
   rows?: number | undefined;
   /**
@@ -90,7 +90,7 @@ export function QueryState({
         {...(className === undefined ? {} : { className })}
       />
     );
-  if (count === 0) return <>{empty}</>;
+  if (count === 0) return <>{emptySlot}</>;
   return null;
 }
 
@@ -125,7 +125,7 @@ export function QueryError({
   /** A promise returned here is awaited — see above. */
   onRetry: () => unknown;
   what: string;
-  /** No card, smaller type, a ghost retry — see `QueryState`'s `compact`. */
+  /** No card, smaller type, a small outline retry — see `QueryState`'s `compact`. */
   compact?: boolean | undefined;
   /**
    * What the failure means, in the app's words. Without it the line under the heading is the
@@ -148,23 +148,27 @@ export function QueryError({
   const label = retrying ? "Retrying…" : "Try again";
 
   // The same three parts — what failed, why, try again — at the size of a nav row. No card, since a
-  // bordered box inside a rail reads as one more row, and the retry is a ghost button so the rail's
+  // bordered box inside a rail reads as one more row, and the retry is a small outline button so the rail's
   // only filled control stays the primary action above it.
   if (compact)
     return (
       <View role="alert" testID="query-error" className={cn("min-w-0 gap-1 px-2 py-1", className)}>
         <View className="min-w-0 flex-row items-center gap-1.5">
-          <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-destructive" aria-hidden />
-          <Text className="min-w-0 flex-1 font-medium text-destructive text-xs">
+          <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-negative" aria-hidden />
+          <Text className="min-w-0 flex-1 font-medium text-negative text-xs">
             Could not load {what}
           </Text>
         </View>
-        <Text className="text-muted-foreground text-xs">{reason}</Text>
+        <Text className="text-foreground/60 text-xs">{reason}</Text>
         <View className="flex-row">
-          <Button variant="ghost" size="xs" onPress={retry} disabled={retrying}>
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-            {label}
-          </Button>
+          <Button
+            variant="outline"
+            size="xs"
+            onPress={retry}
+            disabled={retrying}
+            iconSlot={<RefreshCw className="h-3.5 w-3.5" aria-hidden />}
+            content={label}
+          />
         </View>
       </View>
     );
@@ -174,23 +178,27 @@ export function QueryError({
       role="alert"
       testID="query-error"
       // No tinted ground behind it. The version this was lifted from washed the card with
-      // `bg-destructive/5`, which drops both the red heading and the grey message under 4.5:1
+      // `bg-negative/5`, which drops both the red heading and the grey message under 4.5:1
       // against their own background — 4.36 and 4.33, caught by the story's axe run. The border
       // and the icon say "this failed" without moving the ground the words sit on.
-      className={cn("gap-2 border-destructive/50 p-4", className)}
+      className={cn("gap-2 border-negative/40 p-4", className)}
     >
       {/* `flex-row` is explicit because a column is Yoga's default, and the icon carries its own
           colour because native inherits none — the two standing conversion rules. */}
       <View className="flex-row items-center gap-2">
-        <TriangleAlert className="h-4 w-4 text-destructive" aria-hidden />
-        <Text className="font-medium text-destructive text-sm">Could not load {what}</Text>
+        <TriangleAlert className="h-4 w-4 text-negative" aria-hidden />
+        <Text className="font-medium text-negative text-sm">Could not load {what}</Text>
       </View>
-      <Text className="text-muted-foreground text-sm">{reason}</Text>
+      <Text className="text-foreground/60 text-sm">{reason}</Text>
       <View className="flex-row">
-        <Button variant="outline" size="sm" onPress={retry} disabled={retrying}>
-          <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-          {label}
-        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onPress={retry}
+          disabled={retrying}
+          iconSlot={<RefreshCw className="h-3.5 w-3.5" aria-hidden />}
+          content={label}
+        />
       </View>
     </Card>
   );
@@ -233,7 +241,7 @@ export function RowSkeleton({
             key={index}
             testID="row-skeleton"
             aria-hidden
-            className="h-8 animate-pulse rounded-md bg-accent"
+            className="h-8 animate-pulse rounded-md bg-hover"
           />
         ))}
       </View>
@@ -252,8 +260,8 @@ export function RowSkeleton({
           {/* `animate-pulse` resolves to nothing on device and is kept for the same reason
               `page.tsx` keeps `container mx-auto`: the class is what the compiled web half needs,
               and dropping it here to tidy the native file would quietly regress the DOM. */}
-          <View className="h-4 w-1/3 animate-pulse rounded-md bg-accent" />
-          <View className="h-3 w-2/3 animate-pulse rounded-md bg-accent" />
+          <View className="h-4 w-1/3 animate-pulse rounded-md bg-hover" />
+          <View className="h-3 w-2/3 animate-pulse rounded-md bg-hover" />
         </Card>
       ))}
     </View>

@@ -83,13 +83,13 @@ function ThemeOptions({
             key={option}
             value={option}
             aria-label={label}
-            icon={
+            iconSlot={
               <Icon
                 aria-hidden
                 className={cn(
                   "h-4 w-4",
                   // Named, because a native icon has no `currentColor` to inherit from the segment.
-                  value === option ? "text-selection-foreground" : "text-muted-foreground",
+                  value === option ? "text-active-foreground" : "text-foreground/60",
                 )}
               />
             }
@@ -100,7 +100,7 @@ function ThemeOptions({
             value={option}
             label={label}
             hint={hint}
-            icon={<Icon className="h-5 w-5" />}
+            iconSlot={<Icon className="h-5 w-5" />}
           />
         ),
       )}

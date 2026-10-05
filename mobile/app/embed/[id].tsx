@@ -49,16 +49,16 @@ export default function EmbedScreen() {
         title="App"
         headerClassName={TITLE_ROW}
         loading={embeds.isPending}
-        content={
+        contentSlot={
           <QueryState
             query={embeds}
             what="your apps"
             count={0}
-            empty={
+            emptySlot={
               <EmptyState
                 icon={LayoutGrid}
                 title={`No app is configured under “${id}”.`}
-                action={<SettingsLink tab="apps" label="Add one" />}
+                actionSlot={<SettingsLink tab="apps" label="Add one" />}
               />
             }
           />
@@ -73,25 +73,24 @@ export default function EmbedScreen() {
       // under the header rather than sitting in a scroller of its own height.
       <HeaderContentFooter
         className="h-full"
-        header={
+        headerSlot={
           <PageHeader
             // A frame's title bar, not a page's: the app in the frame has a header of its own.
             level={3}
             className={cn("border-border border-b py-2", TITLE_ROW)}
             title={embedTitle(embed)}
-            action={
+            actionSlot={
               <ActionButton
                 label="Open in the browser"
                 variant="ghost"
                 size="icon-sm"
                 onPress={() => open(embed)}
-              >
-                <ExternalLink className="size-4" />
-              </ActionButton>
+                iconSlot={<ExternalLink className="size-4" />}
+              />
             }
           />
         }
-        content={
+        contentSlot={
           <View className="flex-1 bg-background">
             {/*
               A DOM element in a React Native tree, which only works because react-native-web
@@ -115,7 +114,7 @@ export default function EmbedScreen() {
     <PageLayout
       title={embedTitle(embed)}
       headerClassName={TITLE_ROW}
-      content={
+      contentSlot={
         // The page already has the app's name over it, so this is the one thing left to say and
         // the one thing to do about it — not a card repeating the title across the whole pane.
         <EmptyState
@@ -127,11 +126,13 @@ export default function EmbedScreen() {
               : "This build cannot frame another app"
           }
           description={embed.url}
-          action={
-            <Button className="gap-2" onPress={() => open(embed)}>
-              <ExternalLink className="size-4" />
-              Open
-            </Button>
+          actionSlot={
+            <Button
+              className="gap-2"
+              onPress={() => open(embed)}
+              iconSlot={<ExternalLink className="size-4" />}
+              content="Open"
+            />
           }
         />
       }

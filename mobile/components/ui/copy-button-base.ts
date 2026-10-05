@@ -13,7 +13,7 @@ export type CopyButtonProps = {
    * press the name is `Copied`, whatever this says.
    */
   label?: string | undefined;
-  /** The button's variant. The default is `ghost`, since a copy button sits beside its text. */
+  /** The button's variant. The default is `outline`. */
   variant?: ButtonProps["variant"] | undefined;
   /** The button's size. The default is `icon-sm`, which sits flush in a row of small text. */
   size?: ButtonProps["size"] | undefined;

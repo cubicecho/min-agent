@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import * as React from "react";
 import { Platform, Pressable, Text, View } from "react-native";
-import { cn } from "@/lib/utils";
+import { cn, type SlotNode } from "@/lib/utils";
 
 type Focusable = React.ElementRef<typeof Pressable>;
 
@@ -49,7 +49,7 @@ type RadioGroupProps = {
    * `row` (the default): a circle, a label and an optional description per option, stacked.
    * `card`: a bordered tile per option, icon over label, sharing a row.
    * `segmented`: one framed, input-height row of equal segments, full width. Each segment shows
-   * its `icon`, its `label`, or both; an icon-only segment is named by its `aria-label`.
+   * its `iconSlot`, its `label`, or both; an icon-only segment is named by its `aria-label`.
    */
   variant?: RadioGroupVariant | undefined;
   /**
@@ -168,7 +168,7 @@ function RadioGroup({
     variant === "segmented"
       ? cn(
           "h-10 w-full flex-row gap-1 rounded-md border bg-background p-1",
-          ariaInvalid === true ? "border-destructive" : "border-input",
+          ariaInvalid === true ? "border-negative" : "border-foreground/15",
         )
       : horizontal
         ? "flex-row flex-wrap gap-3"
@@ -220,9 +220,9 @@ type RadioGroupItemProps = {
   /**
    * The picture over the label in a `card` tile, or the segment's face in `segmented`. Ignored by
    * `row`. On device an icon has no `currentColor` to inherit, so in `segmented` give it the
-   * checked segment's `text-selection-foreground` and the others' `text-muted-foreground` yourself.
+   * checked segment's `text-active-foreground` and the others' `text-foreground/60` yourself.
    */
-  icon?: ReactNode | undefined;
+  iconSlot?: SlotNode | undefined;
   /**
    * A hover hint — the web's `title` — and the accessibility hint on device. For the one extra
    * sentence a tile has no room for; say anything a user needs to choose in `description`.
@@ -246,7 +246,7 @@ function RadioGroupItem({
   value,
   label,
   description,
-  icon,
+  iconSlot,
   hint: hintProp,
   title,
   disabled: itemDisabled = false,
@@ -285,11 +285,11 @@ function RadioGroupItem({
     <View
       className={cn(
         "h-4 w-4 shrink-0 items-center justify-center rounded-full border",
-        checked ? "border-selection" : "border-input",
-        group.invalid && "border-destructive",
+        checked ? "border-active" : "border-foreground/15",
+        group.invalid && "border-negative",
       )}
     >
-      {checked ? <View className="h-2 w-2 rounded-full bg-selection" /> : null}
+      {checked ? <View className="h-2 w-2 rounded-full bg-active" /> : null}
     </View>
   );
 
@@ -314,24 +314,25 @@ function RadioGroupItem({
           }
         : {})}
       className={cn(
-        "ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "focus-visible:outline-none",
         bare
-          ? "rounded-full"
+          ? "rounded-full focus-visible:bg-hover"
           : segmented
             ? cn(
                 "min-w-0 flex-1 flex-row items-center justify-center gap-1.5 rounded-sm px-3",
                 checked
-                  ? "bg-selection text-selection-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                  ? "bg-active text-active-foreground focus-visible:bg-active/90"
+                  : "text-foreground/60 hover:bg-hover hover:text-foreground focus-visible:bg-hover focus-visible:text-foreground",
               )
             : card
               ? cn(
                   "min-w-0 flex-1 items-center gap-1.5 rounded-lg border p-3",
                   // The border alone says checked: a tinted fill takes the muted description under 4.5:1.
-                  checked ? "border-selection bg-background" : "border-input bg-background",
-                  group.invalid && "border-destructive",
+                  checked ? "border-active bg-background" : "border-foreground/15 bg-background",
+                  "focus-visible:bg-hover",
+                  group.invalid && "border-negative",
                 )
-              : "flex-row items-start gap-3 rounded-sm",
+              : "flex-row items-start gap-3 rounded-sm focus-visible:bg-hover",
         disabled && "opacity-50",
         className,
       )}
@@ -340,13 +341,13 @@ function RadioGroupItem({
         circle
       ) : segmented ? (
         <>
-          {icon ? <View className="items-center justify-center">{icon}</View> : null}
+          {iconSlot ? <View className="items-center justify-center">{iconSlot}</View> : null}
           {label !== undefined ? (
             <Text
               id={labelId}
               className={cn(
                 "truncate text-sm font-medium",
-                checked ? "text-selection-foreground" : "text-muted-foreground",
+                checked ? "text-active-foreground" : "text-foreground/60",
               )}
             >
               {label}
@@ -355,12 +356,12 @@ function RadioGroupItem({
         </>
       ) : card ? (
         <>
-          {icon ? <View className="items-center justify-center">{icon}</View> : null}
+          {iconSlot ? <View className="items-center justify-center">{iconSlot}</View> : null}
           <Text id={labelId} className="text-center text-foreground text-sm font-medium">
             {label}
           </Text>
           {description ? (
-            <Text id={descriptionId} className="text-center text-muted-foreground text-xs">
+            <Text id={descriptionId} className="text-center text-foreground/60 text-xs">
               {description}
             </Text>
           ) : null}
@@ -373,7 +374,7 @@ function RadioGroupItem({
               {label}
             </Text>
             {description ? (
-              <Text id={descriptionId} className="text-muted-foreground text-sm">
+              <Text id={descriptionId} className="text-foreground/60 text-sm">
                 {description}
               </Text>
             ) : null}

@@ -133,11 +133,11 @@ export default function SettingsScreen() {
       // The rule runs the width of the screen; the title and the tabs sit in the panels' column,
       // so the first tab is over the first card rather than out at the edge of the window.
       headerClassName="border-border border-b"
-      header={
+      headerSlot={
         <PageHeader
           title="Settings"
           className={cn(PROSE_COLUMN, TITLE_ROW)}
-          content={
+          contentSlot={
             <Tabs value={active} onValueChange={open}>
               {/* Sideways rather than wrapped or shrunk: the set is short and a phone is
                   narrow, so the tabs past the edge are a drag away and the ones on screen stay
@@ -168,7 +168,7 @@ export default function SettingsScreen() {
       }
       // The body is a block on the web; the panels need a column to take its height from.
       contentClassName="flex flex-col"
-      content={<DirtyProvider value={{ dirty, report }}>{panels}</DirtyProvider>}
+      contentSlot={<DirtyProvider value={{ dirty, report }}>{panels}</DirtyProvider>}
     />
   );
 }

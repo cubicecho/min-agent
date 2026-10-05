@@ -950,8 +950,8 @@ any order, so typing more always narrows.
 
 The rule is `matchTerms` in `shared/client/search.ts`. Filtering is done in the client: what is
 being filtered is already in memory, and a round trip per keystroke would be slower than the
-scanning it replaced. The model pickers do not filter — cubeui's `OptionSelect` has no filter box
-— so an Ollama box with forty tags on it is a list to scroll.
+scanning it replaced. The model pickers filter the same way, through `OptionSelect`'s
+`searchable`: an Ollama box with forty tags on it is a list to type into rather than scroll.
 
 ## Other apps in the sidebar
 
@@ -1044,8 +1044,9 @@ here and Biome is told to leave them alone. The colours come the same way:
 What the app owns sits in folders under `components/`: `app/` for its form hook and the icons
 cubeui does not ship, `apps/`, `chat/` and `settings/` for the screens. A screen is put together
 from cubeui's shells — `PageLayout`, `HeaderContentFooter`, `CardLayout`, `DialogLayout`,
-`Sidebar` — which take their parts as named slots (`content`, `title`, `action`, `footer`) rather
-than as children. Forms go through `useAppForm` in `components/app/app-form.tsx`, which is
+`Sidebar` — which take their parts as named props rather than as children: words as `title` and
+`description`, elements as props ending in `Slot` (`contentSlot`, `actionSlot`, `footerSlot`). A
+`Button` is the same: its label is `content` and its icon is `iconSlot`. Forms go through `useAppForm` in `components/app/app-form.tsx`, which is
 cubeui's TanStack Form hook with this app's extra fields bound to it.
 
 ### A sidebar, not a hamburger
@@ -1120,14 +1121,12 @@ width the app started at. Both routes render `ChatsView`, which is what lets the
 put while the route beneath it changes; switching chats from the panel `replace`s rather
 than `push`es, so an afternoon of browsing does not pile up on the back stack.
 
-Enter sends in the browser, and Shift+Enter breaks the line. That is wired through `onKeyPress`
-in `components/chat/composer-input.tsx` — the app's own box, because cubeui's `Textarea` has no
-submit key — and is deliberately web-only: on a phone the return key is how
-you get a new line, and the send button is an inch away. react-native-web hands `onKeyPress`
-the React synthetic keyboard event rather than the bare `{ key }` its types promise, so the
-handler reads `shiftKey` and the IME's `isComposing` through a documented cast — and calls
-`preventDefault()`, which also suppresses react-native-web's own Enter branch and the blur
-that comes with it, so the cursor stays in the box between messages.
+Enter sends in the browser, and Shift+Enter breaks the line. The box is cubeui's `Textarea`,
+which grows with its text from one line to seven and takes the send as `onSubmitEditing` — an
+Enter without Shift that is not closing an IME's candidate list. It is deliberately web-only: on
+a phone the return key is how you get a new line, and the send button is an inch away. The
+Enter is held back rather than passed on, so it neither adds a line to the next message nor
+blurs the box, and the cursor stays where it was between messages.
 
 ### A pinned lightningcss
 
