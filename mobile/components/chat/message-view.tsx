@@ -3,6 +3,7 @@ import { messageText } from "@shared/client/transcript.ts";
 import { statsLine } from "@shared/client/usage.ts";
 import { shownCall } from "@shared/tool-proxy.ts";
 import type { HookNote, LlmConfig, StoredMessage, TurnStats } from "@shared/types.ts";
+import { INJECT_EVENTS } from "@shared/types.ts";
 import { type ComponentType, memo, type ReactNode, useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { ActionButton } from "@/components/action-button";
@@ -314,8 +315,16 @@ const StoredMessages = memo(function StoredMessages({
         if (item.role !== "assistant") return null;
 
         const body = messageText(item);
+        // Where the live turn had them: a hook that ran ahead of the question is noted ahead of
+        // the answer, and one that reported after it stays under it.
+        const hooks = item.stats?.hooks ?? [];
+        const before = hooks.filter((hook) => INJECT_EVENTS.has(hook.event));
+        const after = hooks.filter((hook) => !INJECT_EVENTS.has(hook.event));
         return (
           <View key={key} className="gap-2">
+            {before.map((hook) => (
+              <HookLine key={`${hook.event}-${hook.source}-${hook.hookId}`} hook={hook} />
+            ))}
             {item.reasoning_content ? <Reasoning text={item.reasoning_content} /> : null}
             {body ? <Bubble from="assistant" content={<MarkdownBody text={body} />} /> : null}
             {(item.tool_calls ?? []).map((call) => {
@@ -370,7 +379,7 @@ const StoredMessages = memo(function StoredMessages({
                 {item.stats ? <Stats stats={item.stats} pricing={pricing} /> : null}
               </View>
             ) : null}
-            {(item.stats?.hooks ?? []).map((hook) => (
+            {after.map((hook) => (
               <HookLine key={`${hook.event}-${hook.source}-${hook.hookId}`} hook={hook} />
             ))}
             {item.followups?.length && onFollowup && index === messages.length - 1 ? (
