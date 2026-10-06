@@ -26,11 +26,15 @@ const server = (handlers: {
   read?: (uri: string) => { contents: { uri?: string; text?: string; mimeType?: string }[] };
 }) => ({
   listResources: async () => {
-    if (!handlers.resources) throw new Error("no resources here");
+    if (!handlers.resources) {
+      throw new Error("no resources here");
+    }
     return { resources: handlers.resources };
   },
   readResource: async ({ uri }: { uri: string }) => {
-    if (!handlers.read) throw new Error(`${uri} is not here`);
+    if (!handlers.read) {
+      throw new Error(`${uri} is not here`);
+    }
     return handlers.read(uri);
   },
 });

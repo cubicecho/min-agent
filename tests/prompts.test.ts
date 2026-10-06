@@ -30,7 +30,9 @@ const server = (handlers: {
   get?: (name: string, args: Record<string, string>) => { messages: Message[] };
 }) => ({
   listPrompts: async () => {
-    if (!handlers.prompts) throw new Error("no prompts here");
+    if (!handlers.prompts) {
+      throw new Error("no prompts here");
+    }
     return { prompts: handlers.prompts };
   },
   getPrompt: async ({
@@ -40,7 +42,9 @@ const server = (handlers: {
     name: string;
     arguments: Record<string, string>;
   }) => {
-    if (!handlers.get) throw new Error(`${name} is not here`);
+    if (!handlers.get) {
+      throw new Error(`${name} is not here`);
+    }
     return handlers.get(name, args);
   },
 });

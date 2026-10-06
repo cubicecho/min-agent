@@ -26,13 +26,17 @@ function parser(onFrame: (frame: Frame) => void) {
     held = Buffer.concat([held, chunk]);
     for (;;) {
       const newline = held.indexOf(0x0a);
-      if (newline === -1) return;
+      if (newline === -1) {
+        return;
+      }
       const header = JSON.parse(held.subarray(0, newline).toString("utf8"));
       const dataLength: number = header.data_length ?? 0;
       const payloadLength: number = header.payload_length ?? 0;
       const body = newline + 1;
       const end = body + dataLength + payloadLength;
-      if (held.length < end) return;
+      if (held.length < end) {
+        return;
+      }
       const data = dataLength
         ? JSON.parse(held.subarray(body, body + dataLength).toString("utf8"))
         : (header.data ?? {});
@@ -67,7 +71,9 @@ async function serve(handle: (socket: Socket, frame: Frame) => void) {
   running = server;
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
-  if (typeof address === "string" || !address) throw new Error("no port");
+  if (typeof address === "string" || !address) {
+    throw new Error("no port");
+  }
   return { host: "127.0.0.1", port: address.port };
 }
 
@@ -105,7 +111,9 @@ describe("transcribe", () => {
     const said: Frame[] = [];
     const address = await serve((socket, frame) => {
       said.push(frame);
-      if (frame.type !== "audio-stop") return;
+      if (frame.type !== "audio-stop") {
+        return;
+      }
       socket.write(line({ type: "transcript", data: { text: "  hello there  " } }));
     });
 
@@ -126,9 +134,13 @@ describe("transcribe", () => {
 
   it("reassembles an answer that arrives a byte at a time", async () => {
     const address = await serve((socket, frame) => {
-      if (frame.type !== "audio-stop") return;
+      if (frame.type !== "audio-stop") {
+        return;
+      }
       const reply = line({ type: "transcript", data: { text: "split" } });
-      for (const byte of reply) socket.write(Buffer.from([byte]));
+      for (const byte of reply) {
+        socket.write(Buffer.from([byte]));
+      }
     });
 
     expect(await transcribe(address, Buffer.alloc(64))).toBe("split");
@@ -138,7 +150,9 @@ describe("transcribe", () => {
   // The Python servers do not, which is exactly why a client that cannot read it would ship.
   it("reads a header whose data came in its own block", async () => {
     const address = await serve((socket, frame) => {
-      if (frame.type !== "audio-stop") return;
+      if (frame.type !== "audio-stop") {
+        return;
+      }
       const data = Buffer.from(JSON.stringify({ text: "out of band" }), "utf8");
       socket.write(line({ type: "transcript", data_length: data.length }));
       socket.write(data);
@@ -159,7 +173,9 @@ describe("synthesize", () => {
     const said: Frame[] = [];
     const address = await serve((socket, frame) => {
       said.push(frame);
-      if (frame.type !== "synthesize") return;
+      if (frame.type !== "synthesize") {
+        return;
+      }
       const format = { rate: 22_050, width: 2, channels: 1 };
       socket.write(line({ type: "audio-start", data: format }));
       for (const byte of [1, 2, 3]) {
@@ -187,7 +203,9 @@ describe("synthesize", () => {
     const said: Frame[] = [];
     const address = await serve((socket, frame) => {
       said.push(frame);
-      if (frame.type !== "synthesize") return;
+      if (frame.type !== "synthesize") {
+        return;
+      }
       socket.write(line({ type: "audio-chunk", data: {}, payload_length: 2 }));
       socket.write(Buffer.from([9, 0]));
       socket.write(line({ type: "audio-stop", data: {} }));
@@ -199,7 +217,9 @@ describe("synthesize", () => {
 
   it("complains rather than returning an empty file when no audio came", async () => {
     const address = await serve((socket, frame) => {
-      if (frame.type !== "synthesize") return;
+      if (frame.type !== "synthesize") {
+        return;
+      }
       socket.write(line({ type: "audio-start", data: {} }));
       socket.write(line({ type: "audio-stop", data: {} }));
     });

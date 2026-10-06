@@ -54,7 +54,9 @@ function gh(args, { allowFailure = false } = {}) {
       stdio: allowFailure ? ["ignore", "pipe", "ignore"] : ["ignore", "pipe", "inherit"],
     }).trim();
   } catch (error) {
-    if (allowFailure) return undefined;
+    if (allowFailure) {
+      return undefined;
+    }
     throw error;
   }
 }
@@ -68,7 +70,9 @@ function summarize(markdown) {
 
 /** The links the EAS CLI prints, rebuilt from the account, the slug and an id. */
 function easUrl(project, kind, id) {
-  if (!(project.account && project.slug && id)) return undefined;
+  if (!(project.account && project.slug && id)) {
+    return undefined;
+  }
   return `https://expo.dev/accounts/${project.account}/projects/${project.slug}/${kind}/${id}`;
 }
 
@@ -97,10 +101,11 @@ function renderBinary(state) {
     "",
     `- ${version} — profile \`${state.profile}\`, ${link("open in EAS", easUrl(project, "builds", binary.id)) || `build \`${binary.id ?? "unknown"}\``}`,
   ];
-  if (binary.sha)
+  if (binary.sha) {
     lines.push(
       `- Built from ${commitLink(binary.sha, binary.subject ? `— ${binary.subject}` : "")}`,
     );
+  }
   lines.push(`- Fingerprint \`${state.fingerprint}\``);
   lines.push("");
   lines.push(
@@ -146,7 +151,9 @@ function renderBody(state) {
 
 function parseState(body) {
   const match = body?.match(STATE_PATTERN);
-  if (!match) return undefined;
+  if (!match) {
+    return undefined;
+  }
   try {
     return JSON.parse(match[1]);
   } catch {

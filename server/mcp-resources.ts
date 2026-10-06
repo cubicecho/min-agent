@@ -21,7 +21,11 @@ import { client, resourceServers } from "./mcp.ts";
 
 /** Shallow freezing these would leave `.function.description` — the part worth editing. */
 function deepFreeze<T>(value: T): T {
-  if (value && typeof value === "object") for (const held of Object.values(value)) deepFreeze(held);
+  if (value && typeof value === "object") {
+    for (const held of Object.values(value)) {
+      deepFreeze(held);
+    }
+  }
   return Object.freeze(value);
 }
 
@@ -95,13 +99,17 @@ const line = (resource: { uri: string; name?: string; mimeType?: string }) => {
  */
 export async function list(): Promise<string> {
   const servers = resourceServers();
-  if (servers.length === 0) return "No connected MCP server offers resources.";
+  if (servers.length === 0) {
+    return "No connected MCP server offers resources.";
+  }
 
   const listings = await Promise.all(
     servers.map(async ({ id, label }) => {
       try {
         const { resources } = await (await client(id)).listResources();
-        for (const resource of resources) owners.set(resource.uri, id);
+        for (const resource of resources) {
+          owners.set(resource.uri, id);
+        }
         return resources.length > 0
           ? `${label}:\n${resources.map(line).join("\n")}`
           : `${label}: no resources.`;
@@ -135,7 +143,9 @@ const contentsText = (contents: { uri?: string; text?: string; mimeType?: string
  */
 export async function read(uri: string): Promise<string> {
   const servers = resourceServers();
-  if (servers.length === 0) throw new Error("No connected MCP server offers resources.");
+  if (servers.length === 0) {
+    throw new Error("No connected MCP server offers resources.");
+  }
 
   const owner = owners.get(uri);
   const order = owner

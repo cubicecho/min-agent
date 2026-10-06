@@ -139,7 +139,9 @@ describe("planFold", () => {
     const messages = conversation(20);
     for (const limit of [2000, 6000, 12000, 40000]) {
       const cut = cutOf(messages, limit);
-      if (cut !== undefined) expect(messages[cut].role).toBe("user");
+      if (cut !== undefined) {
+        expect(messages[cut].role).toBe("user");
+      }
     }
   });
 
@@ -157,7 +159,9 @@ describe("planFold", () => {
       say("assistant", "ok"),
     ];
     const cut = cutOf(messages, 40);
-    if (cut !== undefined) expect(messages[cut].role).toBe("user");
+    if (cut !== undefined) {
+      expect(messages[cut].role).toBe("user");
+    }
   });
 
   it("declines when there is too little to be worth a round trip", () => {
@@ -170,7 +174,9 @@ describe("planFold", () => {
     const first = cutOf(messages, 4000);
     expect(first).toBeDefined();
     const second = cutOf(messages, 4000, { from: first as number });
-    if (second !== undefined) expect(second).toBeGreaterThan(first as number);
+    if (second !== undefined) {
+      expect(second).toBeGreaterThan(first as number);
+    }
   });
 
   it("hands the summariser the stretch from the last fold to the cut, and that fold's notes", () => {
@@ -240,6 +246,8 @@ describe("where a long chat is cut", () => {
   ])("tool groups: $limit window, from $from → $cut", ({ cut, limit, ...at }) => {
     expect(cutOf(tools, limit, at)).toBe(cut);
     // Never inside a group: a result with no call ahead of it is a request servers refuse.
-    if (cut !== undefined) expect(tools[cut].role).toBe("user");
+    if (cut !== undefined) {
+      expect(tools[cut].role).toBe("user");
+    }
   });
 });

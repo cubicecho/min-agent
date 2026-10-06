@@ -35,7 +35,9 @@ function walk(dir: string, ext: string): string[] {
   const entries = fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : [];
   return entries.flatMap((entry) => {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return walk(full, ext);
+    if (entry.isDirectory()) {
+      return walk(full, ext);
+    }
     return entry.name.endsWith(ext) ? [full] : [];
   });
 }
@@ -50,7 +52,9 @@ const mtime = (file: string) => (fs.existsSync(file) ? fs.statSync(file).mtimeMs
 /** Whether anything the generated files are built from has been touched since they were. */
 function stale() {
   const outputs = OUTPUTS.map((file) => mtime(path.join(ROOT, file)));
-  if (outputs.some(Number.isNaN)) return true;
+  if (outputs.some(Number.isNaN)) {
+    return true;
+  }
   const newestInput = Math.max(...inputPaths().map(mtime));
   return newestInput > Math.min(...outputs);
 }
@@ -58,7 +62,9 @@ function stale() {
 let running: Promise<void> | null = null;
 
 async function generate(reason: string) {
-  if (running) return running;
+  if (running) {
+    return running;
+  }
   running = (async () => {
     const started = Date.now();
     try {
@@ -68,13 +74,17 @@ async function generate(reason: string) {
       // and would look stale forever. Stamping them records what actually happened: these
       // outputs are current as of now.
       const now = new Date();
-      for (const file of OUTPUTS) fs.utimesSync(path.join(ROOT, file), now, now);
+      for (const file of OUTPUTS) {
+        fs.utimesSync(path.join(ROOT, file), now, now);
+      }
       console.log(`[codegen] ${reason} — regenerated in ${Date.now() - started}ms`);
     } catch (error) {
       // A schema that cannot be printed is a broken server, which the dev server is about to
       // report anyway. Exiting here would just bury it under a second error.
       console.error(`[codegen] failed: ${(error as Error).message}`);
-      if (!watching) process.exitCode = 1;
+      if (!watching) {
+        process.exitCode = 1;
+      }
     } finally {
       running = null;
     }
@@ -84,28 +94,41 @@ async function generate(reason: string) {
 
 const watching = process.argv.includes("--watch");
 
-if (stale()) await generate("schema changed");
-else if (!watching) console.log("[codegen] up to date");
+if (stale()) {
+  await generate("schema changed");
+} else if (!watching) {
+  console.log("[codegen] up to date");
+}
 
 if (watching) {
   // Editors write a file several times to save it once, so a burst of events is one rebuild.
   let queued: NodeJS.Timeout | null = null;
   const touched = (file: string) => {
-    if (OUTPUTS.some((output) => file.endsWith(output))) return;
-    if (queued) clearTimeout(queued);
+    if (OUTPUTS.some((output) => file.endsWith(output))) {
+      return;
+    }
+    if (queued) {
+      clearTimeout(queued);
+    }
     queued = setTimeout(() => void generate(path.relative(ROOT, file)), 50);
   };
 
   for (const { dir, ext } of INPUTS) {
     const full = path.join(ROOT, dir);
-    if (!fs.existsSync(full)) continue;
+    if (!fs.existsSync(full)) {
+      continue;
+    }
     fs.watch(full, { recursive: true }, (_event, name) => {
-      if (name?.endsWith(ext)) touched(path.join(full, name));
+      if (name?.endsWith(ext)) {
+        touched(path.join(full, name));
+      }
     });
   }
   for (const file of INPUT_FILES) {
     const full = path.join(ROOT, file);
-    if (fs.existsSync(full)) fs.watch(full, () => touched(full));
+    if (fs.existsSync(full)) {
+      fs.watch(full, () => touched(full));
+    }
   }
   console.log("[codegen] watching server/ and shared/graphql/");
 }

@@ -100,8 +100,12 @@ const { entities } = buildSchema(db, {
     // business, and a slow one must not hold the sidebar's delete open.
     sessions: {
       after: ({ operation, rows }) => {
-        if (operation !== "delete") return;
-        for (const row of rows as { id: string }[]) void sessionDeleted(row.id);
+        if (operation !== "delete") {
+          return;
+        }
+        for (const row of rows as { id: string }[]) {
+          void sessionDeleted(row.id);
+        }
       },
     },
   },

@@ -258,7 +258,9 @@ export default function RootLayout() {
     Promise.all([loadServerUrl(), loadVoiceSettings()]).finally(() => setReady(true));
   }, []);
 
-  if (!ready) return null;
+  if (!ready) {
+    return null;
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>

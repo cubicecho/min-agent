@@ -97,12 +97,14 @@ const asks = (id: string, name: string, args: string, usage: object = USAGE): Re
  * is a 404, and is not kept.
  */
 async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  if (!String(url).endsWith("/chat/completions")) return new Response("{}", { status: 404 });
+  if (!String(url).endsWith("/chat/completions")) {
+    return new Response("{}", { status: 404 });
+  }
   const raw = String(init?.body);
   requests.push(raw);
   const body = JSON.parse(raw) as Record<string, unknown>;
 
-  if (!body.stream)
+  if (!body.stream) {
     return new Response(
       JSON.stringify({
         id: "summary",
@@ -119,14 +121,18 @@ async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Res
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
+  }
 
   const reply = script.shift();
-  if (!reply) return new Response("{}", { status: 404 });
+  if (!reply) {
+    return new Response("{}", { status: 404 });
+  }
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      for (const each of reply.chunks)
+      for (const each of reply.chunks) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(each)}\n\n`));
+      }
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
     },
@@ -147,7 +153,9 @@ const wire = (body: Body) => body.messages.map((message) => JSON.stringify(messa
 /** How many leading messages two requests share. */
 const shared = (a: string[], b: string[]) => {
   let at = 0;
-  while (at < a.length && at < b.length && a[at] === b[at]) at++;
+  while (at < a.length && at < b.length && a[at] === b[at]) {
+    at++;
+  }
   return at;
 };
 
@@ -256,7 +264,9 @@ beforeEach(() => {
   offered = [READ];
   configure();
 
-  for (const mock of Object.values(mcp)) mock.mockReset();
+  for (const mock of Object.values(mcp)) {
+    mock.mockReset();
+  }
   mcp.catalog.mockImplementation(() => [
     {
       id: "fs",
@@ -394,8 +404,9 @@ describe("a long turn of tool steps", () => {
     const { stats } = await run(chat, "read them all");
 
     const sent = chatted();
-    for (let at = 1; at < sent.length; at++)
+    for (let at = 1; at < sent.length; at++) {
       expect(extendsExactly(sent[at - 1], sent[at])).toBe(true);
+    }
     expect(resultsOf(sent[12])).toEqual(Array.from({ length: 12 }, (_, n) => file(n)));
     expect(markers()).toEqual([]);
     expect(chat.pruning).toBeUndefined();
@@ -411,8 +422,9 @@ describe("a long turn of tool steps", () => {
 
     const sent = chatted();
     expect(sent).toHaveLength(13);
-    for (let at = 1; at < sent.length; at++)
+    for (let at = 1; at < sent.length; at++) {
       expect(extendsExactly(sent[at - 1], sent[at])).toBe(true);
+    }
     expect(markers()).toEqual([]);
     expect(chat.pruning).toBeUndefined();
   });

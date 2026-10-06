@@ -115,7 +115,9 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
       form.setFieldValue("baseUrl", fresh.baseUrl);
       form.setFieldValue("apiKey", "");
       const result = await models.refetch();
-      if (result.error) throw result.error;
+      if (result.error) {
+        throw result.error;
+      }
       const count = result.data?.models.length ?? 0;
       setProbe({
         ok: true,

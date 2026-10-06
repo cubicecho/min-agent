@@ -20,16 +20,22 @@ export function useCopy() {
   // The timer outlives the component otherwise, and fires setState into nothing.
   useEffect(
     () => () => {
-      if (timer.current) clearTimeout(timer.current);
+      if (timer.current) {
+        clearTimeout(timer.current);
+      }
     },
     [],
   );
 
   const copy = useCallback(async (text: string) => {
     const ok = await Clipboard.setStringAsync(text).catch(() => false);
-    if (!ok) return false;
+    if (!ok) {
+      return false;
+    }
     setCopied(true);
-    if (timer.current) clearTimeout(timer.current);
+    if (timer.current) {
+      clearTimeout(timer.current);
+    }
     timer.current = setTimeout(() => setCopied(false), CONFIRM_FOR);
     return true;
   }, []);

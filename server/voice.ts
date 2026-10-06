@@ -77,7 +77,9 @@ const voiceClient = (config: LlmConfig) => {
  * rather than 404 because the route exists and it is the configuration that is missing.
  */
 function requireModel(model: string, what: string, response: express.Response): boolean {
-  if (model.trim()) return true;
+  if (model.trim()) {
+    return true;
+  }
   response.status(409).json({ error: `no ${what} model configured` });
   return false;
 }
@@ -102,7 +104,9 @@ export const voice = express.Router();
  */
 voice.post("/transcribe", express.json({ limit: MAX_AUDIO }), async (request, response) => {
   const config = loadLlmConfig();
-  if (!requireModel(config.sttModel, "transcription", response)) return;
+  if (!requireModel(config.sttModel, "transcription", response)) {
+    return;
+  }
 
   const { audio, mime } = request.body as { audio?: string; mime?: string };
   if (!audio) {
@@ -141,7 +145,9 @@ voice.post("/transcribe", express.json({ limit: MAX_AUDIO }), async (request, re
  */
 voice.post("/speak", express.json({ limit: "1mb" }), async (request, response) => {
   const config = loadLlmConfig();
-  if (!requireModel(config.ttsModel, "speech", response)) return;
+  if (!requireModel(config.ttsModel, "speech", response)) {
+    return;
+  }
 
   const { text } = request.body as { text?: string };
   if (!text?.trim()) {

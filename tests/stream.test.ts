@@ -8,7 +8,9 @@ function serving(chunks: string[]) {
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+      }
       controller.close();
     },
   });

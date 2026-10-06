@@ -101,7 +101,9 @@ function useSessions(activeId?: string) {
       await queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
       // Deleting the chat that is open would otherwise leave it on screen with nothing
       // behind it.
-      if (id === activeId) router.replace("/");
+      if (id === activeId) {
+        router.replace("/");
+      }
     },
   });
 
@@ -135,7 +137,9 @@ type List = ReturnType<typeof useSessions>;
  */
 function RenameDialog({ list }: { list: List }) {
   const target = list.renaming;
-  if (!target) return null;
+  if (!target) {
+    return null;
+  }
   return <RenameForm key={target.id} list={list} id={target.id} title={target.title} />;
 }
 
@@ -146,7 +150,9 @@ function RenameForm({ list, id, title }: { list: List; id: string; title: string
     onSubmit: async ({ value }) => {
       const trimmed = value.title.trim();
       // A title that did not change, or was emptied, is not a rename.
-      if (trimmed && trimmed !== title) await list.rename.mutateAsync({ id, title: trimmed });
+      if (trimmed && trimmed !== title) {
+        await list.rename.mutateAsync({ id, title: trimmed });
+      }
       close();
     },
   });
@@ -155,7 +161,9 @@ function RenameForm({ list, id, title }: { list: List; id: string; title: string
     <FormDialog
       open
       onOpenChange={(open) => {
-        if (!open) close();
+        if (!open) {
+          close();
+        }
       }}
       title="Rename chat"
     >
@@ -183,7 +191,9 @@ function Search({ list }: { list: List }) {
   // was never taken, because the browser's own ⌘K would have done something.
   useShortcut("mod+k", searchable(list) ? () => box.current?.focus() : undefined);
 
-  if (!searchable(list)) return null;
+  if (!searchable(list)) {
+    return null;
+  }
   return (
     <SearchInput
       ref={box}

@@ -148,7 +148,11 @@ const WRITABLE = Object.keys(WRITABLE_COLUMNS) as (keyof typeof WRITABLE_COLUMNS
 /** The GraphQL enum is a string on both sides; only the TypeScript spelling differs. */
 const settingsInput = (patch: SaveConfigPatch): UpdateSettingInput => {
   const set: Record<string, unknown> = {};
-  for (const key of WRITABLE) if (patch[key] !== undefined) set[key] = patch[key];
+  for (const key of WRITABLE) {
+    if (patch[key] !== undefined) {
+      set[key] = patch[key];
+    }
+  }
   return set as UpdateSettingInput;
 };
 
@@ -166,7 +170,9 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
     const { setting, hasApiKey } = await request(ConfigDocument);
     // The row cannot be missing — the migration seeds it — so say that rather than quietly
     // handing the UI a settings object full of `undefined` on the day it is.
-    if (!setting) throw new Error("no settings row");
+    if (!setting) {
+      throw new Error("no settings row");
+    }
 
     // Deliberately not re-validated. Every one of these columns is non-null in the schema and
     // the query names them one at a time, so a field this client asks for either arrives
@@ -188,9 +194,13 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
      * blank keeps the stored one rather than blanking it.
      */
     async saveConfig(patch: SaveConfigPatch): Promise<LlmConfigView> {
-      if (patch.apiKey) await request(SetApiKeyDocument, { apiKey: patch.apiKey });
+      if (patch.apiKey) {
+        await request(SetApiKeyDocument, { apiKey: patch.apiKey });
+      }
       const set = settingsInput(patch);
-      if (Object.keys(set).length) await request(SaveConfigDocument, { set });
+      if (Object.keys(set).length) {
+        await request(SaveConfigDocument, { set });
+      }
       return config();
     },
 
@@ -207,7 +217,9 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
 
     async session(id: string): Promise<Session> {
       const { session } = await request(SessionDetailDocument, { id });
-      if (!session) throw new Error("session not found");
+      if (!session) {
+        throw new Error("session not found");
+      }
       return detail(session);
     },
 
@@ -215,7 +227,9 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
 
     async renameSession(id: string, title: string): Promise<Session> {
       const { updateSessionSingle } = await request(RenameSessionDocument, { id, title });
-      if (!updateSessionSingle) throw new Error("session not found");
+      if (!updateSessionSingle) {
+        throw new Error("session not found");
+      }
       return asSession(updateSessionSingle);
     },
 

@@ -48,7 +48,9 @@ function serving(...failures: (string | Error)[]) {
   let attempt = 0;
   const create = vi.fn(async () => {
     const failure = failures[attempt++];
-    if (failure) throw typeof failure === "string" ? new Error(failure) : failure;
+    if (failure) {
+      throw typeof failure === "string" ? new Error(failure) : failure;
+    }
     return answering();
   });
   const client = { chat: { completions: { create } } } as unknown as OpenAI;

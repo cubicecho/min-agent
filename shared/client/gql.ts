@@ -40,8 +40,12 @@ const wrongServer = (endpoint: string) =>
 
 /** GraphQL reports failure in the body, so an error list is the error even on a 200. */
 function unwrap<T>(payload: GraphQLResponse<T>): T {
-  if (payload.errors?.length) throw new Error(payload.errors.map((e) => e.message).join("; "));
-  if (payload.data == null) throw new Error("no data");
+  if (payload.errors?.length) {
+    throw new Error(payload.errors.map((e) => e.message).join("; "));
+  }
+  if (payload.data == null) {
+    throw new Error("no data");
+  }
   return payload.data;
 }
 
@@ -77,7 +81,9 @@ export function createGqlClient({ endpoint, fetch: fetchImpl }: GqlOptions) {
     try {
       payload = (await response.json()) as GraphQLResponse<TResult>;
     } catch {
-      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText}`);
+      }
       throw wrongServer(url());
     }
     return unwrap(payload);
@@ -101,7 +107,9 @@ export function createGqlClient({ endpoint, fetch: fetchImpl }: GqlOptions) {
 
     if (!response.ok || !response.body) {
       const detail = (await response.json().catch(() => null)) as GraphQLResponse<never> | null;
-      if (detail) unwrap(detail);
+      if (detail) {
+        unwrap(detail);
+      }
       throw new Error(`${response.status} ${response.statusText}`);
     }
 
@@ -113,7 +121,9 @@ export function createGqlClient({ endpoint, fetch: fetchImpl }: GqlOptions) {
     try {
       while (true) {
         const { value, done } = await reader.read();
-        if (done) break;
+        if (done) {
+          break;
+        }
         buffer += decoder.decode(value, { stream: true });
 
         const frames = buffer.split("\n\n");
@@ -127,7 +137,9 @@ export function createGqlClient({ endpoint, fetch: fetchImpl }: GqlOptions) {
             .filter((line) => line.startsWith("data:"))
             .map((line) => line.slice(5).trim())
             .join("");
-          if (data) yield unwrap(JSON.parse(data) as GraphQLResponse<TResult>);
+          if (data) {
+            yield unwrap(JSON.parse(data) as GraphQLResponse<TResult>);
+          }
         }
       }
     } finally {

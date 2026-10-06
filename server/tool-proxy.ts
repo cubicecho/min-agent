@@ -72,7 +72,9 @@ export function proxyLoadResult(
     }
   }
   if (again.length) {
-    if (lines.length) lines.push("");
+    if (lines.length) {
+      lines.push("");
+    }
     lines.push(
       `Already loaded earlier in this turn: ${again.join(", ")}. Run them with \`call_tool\`; ` +
         "do not load them again.",
@@ -82,7 +84,9 @@ export function proxyLoadResult(
   // are agent-core's, worded the same in both modes.
   const { overBroad, deferred, unknown, matched } = resolved;
   if (overBroad.length || deferred.length || unknown.length || !matched.length) {
-    if (lines.length) lines.push("");
+    if (lines.length) {
+      lines.push("");
+    }
     lines.push(loadResult({ ...resolved, matched: [] }, catalog));
   }
   return lines.join("\n");

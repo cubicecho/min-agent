@@ -44,6 +44,7 @@
       "preset": "recommended",
       "style": {
         "useConst": "error",
+        "useBlockStatements": "error",
         "noNonNullAssertion": "error"
       },
       "suspicious": {

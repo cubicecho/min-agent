@@ -56,7 +56,9 @@ function makeMark(size) {
   const segments = [...chevron, bar].map((s) => s.map((n) => n * size));
   return (x, y) => {
     for (const [ax, ay, bx, by] of segments) {
-      if (distToSegment(x, y, ax, ay, bx, by) <= w / 2) return 1;
+      if (distToSegment(x, y, ax, ay, bx, by) <= w / 2) {
+        return 1;
+      }
     }
     return 0;
   };
@@ -107,7 +109,9 @@ function crc32(buf) {
   let c = 0xffffffff;
   for (const byte of buf) {
     c ^= byte;
-    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+    for (let k = 0; k < 8; k++) {
+      c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+    }
   }
   return (c ^ 0xffffffff) >>> 0;
 }

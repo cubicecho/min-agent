@@ -232,8 +232,11 @@ describe("the key the voice proxy sends", () => {
   });
 
   afterEach(() => {
-    if (previous === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = previous;
+    if (previous === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = previous;
+    }
   });
 
   it("is min-agent's placeholder when neither the row nor the environment holds one", async () => {

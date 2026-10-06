@@ -52,7 +52,9 @@ const reasons = (issues: { path: PropertyKey[]; message: string }[]) =>
  */
 export function assertLlmConfigPatch(patch: unknown): void {
   const result = llmConfigPatchSchema.safeParse(patch ?? {});
-  if (!result.success) throw new UserError(reasons(result.error.issues));
+  if (!result.success) {
+    throw new UserError(reasons(result.error.issues));
+  }
 }
 
 /**
@@ -70,7 +72,9 @@ export function coerceLlmConfig(row: unknown): LlmConfig {
   // that names none of them returns, so this terminates.
   for (;;) {
     const result = llmConfigSchema.safeParse(candidate);
-    if (result.success) return result.data;
+    if (result.success) {
+      return result.data;
+    }
 
     const issues = result.error.issues;
     const dropped = [
@@ -87,7 +91,9 @@ export function coerceLlmConfig(row: unknown): LlmConfig {
     }
 
     console.warn(`settings: ignoring stored ${dropped.join(", ")} (${reasons(issues)})`);
-    for (const key of dropped) delete candidate[key];
+    for (const key of dropped) {
+      delete candidate[key];
+    }
   }
 }
 
@@ -168,7 +174,9 @@ export function assertMcpServers(list: McpServerConfig[]) {
   const problems = list.flatMap((server) =>
     validateHooks(server.hooks).map((problem) => `${server.id}: ${problem}`),
   );
-  if (problems.length) throw new UserError(problems.join("\n"));
+  if (problems.length) {
+    throw new UserError(problems.join("\n"));
+  }
 }
 
 export async function loadMcpServers(): Promise<McpServerConfig[]> {
@@ -216,8 +224,9 @@ export async function saveEmbeds(list: EmbedConfig[]): Promise<EmbedConfig[]> {
     // row is named because the screen saves the whole list at once and the message has to
     // say which of them the complaint is about.
     const result = embedSchema.safeParse(embed);
-    if (!result.success)
+    if (!result.success) {
       throw new UserError(`${embed.id || "app"} — ${reasons(result.error.issues)}`);
+    }
     parsed.push(result.data);
   }
   if (new Set(parsed.map((embed) => embed.id)).size !== parsed.length) {

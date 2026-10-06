@@ -68,7 +68,9 @@ const blank = (taken: McpServerConfig[]): McpServerConfig => {
   // Ids are unique or the save is refused, and the id of the row just deleted is the one the
   // next `server-N` would land on.
   let n = taken.length + 1;
-  while (taken.some((server) => server.id === `server-${n}`)) n += 1;
+  while (taken.some((server) => server.id === `server-${n}`)) {
+    n += 1;
+  }
   return {
     id: `server-${n}`,
     label: "",
@@ -152,13 +154,17 @@ const fromDraft = (draft: ServerDraft): McpServerConfig => ({
 /** The next `hook-N` this row has not used, for the same reason `blank` counts servers. */
 const nextHookId = (hooks: HookDraft[]) => {
   let n = hooks.length + 1;
-  while (hooks.some((hook) => hook.id === `hook-${n}`)) n += 1;
+  while (hooks.some((hook) => hook.id === `hook-${n}`)) {
+    n += 1;
+  }
   return `hook-${n}`;
 };
 
 /** Why the arguments are not JSON yet, or nothing when they are. Save waits on this. */
 const argsProblem = (text: string) => {
-  if (!text.trim()) return undefined;
+  if (!text.trim()) {
+    return undefined;
+  }
   try {
     JSON.parse(text);
     return undefined;
@@ -287,7 +293,9 @@ function Editor({
       <DialogLayout
         open={visible}
         onOpenChange={(open) => {
-          if (!open) onCancel();
+          if (!open) {
+            onCancel();
+          }
         }}
         size="lg"
         title={existing ? name : "Add a server"}

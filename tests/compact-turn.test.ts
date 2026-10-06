@@ -83,17 +83,20 @@ const chunk = (delta: object, finish: string | null = null) => ({
  * @returns The reply.
  */
 async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  if (!String(url).endsWith("/chat/completions")) return new Response("{}", { status: 404 });
+  if (!String(url).endsWith("/chat/completions")) {
+    return new Response("{}", { status: 404 });
+  }
   const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
   requests.push(body);
 
   if (!body.stream) {
     const summary = summaries.shift() ?? "";
-    if (typeof summary !== "string")
+    if (typeof summary !== "string") {
       return new Response(JSON.stringify({ error: { message: summary.refusal } }), {
         status: 400,
         headers: { "content-type": "application/json" },
       });
+    }
     return new Response(
       JSON.stringify({
         id: "summary",
@@ -116,8 +119,9 @@ async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Res
   ];
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      for (const each of chunks)
+      for (const each of chunks) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(each)}\n\n`));
+      }
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
     },
@@ -213,7 +217,9 @@ beforeEach(() => {
   updates = [];
   configure();
 
-  for (const mock of Object.values(mcp)) mock.mockReset();
+  for (const mock of Object.values(mcp)) {
+    mock.mockReset();
+  }
   mcp.catalog.mockReturnValue([]);
   mcp.tools.mockReturnValue([]);
   mcp.instructions.mockReturnValue([]);

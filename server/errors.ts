@@ -34,7 +34,9 @@ export class UserError extends Error {
  */
 export function userErrorIn(error: unknown): UserError | undefined {
   for (let link = error; link instanceof Error; link = originalOf(link)) {
-    if (link instanceof UserError || link.name === "UserError") return link as UserError;
+    if (link instanceof UserError || link.name === "UserError") {
+      return link as UserError;
+    }
   }
   return undefined;
 }

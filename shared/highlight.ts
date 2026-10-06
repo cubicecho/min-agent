@@ -54,10 +54,14 @@ export const registered = (language: string) => lowlight.registered(language);
 
 const scopeOf = (node: Element): string | undefined => {
   const classes = node.properties?.className;
-  if (!Array.isArray(classes)) return undefined;
+  if (!Array.isArray(classes)) {
+    return undefined;
+  }
   for (const value of classes) {
     const name = String(value);
-    if (name.startsWith("hljs-")) return name.slice(5);
+    if (name.startsWith("hljs-")) {
+      return name.slice(5);
+    }
   }
   return undefined;
 };
@@ -72,7 +76,9 @@ function flatten(nodes: Root["children"] | Element["children"], scope: string | 
   const tokens: Token[] = [];
   for (const node of nodes) {
     if (node.type === "text") {
-      if (node.value) tokens.push(scope ? { text: node.value, scope } : { text: node.value });
+      if (node.value) {
+        tokens.push(scope ? { text: node.value, scope } : { text: node.value });
+      }
     } else if (node.type === "element") {
       tokens.push(...flatten(node.children, scopeOf(node) ?? scope));
     }
@@ -109,11 +115,17 @@ export function tokenizeLines(code: string, language?: string | null): Token[][]
   for (const token of tokenize(code, language)) {
     const parts = token.text.split("\n");
     parts.forEach((part, index) => {
-      if (index > 0) lines.push([]);
-      if (part) lines[lines.length - 1].push({ ...token, text: part });
+      if (index > 0) {
+        lines.push([]);
+      }
+      if (part) {
+        lines[lines.length - 1].push({ ...token, text: part });
+      }
     });
   }
   // A trailing newline makes an empty last line that would render as a blank row.
-  if (lines.length > 1 && lines[lines.length - 1].length === 0) lines.pop();
+  if (lines.length > 1 && lines[lines.length - 1].length === 0) {
+    lines.pop();
+  }
   return lines;
 }

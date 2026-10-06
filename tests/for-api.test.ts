@@ -38,8 +38,9 @@ describe("forApi", () => {
   it("sends none of min-agent's own fields", () => {
     const sent = forApi(session(transcript));
     for (const message of sent) {
-      for (const field of ["hook_context", "reasoning_content", "stats", "followups"])
+      for (const field of ["hook_context", "reasoning_content", "stats", "followups"]) {
         expect(message).not.toHaveProperty(field);
+      }
     }
     expect(sent[2]).toEqual({ role: "user", content: "second" });
   });

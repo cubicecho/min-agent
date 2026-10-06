@@ -42,7 +42,9 @@ export async function createSession(init: { title?: string } = {}): Promise<Sess
 
 export async function getSession(id: string): Promise<Session | null> {
   const [row] = await db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
-  if (!row) return null;
+  if (!row) {
+    return null;
+  }
   const rows = await db
     .select()
     .from(messages)
@@ -67,7 +69,9 @@ export type SessionPatch = Partial<
 >;
 
 export async function updateSession(id: string, patch: SessionPatch): Promise<void> {
-  if (!Object.keys(patch).length) return;
+  if (!Object.keys(patch).length) {
+    return;
+  }
   await db.update(sessions).set(patch).where(eq(sessions.id, id));
 }
 
@@ -125,10 +129,14 @@ export async function patchMessage(
  */
 export async function truncateSession(id: string, fromIdx: number): Promise<number> {
   const session = await getSession(id);
-  if (!session) throw new Error("session not found");
+  if (!session) {
+    throw new Error("session not found");
+  }
 
   const from = Math.max(0, Math.floor(fromIdx));
-  if (from >= session.messages.length) return session.messages.length;
+  if (from >= session.messages.length) {
+    return session.messages.length;
+  }
 
   await db.delete(messages).where(and(eq(messages.sessionId, id), gte(messages.idx, from)));
 

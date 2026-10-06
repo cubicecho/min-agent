@@ -115,8 +115,11 @@ describe("endpoint", () => {
     try {
       expect(endpoint(llmConfigSchema.parse({})).apiKey).toBe("sk-from-env");
     } finally {
-      if (previous === undefined) delete process.env.OPENAI_API_KEY;
-      else process.env.OPENAI_API_KEY = previous;
+      if (previous === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = previous;
+      }
     }
   });
 
@@ -126,8 +129,11 @@ describe("endpoint", () => {
     try {
       expect(endpoint(llmConfigSchema.parse({ apiKey: "sk-test" })).apiKey).toBe("sk-test");
     } finally {
-      if (previous === undefined) delete process.env.OPENAI_API_KEY;
-      else process.env.OPENAI_API_KEY = previous;
+      if (previous === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = previous;
+      }
     }
   });
 
@@ -142,7 +148,9 @@ describe("endpoint", () => {
     try {
       expect(endpoint(llmConfigSchema.parse({})).apiKey).toBe("");
     } finally {
-      if (previous !== undefined) process.env.OPENAI_API_KEY = previous;
+      if (previous !== undefined) {
+        process.env.OPENAI_API_KEY = previous;
+      }
     }
   });
 });
@@ -181,8 +189,11 @@ describe("hasApiKey", () => {
   });
 
   afterEach(() => {
-    if (previous === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = previous;
+    if (previous === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = previous;
+    }
   });
 
   afterAll(async () => {

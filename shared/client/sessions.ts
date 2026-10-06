@@ -39,9 +39,15 @@ const startOfDay = (at: number) => {
  */
 export function bucketOf(iso: string, now: number = Date.now()): Bucket {
   const days = Math.round((startOfDay(now) - startOfDay(new Date(iso).getTime())) / DAY);
-  if (days <= 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 7) return "week";
+  if (days <= 0) {
+    return "today";
+  }
+  if (days === 1) {
+    return "yesterday";
+  }
+  if (days < 7) {
+    return "week";
+  }
   return "earlier";
 }
 
@@ -61,8 +67,11 @@ export function groupSessions<T extends { updatedAt: string }>(
   for (const session of sessions) {
     const bucket = bucketOf(session.updatedAt, now);
     const group = held.get(bucket);
-    if (group) group.push(session);
-    else held.set(bucket, [session]);
+    if (group) {
+      group.push(session);
+    } else {
+      held.set(bucket, [session]);
+    }
   }
   return ORDER.filter((bucket) => held.has(bucket)).map((bucket) => ({
     bucket,

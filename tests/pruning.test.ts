@@ -58,8 +58,11 @@ const results = (messages: StoredMessage[]) =>
 const clearedTokens = (messages: StoredMessage[], from: number, through: number) => {
   const sent = sentWithStubs(messages, { through });
   let total = 0;
-  for (let at = from; at < through; at++)
-    if (sent[at] !== messages[at]) total += textTokens(messages[at]) - textTokens(sent[at]);
+  for (let at = from; at < through; at++) {
+    if (sent[at] !== messages[at]) {
+      total += textTokens(messages[at]) - textTokens(sent[at]);
+    }
+  }
   return total;
 };
 
@@ -94,8 +97,11 @@ describe("sentWithStubs", () => {
       }
     }
     // Nothing but a tool result is ever replaced.
-    for (const [at, message] of messages.entries())
-      if (message.role !== "tool") expect(sent[at]).toBe(message);
+    for (const [at, message] of messages.entries()) {
+      if (message.role !== "tool") {
+        expect(sent[at]).toBe(message);
+      }
+    }
     // And the stored transcript is not what was rewritten.
     expect(messages).toEqual(before);
   });
@@ -400,7 +406,9 @@ describe("forApi with a pruning marker", () => {
   /** How many leading messages two requests share. */
   const shared = (a: string[], b: string[]) => {
     let at = 0;
-    while (at < a.length && at < b.length && a[at] === b[at]) at++;
+    while (at < a.length && at < b.length && a[at] === b[at]) {
+      at++;
+    }
     return at;
   };
 
@@ -476,7 +484,9 @@ describe("forApi with a pruning marker", () => {
       // The rule, where a turn runs it: after a step's results are in.
       const through = planPrune(chat, limit);
       const from = chat.pruning?.through ?? 0;
-      if (through !== undefined) chat.pruning = { through, at: AT };
+      if (through !== undefined) {
+        chat.pruning = { through, at: AT };
+      }
 
       const now = wire(chat);
       const kept = shared(previous, now);
@@ -490,11 +500,15 @@ describe("forApi with a pruning marker", () => {
       previous = now;
     };
 
-    for (let at = 0; at < 14; at++) next(step(`a${at}`, result(`a${at}`)));
+    for (let at = 0; at < 14; at++) {
+      next(step(`a${at}`, result(`a${at}`)));
+    }
     next([{ role: "assistant", content: "Done." }]);
     // A second turn finds the first one's last request as its prefix, marker and all.
     next([{ role: "user", content: "q1" }]);
-    for (let at = 0; at < 6; at++) next(step(`b${at}`, result(`b${at}`)));
+    for (let at = 0; at < 6; at++) {
+      next(step(`b${at}`, result(`b${at}`)));
+    }
 
     const at = results(chat.messages);
     // Three results accrue behind the latest five, then the marker steps over them.

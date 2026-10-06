@@ -104,11 +104,19 @@ export default function SettingsScreen() {
   // A broken server outranks an unsaved form: one is something that happened to you, the
   // other is something you did and can still see when you go back.
   const marks: Partial<Record<SettingsTab, TabMark>> = {};
-  for (const { key } of SETTINGS_TABS) if (dirty[key]) marks[key] = "unsaved";
-  if (mcp.data?.some((server) => server.status === "error")) marks.mcp = "attention";
+  for (const { key } of SETTINGS_TABS) {
+    if (dirty[key]) {
+      marks[key] = "unsaved";
+    }
+  }
+  if (mcp.data?.some((server) => server.status === "error")) {
+    marks.mcp = "attention";
+  }
 
   const open = (key: string) => {
-    if (!isTab(key)) return;
+    if (!isTab(key)) {
+      return;
+    }
     setActive(key);
     setVisited((current) => (current.includes(key) ? current : [...current, key]));
     // Keeps the web URL honest about which panel is open, so a reload or a shared link lands

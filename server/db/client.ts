@@ -36,7 +36,9 @@ export async function waitForDatabase() {
       await db.execute(sql`select 1`);
       return;
     } catch (error) {
-      if (attempt >= ATTEMPTS) throw error;
+      if (attempt >= ATTEMPTS) {
+        throw error;
+      }
       const delay = Math.min(CEILING_MS, 125 * 2 ** attempt);
       // Drizzle's message carries the failed query and its params across several lines, which
       // is noise in a line that repeats. The driver's own reason is the first one.

@@ -80,7 +80,9 @@ export function speakableText(markdown: string): string {
  * fifth so a merely-long reply is not cut short hunting for a full stop.
  */
 export function spokenChunk(text: string, limit: number): string {
-  if (text.length <= limit) return text;
+  if (text.length <= limit) {
+    return text;
+  }
 
   const head = text.slice(0, limit);
   const floor = Math.floor(limit * 0.8);
@@ -118,7 +120,9 @@ export function createVoiceClient({ baseUrl, fetch: fetchImpl }: VoiceClientOpti
         headers: { "content-type": "application/json" },
         body: JSON.stringify(recording),
       });
-      if (!response.ok) await complain(response, "transcription");
+      if (!response.ok) {
+        await complain(response, "transcription");
+      }
       const { text } = (await response.json()) as { text: string };
       return text;
     },
@@ -133,7 +137,9 @@ export function createVoiceClient({ baseUrl, fetch: fetchImpl }: VoiceClientOpti
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ text: speakableText(text) }),
       });
-      if (!response.ok) await complain(response, "speech");
+      if (!response.ok) {
+        await complain(response, "speech");
+      }
       return {
         bytes: await response.arrayBuffer(),
         mime: response.headers.get("content-type") ?? "audio/mpeg",

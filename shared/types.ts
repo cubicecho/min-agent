@@ -137,9 +137,13 @@ export const voiceBaseUrlFor = (config: Pick<LlmConfig, "baseUrl" | "voiceBaseUr
  */
 export const wyomingAddress = (value: string): { host: string; port: number } | null => {
   const match = /^tcp:\/\/(\[[^\]]+\]|[^/:]+):(\d{1,5})\/?$/.exec(value.trim());
-  if (!match) return null;
+  if (!match) {
+    return null;
+  }
   const port = Number(match[2]);
-  if (port < 1 || port > 65535) return null;
+  if (port < 1 || port > 65535) {
+    return null;
+  }
   return { host: match[1].replace(/^\[|\]$/g, ""), port };
 };
 

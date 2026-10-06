@@ -74,7 +74,9 @@ const settingsOf = (agent: ResolvedAgent): Record<string, unknown> => ({
 const parsed = (document: unknown): { spec: AgentSpec; warnings: string[] } => {
   const result = parseSpec(document);
   expect(result.errors).toEqual([]);
-  if (!result.spec) throw new Error("the document was refused");
+  if (!result.spec) {
+    throw new Error("the document was refused");
+  }
   return { spec: result.spec, warnings: result.warnings };
 };
 

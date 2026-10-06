@@ -70,13 +70,17 @@ function decode(source: string): Promise<Buffer> {
     let settled = false;
 
     const finish = (error: Error | null, pcm?: Buffer) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
       clearTimeout(timer);
       if (error) {
         ffmpeg.kill("SIGKILL");
         reject(error);
-      } else resolve(pcm as Buffer);
+      } else {
+        resolve(pcm as Buffer);
+      }
     };
 
     const timer = setTimeout(() => finish(new Error("decoding the recording timed out")), TIMEOUT);
@@ -95,8 +99,11 @@ function decode(source: string): Promise<Buffer> {
         return;
       }
       const pcm = Buffer.concat(out);
-      if (pcm.length === 0) finish(new Error("the recording decoded to no audio"));
-      else finish(null, pcm);
+      if (pcm.length === 0) {
+        finish(new Error("the recording decoded to no audio"));
+      } else {
+        finish(null, pcm);
+      }
     });
   });
 }

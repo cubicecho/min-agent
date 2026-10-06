@@ -89,8 +89,9 @@ describe.skipIf(!url)("session store", () => {
 
   it("pulls a pruning marker back to the cut, and leaves one behind it alone", async () => {
     const session = await store.createSession();
-    for (let idx = 0; idx < 6; idx++)
+    for (let idx = 0; idx < 6; idx++) {
       await store.addMessage(session.id, idx, { role: "user", content: `message ${idx}` });
+    }
     const marker = { through: 5, at: "2026-01-01T00:00:00.000Z" };
     await store.updateSession(session.id, { pruning: marker });
 

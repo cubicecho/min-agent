@@ -53,7 +53,9 @@ export interface TurnArgs {
  */
 export async function* runTurnEvents(args: TurnArgs): AsyncGenerator<TurnEvent> {
   const session = await getSession(args.sessionId);
-  if (!session) throw new Error("session not found");
+  if (!session) {
+    throw new Error("session not found");
+  }
 
   const controller = new AbortController();
   const queue: StreamEvent[] = [];
@@ -75,7 +77,9 @@ export async function* runTurnEvents(args: TurnArgs): AsyncGenerator<TurnEvent> 
   })
     .catch((error: unknown) => {
       // A turn the reader stopped is not a failure, and the reader already knows.
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        return;
+      }
       push({ type: "error", message: errorMessage(error) });
     })
     .finally(() => {
@@ -87,8 +91,12 @@ export async function* runTurnEvents(args: TurnArgs): AsyncGenerator<TurnEvent> 
   let seq = 0;
   try {
     while (true) {
-      while (queue.length) yield flatten(queue.shift() as StreamEvent, ++seq);
-      if (done) return;
+      while (queue.length) {
+        yield flatten(queue.shift() as StreamEvent, ++seq);
+      }
+      if (done) {
+        return;
+      }
       await new Promise<void>((resolve) => {
         wake = resolve;
       });

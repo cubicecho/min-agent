@@ -120,18 +120,22 @@ async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Res
   requests.push(String(init?.body ?? url));
   log.push("request");
   const reply = String(url).endsWith("/chat/completions") ? script.shift() : undefined;
-  if (!reply) return new Response("{}", { status: 404 });
-  if ("refusal" in reply)
+  if (!reply) {
+    return new Response("{}", { status: 404 });
+  }
+  if ("refusal" in reply) {
     return new Response(JSON.stringify({ error: { message: reply.refusal } }), {
       status: 400,
       headers: { "content-type": "application/json" },
     });
+  }
 
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      for (const each of reply.chunks)
+      for (const each of reply.chunks) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(each)}\n\n`));
+      }
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
     },
@@ -196,8 +200,12 @@ async function run(
     signal,
     onEvent: (event) => {
       events.push(structuredClone(event));
-      if (event.type === "tool_use") log.push(`tool_use ${event.id}`);
-      if (event.type === "tool_result") log.push(`tool_result ${event.toolUseId}`);
+      if (event.type === "tool_use") {
+        log.push(`tool_use ${event.id}`);
+      }
+      if (event.type === "tool_result") {
+        log.push(`tool_result ${event.toolUseId}`);
+      }
       onEvent?.(event);
     },
   }).then(
@@ -250,7 +258,9 @@ beforeEach(() => {
   offered = [];
   configure();
 
-  for (const mock of Object.values(mcp)) mock.mockReset();
+  for (const mock of Object.values(mcp)) {
+    mock.mockReset();
+  }
   mcp.catalog.mockImplementation(catalog);
   mcp.tools.mockImplementation((names?: string[]) =>
     names
@@ -306,7 +316,9 @@ describe("stopping a turn while its tools run", () => {
     const controller = new AbortController();
     mcp.call.mockImplementation((name: string, _input: unknown, signal: AbortSignal) => {
       // One is back before the stop; the other two are ended by it.
-      if (name === "clock__now") return Promise.resolve("12:00");
+      if (name === "clock__now") {
+        return Promise.resolve("12:00");
+      }
       return untilStopped(signal);
     });
     script = [
@@ -317,7 +329,9 @@ describe("stopping a turn while its tools run", () => {
     const { events, error } = await run(session(), "look", {
       signal: controller.signal,
       onEvent: (event) => {
-        if (event.type === "tool_use" && event.id === "c3") setTimeout(() => controller.abort(), 0);
+        if (event.type === "tool_use" && event.id === "c3") {
+          setTimeout(() => controller.abort(), 0);
+        }
       },
     });
 
@@ -364,7 +378,9 @@ describe("stopping a turn while its tools run", () => {
       signal.aborted ? "ran after the stop" : "ran before it",
     );
     onStore = (message) => {
-      if (message.role === "assistant") controller.abort();
+      if (message.role === "assistant") {
+        controller.abort();
+      }
     };
     script = [asks(["c1", "fs__ls", "{}"]), says("never asked for")];
 
@@ -388,7 +404,9 @@ describe("stopping a turn between steps", () => {
     // Once the step's last result is written: nothing is in flight, and the next request has not
     // been built.
     onStore = (message) => {
-      if (message.role === "tool") controller.abort();
+      if (message.role === "tool") {
+        controller.abort();
+      }
     };
     script = [asks(["c1", "fs__ls", "{}"]), says("never asked for")];
 
@@ -444,7 +462,9 @@ describe("a turn that ends on the step after a long load", () => {
     const { events, error } = await run(session(), "get ready", {
       signal: controller.signal,
       onEvent: (event) => {
-        if (event.type === "tool_result") controller.abort();
+        if (event.type === "tool_result") {
+          controller.abort();
+        }
       },
     });
 
@@ -494,7 +514,9 @@ describe("the pruning marker at the end of a turn that did not finish", () => {
     const { error } = await run(chat, "read them all", {
       signal: controller.signal,
       onEvent: (event) => {
-        if (event.type === "tool_result" && event.toolUseId === "c7") controller.abort();
+        if (event.type === "tool_result" && event.toolUseId === "c7") {
+          controller.abort();
+        }
       },
     });
 

@@ -34,7 +34,9 @@ const hint = () => {
   if (needsServerUrl()) {
     return `${EXAMPLE} Nothing is guessed for you, so until this is filled in the app has nowhere to ask.`;
   }
-  if (!defaultServerUrl()) return "Leave blank to use the origin this page was served from.";
+  if (!defaultServerUrl()) {
+    return "Leave blank to use the origin this page was served from.";
+  }
   return EXAMPLE;
 };
 

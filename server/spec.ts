@@ -30,8 +30,12 @@ function tasksOf(taskModels: LlmConfig["taskModels"]): NonNullable<AgentSpec["ta
   const tasks: NonNullable<AgentSpec["tasks"]> = {};
   // Off is said out loud rather than left out: absent means "not configured" to a reader, and
   // `""` is how a layer above this one is told the task is off.
-  for (const { key } of MODEL_TASKS) tasks[key] = { model: taskModels[key]?.trim() ?? "" };
-  for (const [key, model] of Object.entries(taskModels)) tasks[key] ??= { model };
+  for (const { key } of MODEL_TASKS) {
+    tasks[key] = { model: taskModels[key]?.trim() ?? "" };
+  }
+  for (const [key, model] of Object.entries(taskModels)) {
+    tasks[key] ??= { model };
+  }
   return tasks;
 }
 

@@ -83,19 +83,27 @@ export function sentWithStubs(
 ): StoredMessage[] {
   // Clamped, so a marker left past the end of a transcript cannot reach messages not yet written.
   const through = Math.min(pruning?.through ?? 0, messages.length);
-  if (through <= 0) return messages;
+  if (through <= 0) {
+    return messages;
+  }
 
   const head = messages.slice(0, through);
   const stubbed = pruneToolResults(head as Sent[], {
     keepLast: 0,
     maxChars: PRUNE_MAX_CHARS,
   }) as StoredMessage[];
-  if (stubbed === head) return messages;
+  if (stubbed === head) {
+    return messages;
+  }
 
   let cleared = false;
   const out = stubbed.map((message, at) => {
-    if (message === head[at]) return message;
-    if (holdsDefinitions(messageText(head[at]))) return head[at];
+    if (message === head[at]) {
+      return message;
+    }
+    if (holdsDefinitions(messageText(head[at]))) {
+      return head[at];
+    }
     cleared = true;
     return message;
   });
@@ -115,10 +123,15 @@ function clearedBetween(
   weigh: (message: StoredMessage) => number,
 ): number {
   const sent = sentWithStubs(messages, { through: to });
-  if (sent === messages) return 0;
+  if (sent === messages) {
+    return 0;
+  }
   let total = 0;
-  for (let at = Math.max(0, from); at < Math.min(to, messages.length); at++)
-    if (sent[at] !== messages[at]) total += weigh(messages[at]) - weigh(sent[at]);
+  for (let at = Math.max(0, from); at < Math.min(to, messages.length); at++) {
+    if (sent[at] !== messages[at]) {
+      total += weigh(messages[at]) - weigh(sent[at]);
+    }
+  }
   return total;
 }
 
@@ -151,8 +164,11 @@ export const clearedChars = (
  */
 function keepBoundary(messages: StoredMessage[]): number {
   let kept = 0;
-  for (let at = messages.length - 1; at >= 0; at--)
-    if (messages[at].role === "tool" && ++kept === PRUNE_KEEP_LAST) return at;
+  for (let at = messages.length - 1; at >= 0; at--) {
+    if (messages[at].role === "tool" && ++kept === PRUNE_KEEP_LAST) {
+      return at;
+    }
+  }
   return 0;
 }
 
@@ -189,13 +205,21 @@ export function planPrune(
 ): number | undefined {
   const current = session.pruning?.through ?? 0;
   const target = keepBoundary(session.messages);
-  if (target <= current) return undefined;
+  if (target <= current) {
+    return undefined;
+  }
 
   const from = Math.max(current, session.compaction?.through ?? 0);
   const cleared = clearedBetween(session.messages, from, target, textTokens);
-  if (cleared <= 0) return undefined;
-  if (compacted) return target;
-  if (!(limit > 0)) return undefined;
+  if (cleared <= 0) {
+    return undefined;
+  }
+  if (compacted) {
+    return target;
+  }
+  if (!(limit > 0)) {
+    return undefined;
+  }
   return cleared >= limit * PRUNE_AT ? target : undefined;
 }
 

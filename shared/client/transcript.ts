@@ -13,8 +13,12 @@ import { emptyUsage } from "../types.ts";
 /** The text of a message, whichever of the two shapes the content arrived in. */
 export function messageText(message: Pick<StoredMessage, "content"> | undefined): string {
   const content = message?.content;
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
   return content
     .map((part) => ("text" in part && typeof part.text === "string" ? part.text : ""))
     .join("");
@@ -30,7 +34,9 @@ export function messageText(message: Pick<StoredMessage, "content"> | undefined)
  */
 export function turnStart(messages: readonly { role: string }[], index: number): number {
   for (let at = Math.min(index, messages.length - 1); at >= 0; at -= 1) {
-    if (messages[at].role === "user") return at;
+    if (messages[at].role === "user") {
+      return at;
+    }
   }
   return -1;
 }
@@ -45,7 +51,9 @@ export function turnStart(messages: readonly { role: string }[], index: number):
 export function usageOf(messages: readonly StoredMessage[]): TokenUsage {
   return messages.reduce((total, message) => {
     const stats = message.stats;
-    if (!stats) return total;
+    if (!stats) {
+      return total;
+    }
     return {
       promptTokens: total.promptTokens + stats.promptTokens,
       completionTokens: total.completionTokens + stats.completionTokens,

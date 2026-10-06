@@ -47,7 +47,9 @@ const blank = (taken: EmbedConfig[]): EmbedConfig => {
   // Ids are unique or the save is refused, and the id of the row you just deleted is the one
   // the next `app-N` would land on.
   let n = taken.length + 1;
-  while (taken.some((embed) => embed.id === `app-${n}`)) n += 1;
+  while (taken.some((embed) => embed.id === `app-${n}`)) {
+    n += 1;
+  }
   return { id: `app-${n}`, label: "", url: "", icon: "grid", mode: "iframe", enabled: true };
 };
 
@@ -127,7 +129,9 @@ function Editor({
       <DialogLayout
         open={visible}
         onOpenChange={(open) => {
-          if (!open) onCancel();
+          if (!open) {
+            onCancel();
+          }
         }}
         title={existing ? name : "Add an app"}
         description="A web app given a row in the sidebar."

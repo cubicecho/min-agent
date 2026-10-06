@@ -81,7 +81,9 @@ class Frames {
   *take(): Generator<WyomingEvent> {
     for (;;) {
       const newline = this.buffer.indexOf(0x0a);
-      if (newline === -1) return;
+      if (newline === -1) {
+        return;
+      }
 
       const header = JSON.parse(this.buffer.subarray(0, newline).toString("utf8")) as {
         type: string;
@@ -94,7 +96,9 @@ class Frames {
       const body = newline + 1;
       const end = body + dataLength + payloadLength;
       // The rest of it has not arrived. Leave the header in place and read it again next time.
-      if (this.buffer.length < end) return;
+      if (this.buffer.length < end) {
+        return;
+      }
 
       const data = dataLength
         ? {
@@ -137,12 +141,17 @@ function ask(
     socket.setNoDelay(true);
 
     const finish = (error: Error | null) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
       clearTimeout(timer);
       socket.destroy();
-      if (error) reject(error);
-      else resolve(heard);
+      if (error) {
+        reject(error);
+      } else {
+        resolve(heard);
+      }
     };
 
     const timer = setTimeout(
@@ -151,7 +160,9 @@ function ask(
     );
 
     socket.on("connect", () => {
-      for (const event of send) socket.write(frame(event));
+      for (const event of send) {
+        socket.write(frame(event));
+      }
     });
 
     socket.on("data", (chunk: Buffer) => {
@@ -237,7 +248,9 @@ export async function synthesize(
 
   const start = heard.find((event) => event.type === "audio-start")?.data ?? {};
   const chunks = heard.filter((event) => event.type === "audio-chunk" && event.payload);
-  if (chunks.length === 0) throw new Error("the speech server sent no audio");
+  if (chunks.length === 0) {
+    throw new Error("the speech server sent no audio");
+  }
 
   return {
     pcm: Buffer.concat(chunks.map((event) => event.payload as Buffer)),

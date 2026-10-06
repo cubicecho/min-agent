@@ -129,7 +129,9 @@ async function compact(
   const used = latestContextTokens(session);
   // No plan when the window is not three quarters used, or no legal cut folds enough.
   const plan = planFold(session, contextLimit, used);
-  if (!plan) return "";
+  if (!plan) {
+    return "";
+  }
 
   // A memory server gets what is about to be folded away while the summary is written. Beside
   // it, not ahead of it: nothing is deleted, only what is sent changes, so filing it is not a
@@ -140,7 +142,9 @@ async function compact(
     summariser(endpoint(config), model, { signal, onNotice: notice }),
     { hooks: compactionHooks(session) },
   );
-  if (!record) return "";
+  if (!record) {
+    return "";
+  }
 
   session.compaction = record;
   await updateSession(session.id, { compaction: record });
@@ -160,7 +164,9 @@ async function compact(
  */
 async function prune(session: Session, contextLimit: number, compacted = false): Promise<boolean> {
   const through = planPrune(session, contextLimit, { compacted });
-  if (through === undefined) return false;
+  if (through === undefined) {
+    return false;
+  }
 
   const from = session.pruning?.through ?? 0;
   session.pruning = { through, at: new Date().toISOString() };
@@ -173,7 +179,9 @@ async function prune(session: Session, contextLimit: number, compacted = false):
 function latestPromptTokens(session: Session): number {
   for (let i = session.messages.length - 1; i >= 0; i--) {
     const { stats } = session.messages[i];
-    if (stats) return stats.lastPromptTokens ?? 0;
+    if (stats) {
+      return stats.lastPromptTokens ?? 0;
+    }
   }
   return 0;
 }
@@ -182,7 +190,9 @@ function latestPromptTokens(session: Session): number {
 function latestContextTokens(session: Session): number {
   for (let i = session.messages.length - 1; i >= 0; i--) {
     const { stats } = session.messages[i];
-    if (stats?.contextTokens) return stats.contextTokens;
+    if (stats?.contextTokens) {
+      return stats.contextTokens;
+    }
   }
   return 0;
 }
@@ -300,7 +310,9 @@ export function forApi(session: Session): OpenAI.ChatCompletionMessageParam[] {
  *   heading never introduces an empty section.
  */
 export function instructionsPrompt(servers: { label: string; text: string }[]) {
-  if (servers.length === 0) return "";
+  if (servers.length === 0) {
+    return "";
+  }
   return [
     "# MCP server instructions",
     "",
@@ -325,7 +337,9 @@ export function instructionsPrompt(servers: { label: string; text: string }[]) {
  */
 function withWindow(error: unknown, contextLimit: number): unknown {
   const detail = errorMessage(error);
-  if (!isOverflow(detail)) return error;
+  if (!isOverflow(detail)) {
+    return error;
+  }
   return new ContextOverflow(
     contextLimit > 0
       ? `${detail} — this turn was built to ${compactTokens(contextLimit)} tokens, so the window ` +
@@ -534,7 +548,9 @@ async function store(session: Session, message: StoredMessage) {
 async function planTurn(session: Session, model: string | undefined) {
   const config = loadLlmConfig();
   const chosenModel = model || session.model || config.model;
-  if (!chosenModel) throw new Error("No model selected — pick one in Config.");
+  if (!chosenModel) {
+    throw new Error("No model selected — pick one in Config.");
+  }
 
   const server = endpoint(config);
   const contextLimit = await contextLimitFor(
@@ -624,7 +640,9 @@ function toolRunner({ catalog, onDemand, proxied, carried }: TurnPlan, signal?: 
   // it and loses the cache for the whole history behind them.
   const loaded: string[] = [...carried];
   const load = (name: string) => {
-    if (!loaded.includes(name)) loaded.push(name);
+    if (!loaded.includes(name)) {
+      loaded.push(name);
+    }
   };
   // Only tools the model actually *called* carry over to the next turn. Everything else it
   // pulled in was a guess, and keeping the guesses would grow the tool array turn over turn
@@ -656,8 +674,12 @@ function toolRunner({ catalog, onDemand, proxied, carried }: TurnPlan, signal?: 
         // What was loaded before this call, so a repeat load is answered "already loaded"
         // rather than as fresh — the model's cue to call the tool instead of loading again.
         const before = new Set(loaded);
-        for (const name of resolved.matched) load(name);
-        if (resolved.matched.length === 0) failed.add(id);
+        for (const name of resolved.matched) {
+          load(name);
+        }
+        if (resolved.matched.length === 0) {
+          failed.add(id);
+        }
         return proxied
           ? proxyLoadResult(resolved, catalog, mcp.tools(resolved.matched), before)
           : loadResult(resolved, catalog, before);
@@ -671,17 +693,23 @@ function toolRunner({ catalog, onDemand, proxied, carried }: TurnPlan, signal?: 
           mcp.call(name, input, signal),
         );
       }
-      if (called === LIST_RESOURCES) return await listResources();
+      if (called === LIST_RESOURCES) {
+        return await listResources();
+      }
       if (called === READ_RESOURCE) {
         // Named rather than positional in the schema, so an empty one is a model that filled
         // the call in wrongly — worth saying so, since the uri is the whole of the request.
         const uri = typeof args.uri === "string" ? args.uri.trim() : "";
-        if (!uri) throw new Error("read_resource needs a uri; pass the one list_resources gave.");
+        if (!uri) {
+          throw new Error("read_resource needs a uri; pass the one list_resources gave.");
+        }
         return await readResource(uri);
       }
       // A model that skips `load_tools` and calls a catalogued tool straight from its name is
       // right about what it wants. On demand the loop has loaded it already.
-      if (proxied && inCatalog(catalog, called)) load(called);
+      if (proxied && inCatalog(catalog, called)) {
+        load(called);
+      }
       used.add(called);
       return await callOnce(answered, `${called}\u0000${raw}`, () =>
         mcp.call(called, args, signal),
@@ -739,7 +767,9 @@ async function settleHistory(
       { signal, emit },
     ),
   ]);
-  if (preselected.length) console.log(`[agent] preselected: ${preselected.join(", ")}`);
+  if (preselected.length) {
+    console.log(`[agent] preselected: ${preselected.join(", ")}`);
+  }
   // After the fold rather than beside it, because a fold makes this free: the head of the request
   // has just been rewritten, so the miss a move costs is already being paid. And before the
   // question, for compaction's reason — what is cleared is settled history.
@@ -829,7 +859,9 @@ function startTitle(
   return tryAsk("title", () => generateTitle(config, titleModel, prompt, signal), {
     onNotice: notice,
   }).then(async (title) => {
-    if (!title) return;
+    if (!title) {
+      return;
+    }
     session.title = title;
     await updateSession(session.id, { title });
     emit({ type: "title", title });
@@ -891,10 +923,14 @@ async function afterTurn({
     reply: body,
     turn: { ...hookContext.turn, messages: turnMessages(session, turnStart) },
   }).then(async (notes) => {
-    if (!notes.length) return;
+    if (!notes.length) {
+      return;
+    }
     stats.hooks = [...(stats.hooks ?? []), ...notes];
     await persist();
-    for (const hook of notes) emit({ type: "hook", hook });
+    for (const hook of notes) {
+      emit({ type: "hook", hook });
+    }
   });
 
   // After the answer, not before: it is on screen and being read by the time this runs, so the
@@ -948,7 +984,9 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   session.model = chosenModel;
   const turnStart = await askQuestion(plan, session, prompt, gathered.context, preselected, emit);
   const { dispatch, load, used, failed } = toolRunner(plan, signal);
-  for (const name of preselected) load(name);
+  for (const name of preselected) {
+    load(name);
+  }
 
   const titling = startTitle(config, session, prompt, emit, signal);
   await updateSession(session.id, { title: session.title, model: chosenModel });
@@ -976,9 +1014,13 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // not held to the last one's prompt.
   let pruneOwed = false;
   const pruneBetweenSteps = async () => {
-    if (!pruneOwed) return;
+    if (!pruneOwed) {
+      return;
+    }
     pruneOwed = false;
-    if (await prune(session, contextLimit)) previousPrompt = 0;
+    if (await prune(session, contextLimit)) {
+      previousPrompt = 0;
+    }
   };
 
   // What has streamed since the last message was stored. Kept here because an abort never hands a
@@ -1051,7 +1093,9 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       signal,
       dispatch,
       beforeStep: async (_sent, step) => {
-        if (step === 0) return undefined;
+        if (step === 0) {
+          return undefined;
+        }
         await pruneBetweenSteps();
         return transcript();
       },
@@ -1076,12 +1120,21 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         });
       },
       onEvent: ({ kind, text: delta = "" }) => {
-        if (kind === "notice") notice(delta);
-        if (kind !== "thinking" && kind !== "output") return;
-        if (!firstTokenAt) firstTokenAt = Date.now();
+        if (kind === "notice") {
+          notice(delta);
+        }
+        if (kind !== "thinking" && kind !== "output") {
+          return;
+        }
+        if (!firstTokenAt) {
+          firstTokenAt = Date.now();
+        }
         lastTokenAt = Date.now();
-        if (kind === "output") text += delta;
-        else reasoning += delta;
+        if (kind === "output") {
+          text += delta;
+        } else {
+          reasoning += delta;
+        }
         emit({ type: kind === "output" ? "text_delta" : "reasoning_delta", text: delta });
       },
       onToolCall: ({ id, name, raw }) => emit({ type: "tool_use", id, ...shownCall(name, raw) }),
@@ -1096,10 +1149,14 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
             tool_call_id: message.tool_call_id,
             content: message.content as string,
           });
-          if (--unanswered === 0) pruneOwed = true;
+          if (--unanswered === 0) {
+            pruneOwed = true;
+          }
           return;
         }
-        if (!turn) return;
+        if (!turn) {
+          return;
+        }
 
         // Assigned, not accumulated. `stream_options.include_usage` sends one final chunk and a
         // sum over the chunks agreed with it, but llama.cpp reports cumulatively per chunk — so
@@ -1119,11 +1176,12 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         // much less than the last one's prompt in the cache is the server's doing — an eviction,
         // a side task on the same slot — or a prefix that moved anyway. Only where the server
         // said what it cached.
-        if (turn.usage.uncached !== undefined && turn.usage.cached < previousPrompt * 0.9)
+        if (turn.usage.uncached !== undefined && turn.usage.cached < previousPrompt * 0.9) {
           console.warn(
             `[agent] prompt cache missed: ${turn.usage.cached} of ${turn.usage.prompt} cached, ` +
               `after a ${previousPrompt}-token request`,
           );
+        }
         previousPrompt = turn.usage.prompt;
 
         // Loading a definition is bookkeeping, not work the model did for the user.
@@ -1145,9 +1203,12 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     // is only appended once the stream ends, so an abort left the reply on screen and nothing in
     // the transcript. Keep the part that streamed, then let the error through — the route stays
     // quiet about a turn its reader ended.
-    if (signal?.aborted && (text || reasoning))
+    if (signal?.aborted && (text || reasoning)) {
       await store(session, assistantMessage(text, reasoning));
-    if (error instanceof ToolIterationLimit) throw new Error(error.message);
+    }
+    if (error instanceof ToolIterationLimit) {
+      throw new Error(error.message);
+    }
     // The loop wraps what it caught to hang the run on it. Every message is stored already, so
     // the run is not needed and the error goes on as it was thrown.
     throw withWindow(failedRun(error) ? (error as Error).cause : error, contextLimit);
@@ -1173,14 +1234,17 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   assistant.stats = stats;
   // What was called, in the order it was loaded, and only what was loaded: a name the model
   // made up is called, and fails, but is nothing to declare next turn.
-  if (native)
+  if (native) {
     session.loadedTools = carryOver(
       carried,
       new Set(result.loaded.filter((name) => used.has(name))),
     );
+  }
   await titling;
   await patchMessage(assistantRow, { stats });
-  if (native) await updateSession(session.id, { loadedTools: session.loadedTools });
+  if (native) {
+    await updateSession(session.id, { loadedTools: session.loadedTools });
+  }
   emit({ type: "stats", stats });
   // The turn is over at this point and the reader should not be held by what comes after it, so
   // `done` — the composer's cue to unlock — goes out here rather than once the route returns.
@@ -1233,7 +1297,9 @@ export async function callOnce(
     const inFlight = run();
     answered.set(key, inFlight);
     inFlight.catch((error: unknown) => {
-      if (!isToolError(error)) answered.delete(key);
+      if (!isToolError(error)) {
+        answered.delete(key);
+      }
     });
     return inFlight;
   }
@@ -1242,7 +1308,9 @@ export async function callOnce(
   } catch (error) {
     // Only a tool's own rejection is certain to repeat. Anything else reached this caller because
     // it was sharing a call still in flight, and is forgotten already.
-    if (!isToolError(error)) throw error;
+    if (!isToolError(error)) {
+      throw error;
+    }
     throw new Error(
       `${errorMessage(error)}\n\n(Identical call already failed this turn; it will fail the same way again. Change the arguments or try something else.)`,
     );
@@ -1256,7 +1324,9 @@ const add = (a: TokenUsage | undefined, b: TokenUsage): TokenUsage => ({
 });
 
 function parseArgs(args: string): Record<string, unknown> {
-  if (!args.trim()) return {};
+  if (!args.trim()) {
+    return {};
+  }
   try {
     return JSON.parse(args) as Record<string, unknown>;
   } catch {

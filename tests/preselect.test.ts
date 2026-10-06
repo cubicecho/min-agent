@@ -73,7 +73,9 @@ function serving(...replies: (() => Response)[]) {
     vi.fn(async (_url: unknown, init?: RequestInit) => {
       bodies.push(JSON.parse(String(init?.body)));
       const reply = replies[bodies.length - 1];
-      if (!reply) throw new Error("asked more often than the test answers");
+      if (!reply) {
+        throw new Error("asked more often than the test answers");
+      }
       return reply();
     }),
   );

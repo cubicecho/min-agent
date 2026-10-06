@@ -277,7 +277,9 @@ describe("gather", () => {
 
   it("assembles in the order of the events, whichever answers first", async () => {
     runHooks.mockImplementation(async (event: string) => {
-      if (event === "beforeTurn") return [outcome({ inject: true, text: "likes tea" })];
+      if (event === "beforeTurn") {
+        return [outcome({ inject: true, text: "likes tea" })];
+      }
       await new Promise((resolve) => setTimeout(resolve, 5));
       return [
         outcome({ event: "sessionStart", hookId: "hello", inject: true, text: "  met before  " }),

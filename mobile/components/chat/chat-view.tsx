@@ -67,7 +67,9 @@ import { useVoiceSettings } from "@/lib/voice-settings.ts";
 export function ChatsView({ sessionId }: { sessionId?: string }) {
   const wide = useWide();
 
-  if (!wide) return sessionId ? <ChatPane sessionId={sessionId} /> : <SessionsScreen />;
+  if (!wide) {
+    return sessionId ? <ChatPane sessionId={sessionId} /> : <SessionsScreen />;
+  }
 
   return (
     <SplitLayout
@@ -165,7 +167,9 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
 
   // Playback ends by itself, and the button on the message it belongs to has to notice.
   useEffect(() => {
-    if (!speech.speaking) setSpoken(null);
+    if (!speech.speaking) {
+      setSpoken(null);
+    }
   }, [speech.speaking]);
 
   const activeModel = model || session.data?.model || config.data?.model || "";
@@ -194,7 +198,9 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const route = useRef(sessionId);
   // biome-ignore lint/correctness/useExhaustiveDependencies: changing chat is the trigger.
   useEffect(() => {
-    if (route.current === sessionId) return;
+    if (route.current === sessionId) {
+      return;
+    }
     route.current = sessionId;
     setCreated(null);
     setPending(null);
@@ -230,7 +236,9 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: these deps are the scroll triggers.
   useEffect(() => {
-    if (!pinned) return;
+    if (!pinned) {
+      return;
+    }
     // Animation cannot keep up with a stream, and trying looks like stutter; during a turn the
     // view is simply moved.
     scroller.current?.scrollToEnd({ animated: !pending });
@@ -250,7 +258,9 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     await invalidateSession(queryClient, id);
     // Tidying up after a turn the reader has already walked away from would take the
     // composer and the transcript of whatever they walked to with it.
-    if (showing.current !== id) return;
+    if (showing.current !== id) {
+      return;
+    }
     setPending(null);
     resetLive();
     setTurnStats(null);
@@ -263,13 +273,17 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
         queryClient.getQueryData<{ messages: { role: string }[] }>(queryKeys.session(id))
           ?.messages ?? [];
       const last = messages.findLastIndex((message) => message.role === "assistant");
-      if (last !== -1) setSpoken(last);
+      if (last !== -1) {
+        setSpoken(last);
+      }
     }
   }
 
   async function send(text?: string) {
     const prompt = (text ?? draft).trim();
-    if (!prompt || pending) return;
+    if (!prompt || pending) {
+      return;
+    }
 
     let id = activeId;
     if (!id) {
@@ -292,7 +306,9 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
         .length ?? 0;
 
     // A chip sends its own text; anything half-typed in the box is left alone.
-    if (!text) setDraft("");
+    if (!text) {
+      setDraft("");
+    }
     setPending(prompt);
     speech.stop();
     resetLive();
@@ -313,7 +329,9 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     // is reading to the button that has to stop it.
     let read = false;
     const finish = async () => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
       await settle(turnId, read);
     };
@@ -332,8 +350,9 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
           // Chips are written to the session after the answer; read them back from there
           // rather than growing a second path for the same data. This one holds whether or
           // not the chat is still on screen: it is the stored transcript being refreshed.
-          if (event.type === "followups")
+          if (event.type === "followups") {
             void queryClient.invalidateQueries({ queryKey: queryKeys.session(turnId) });
+          }
           // The same goes for a hook that reports after the answer, once the turn has settled
           // and there is no live tail left to put it on: the stored turn has it.
           if (event.type === "hook" && settled) {
@@ -341,29 +360,43 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
             return;
           }
           if (event.type === "done") {
-            if (config.data?.speakReplies && showing.current === turnId)
+            if (config.data?.speakReplies && showing.current === turnId) {
               read = speech.speak(answer);
+            }
             void finish();
           }
-          if (event.type === "text_delta") answer += event.text;
+          if (event.type === "text_delta") {
+            answer += event.text;
+          }
           // The rest is this turn showing itself, and it only has somewhere to show while
           // the chat it belongs to is the one being looked at. Switch away and the turn
           // runs on into its own session; the transcript has it when you come back.
-          if (showing.current !== turnId) return;
+          if (showing.current !== turnId) {
+            return;
+          }
           pushLive(event);
-          if (event.type === "stats") setTurnStats(event.stats);
-          if (event.type === "error") setFailure(event.message);
+          if (event.type === "stats") {
+            setTurnStats(event.stats);
+          }
+          if (event.type === "error") {
+            setFailure(event.message);
+          }
         },
       });
     } catch (error) {
-      if (!controller.signal.aborted && showing.current === turnId)
+      if (!controller.signal.aborted && showing.current === turnId) {
         setFailure((error as Error).message);
+      }
     } finally {
-      if (abort.current === controller) abort.current = null;
+      if (abort.current === controller) {
+        abort.current = null;
+      }
       await finish();
       // The address bar catches up once the stream is really over, not on `done`: moving the
       // route mid-stream would remount this pane and drop what is still arriving on it.
-      if (!sessionId) router.replace(`/chat/${turnId}`);
+      if (!sessionId) {
+        router.replace(`/chat/${turnId}`);
+      }
     }
   }
 
@@ -374,7 +407,9 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
    * different is only what happens after the cut.
    */
   async function rewind(index: number) {
-    if (!activeId) return;
+    if (!activeId) {
+      return;
+    }
     await api.truncateSession(activeId, index);
     await invalidateSession(queryClient, activeId);
   }
@@ -387,7 +422,9 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   async function retry(index: number) {
     const messages = session.data?.messages ?? [];
     const start = turnStart(messages, index);
-    if (start < 0 || pending) return;
+    if (start < 0 || pending) {
+      return;
+    }
     const prompt = messageText(messages[start]);
     await rewind(start);
     await send(prompt);
@@ -397,7 +434,9 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   async function edit(index: number) {
     const messages = session.data?.messages ?? [];
     const message = messages[index];
-    if (!message || pending) return;
+    if (!message || pending) {
+      return;
+    }
     await rewind(index);
     setDraft(messageText(message));
   }
@@ -838,7 +877,9 @@ function TokensDialog({
     <DialogLayout
       open={visible}
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open) {
+          onClose();
+        }
       }}
       title="Tokens"
       contentSlot={<View className="gap-3">{body}</View>}
@@ -875,7 +916,9 @@ function LiveMeter({ startedAt, live }: { startedAt: number; live: LivePart[] })
     return () => clearInterval(timer);
   }, []);
 
-  if (!startedAt) return null;
+  if (!startedAt) {
+    return null;
+  }
   const elapsed = Math.max(now - startedAt, 0);
   const tokens = Math.round(liveCharCount(live) / 4);
   const seconds = elapsed / 1000;

@@ -155,19 +155,23 @@ const refuses = (refusal: string): Reply => ({ refusal });
 async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   requests.push(String(init?.body ?? url));
   const reply = String(url).endsWith("/chat/completions") ? script.shift() : undefined;
-  if (!reply) return new Response("{}", { status: 404 });
-  if ("refusal" in reply)
+  if (!reply) {
+    return new Response("{}", { status: 404 });
+  }
+  if ("refusal" in reply) {
     return new Response(JSON.stringify({ error: { message: reply.refusal } }), {
       status: 400,
       headers: { "content-type": "application/json" },
     });
+  }
 
   const encoder = new TextEncoder();
   const signal = init?.signal;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      for (const each of reply.chunks)
+      for (const each of reply.chunks) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(each)}\n\n`));
+      }
       if (reply.hangs) {
         signal?.addEventListener("abort", () => controller.error(signal.reason));
         return;
@@ -323,7 +327,9 @@ beforeEach(() => {
   offered = [];
   configure();
 
-  for (const mock of Object.values(mcp)) mock.mockReset();
+  for (const mock of Object.values(mcp)) {
+    mock.mockReset();
+  }
   mcp.catalog.mockImplementation(catalog);
   // Caller order when names are given, as the pool keeps it; a name nothing offers is skipped.
   mcp.tools.mockImplementation((names?: string[]) =>
@@ -516,7 +522,9 @@ describe("a plain answer", () => {
     // Half a second between the two deltas, and another after the last.
     const { events, stats } = await run(chat, "hi there", {
       onEvent: (event) => {
-        if (event.type === "text_delta") vi.advanceTimersByTime(500);
+        if (event.type === "text_delta") {
+          vi.advanceTimersByTime(500);
+        }
       },
     });
 
@@ -575,7 +583,9 @@ describe("a tool round trip", () => {
     configure({ toolDiscovery: "eager" });
     offer(READ, LS);
     mcp.call.mockImplementation(async (name: string) => {
-      if (name === "fs__ls") throw new Error("boom");
+      if (name === "fs__ls") {
+        throw new Error("boom");
+      }
       // Slower than the failure beside it, so the two land out of call order.
       await new Promise((resolve) => setTimeout(resolve, 0));
       return "contents of a";
@@ -876,7 +886,9 @@ describe("stopping a turn", () => {
     const { events, error } = await run(session(), "hi", {
       signal: controller.signal,
       onEvent: (event) => {
-        if (event.type === "text_delta") controller.abort();
+        if (event.type === "text_delta") {
+          controller.abort();
+        }
       },
     });
 
@@ -1010,7 +1022,9 @@ describe("what the loop decides beyond the common path", () => {
   it("loads a catalogued tool that is called without being loaded, and carries it", async () => {
     offer(READ, LS, NOW);
     mcp.call.mockImplementation(async (name: string) => {
-      if (name === "clock__now") return "12:00";
+      if (name === "clock__now") {
+        return "12:00";
+      }
       throw new Error(`no such tool: ${name}`);
     });
     script = [asks(["c1", "clock__now", "{}"], ["c2", "clock__then", "{}"]), says("Noon.")];
@@ -1229,7 +1243,9 @@ describe("what the loop decides beyond the common path", () => {
       signal: controller.signal,
       onEvent: (event) => {
         // Once the call is in flight, not as it is announced.
-        if (event.type === "tool_use") setTimeout(() => controller.abort(), 0);
+        if (event.type === "tool_use") {
+          setTimeout(() => controller.abort(), 0);
+        }
       },
     });
 
