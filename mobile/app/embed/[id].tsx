@@ -91,7 +91,10 @@ export default function EmbedScreen() {
           />
         }
         contentSlot={
-          <View className="flex-1 bg-background">
+          // `h-full`, not `flex-1`: a percentage resolves whether the shell's body is a flex
+          // column or a block box, and it has been both. Under a block body `flex-1` claims
+          // nothing, and the frame's own `100%` falls back to the 150px an iframe has by default.
+          <View className="h-full bg-background">
             {/*
               A DOM element in a React Native tree, which only works because react-native-web
               renders through react-dom — hence the `canFrame` guard above rather than a check
