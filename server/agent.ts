@@ -480,6 +480,28 @@ function turnStats({
   };
 }
 
+type ToolDiscovery = LlmConfig["toolDiscovery"];
+
+/** The catalogue section of the system prompt, which only an on-demand turn has. */
+const CATALOGUE_PROMPT: Record<
+  ToolDiscovery,
+  (catalog: Parameters<typeof catalogPrompt>[0]) => string
+> = {
+  eager: () => "",
+  ondemand: catalogPrompt,
+  proxy: proxyCatalogPrompt,
+};
+
+/**
+ * How agent-core's loop is run for each mode. Proxied, it runs eager over the two proxy tools
+ * and `dispatch` answers them; see where `runTurn` builds `tools`.
+ */
+const LOOP_DISCOVERY = {
+  eager: "eager",
+  ondemand: "ondemand",
+  proxy: "eager",
+} as const satisfies Record<ToolDiscovery, string>;
+
 export interface RunOptions {
   session: Session;
   prompt: string;
@@ -508,10 +530,14 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // In on-demand mode the model sees a name-only catalogue up front and pulls in the
   // definitions it needs as the turn runs.
   const catalog = mcp.catalog();
-  const onDemand = config.toolDiscovery !== "eager" && catalog.length > 0;
+  // The setting, except that with nothing to catalogue there is nothing to load on demand.
+  const discovery: ToolDiscovery = catalog.length > 0 ? config.toolDiscovery : "eager";
+  const onDemand = discovery !== "eager";
   // On demand, but with a tool array that never changes: definitions come back as `load_tools`
   // results and run through `call_tool`. See `server/tool-proxy.ts`.
-  const proxied = onDemand && config.toolDiscovery === "proxy";
+  const proxied = discovery === "proxy";
+  // Plain on demand, where loading is the loop's own. See `tools` below.
+  const native = discovery === "ondemand";
   // Whether `list_resources` and `read_resource` are worth declaring at all. Read once: a server
   // does not gain the capability mid-turn, and a turn that offers a tool on one step and not the
   // next is a turn the model cannot plan across.
@@ -539,7 +565,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // catalogue used to mark what was loaded, and every `load_tools` call re-prefilled the session.
   // What is loaded is said where it does not move the prefix instead — the tool array, and the
   // `load_tools` result.
-  const catalogue = proxied ? proxyCatalogPrompt(catalog) : onDemand ? catalogPrompt(catalog) : "";
+  const catalogue = CATALOGUE_PROMPT[discovery](catalog);
   const system = [config.systemPrompt, guidance, catalogue].filter(Boolean).join("\n\n").trim();
 
   // What the servers' hooks are told about this turn. The index is counted before the question
@@ -717,7 +743,6 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // them, because its own proxied mode declares nothing else and min-agent declares the resource
   // tools beside them. `call_tool` is listed on demand so that it stays the host's: answered
   // here, it does not load or carry what it names.
-  const native = onDemand && !proxied;
   const always = offersResources ? [LIST_RESOURCES, READ_RESOURCE] : [];
   const tools: ToolDefinition[] = [
     ...(offersResources ? RESOURCE_TOOLS : []),
@@ -803,7 +828,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         temperature: config.temperature,
         reasoningEffort: config.reasoningEffort,
         maxToolIterations: config.maxToolIterations,
-        toolDiscovery: native ? "ondemand" : "eager",
+        toolDiscovery: LOOP_DISCOVERY[discovery],
         maxRetries: OPEN_RETRIES,
       },
       // On demand the loop appends the catalogue itself, to the same text `system` is.
