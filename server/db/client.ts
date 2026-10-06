@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { DATABASE_DEFAULTS } from "../../shared/defaults.ts";
+import { messageOf } from "../../shared/errors.ts";
 import { DATABASE_URL } from "../paths.ts";
 import { relations } from "./schema.ts";
 
@@ -42,7 +43,8 @@ export async function waitForDatabase() {
       );
       // Drizzle's message carries the failed query and its params across several lines, which
       // is noise in a line that repeats. The driver's own reason is the first one.
-      const [reason] = String((error as Error).cause ?? (error as Error).message).split("\n");
+      const cause = error instanceof Error ? error.cause : undefined;
+      const [reason] = String(cause ?? messageOf(error)).split("\n");
       console.warn(
         `database not ready (${reason}); retrying in ${delay}ms [${attempt}/${DATABASE_DEFAULTS.connectAttempts - 1}]`,
       );

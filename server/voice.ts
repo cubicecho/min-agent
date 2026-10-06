@@ -4,6 +4,7 @@ import OpenAI, { toFile } from "openai";
 import { z } from "zod";
 import { spokenChunk } from "../shared/client/voice.ts";
 import { VOICE_DEFAULTS } from "../shared/defaults.ts";
+import { messageOf } from "../shared/errors.ts";
 import { type LlmConfig, voiceBaseUrlFor, wyomingAddress } from "../shared/types.ts";
 import { toPcm, wav } from "./audio.ts";
 import { loadLlmConfig } from "./config.ts";
@@ -83,7 +84,7 @@ function requireModel(model: string, what: string, response: express.Response): 
 
 /** Whatever the provider said, as a sentence, so the app can put it under the composer. */
 function failed(label: string, error: unknown, response: express.Response) {
-  const message = (error as Error).message || String(error);
+  const message = messageOf(error) || String(error);
   console.warn(`[voice] ${label}: ${message}`);
   response.status(HttpStatus.badGateway).json({ error: message });
 }

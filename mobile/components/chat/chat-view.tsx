@@ -14,6 +14,7 @@ import {
 } from "@shared/client/usage.ts";
 import { useLiveParts } from "@shared/client/use-live-parts.ts";
 import { CHAT_DEFAULTS } from "@shared/defaults.ts";
+import { messageOf } from "@shared/errors.ts";
 import type { LlmConfig, TokenUsage, TurnStats } from "@shared/types.ts";
 import { MS_PER_SECOND, PERCENT } from "@shared/units.ts";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -391,7 +392,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     } catch (error) {
       const isStillShown = controller.signal.aborted === false && showing.current === turnId;
       if (isStillShown) {
-        setFailure((error as Error).message);
+        setFailure(messageOf(error));
       }
     } finally {
       if (abort.current === controller) {

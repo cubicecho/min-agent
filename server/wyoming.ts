@@ -1,6 +1,7 @@
 import { connect } from "node:net";
 import { z } from "zod";
 import { VOICE_DEFAULTS } from "../shared/defaults.ts";
+import { messageOf } from "../shared/errors.ts";
 import { MS_PER_SECOND } from "../shared/units.ts";
 
 /**
@@ -212,7 +213,7 @@ function ask(
           }
         }
       } catch (error) {
-        finish(new Error(`${host}:${port} sent something unreadable: ${(error as Error).message}`));
+        finish(new Error(`${host}:${port} sent something unreadable: ${messageOf(error)}`));
       }
     });
 

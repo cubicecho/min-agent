@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { ROOT } from "../server/paths.ts";
+import { messageOf } from "../shared/errors.ts";
 
 const run = promisify(execFile);
 
@@ -81,7 +82,7 @@ async function generate(reason: string) {
     } catch (error) {
       // A schema that cannot be printed is a broken server, which the dev server is about to
       // report anyway. Exiting here would just bury it under a second error.
-      console.error(`[codegen] failed: ${(error as Error).message}`);
+      console.error(`[codegen] failed: ${messageOf(error)}`);
       if (watching === false) {
         process.exitCode = 1;
       }

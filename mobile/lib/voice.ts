@@ -1,5 +1,6 @@
 import { speakableText, spokenChunk } from "@shared/client/voice.ts";
 import { VOICE_DEFAULTS } from "@shared/defaults.ts";
+import { messageOf } from "@shared/errors.ts";
 import {
   createAudioPlayer,
   RecordingPresets,
@@ -256,7 +257,7 @@ export function useDictation({
     }
     busy.current = true;
     work()
-      .catch((thrown) => setError((thrown as Error).message))
+      .catch((thrown) => setError(messageOf(thrown)))
       .finally(() => {
         busy.current = false;
       });
