@@ -33,12 +33,13 @@ function comboOf(event: KeyboardEvent): string {
 
 /** A box someone is typing in, where a bare letter is a letter and nothing else. */
 function typing(target: EventTarget | null): boolean {
-  const node = target as HTMLElement | null;
-  if (!node) {
+  // The window and the document are targets too, and neither is something to type in.
+  const isElement = target instanceof HTMLElement;
+  if (!isElement) {
     return false;
   }
-  const tag = node.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || node.isContentEditable;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable;
 }
 
 function onKeyDown(event: KeyboardEvent) {
