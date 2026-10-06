@@ -121,7 +121,7 @@ async function compact(
   contextLimit: number,
   signal?: AbortSignal,
 ): Promise<string> {
-  const used = latestContextTokens(session);
+  const used = latestCount(session, "contextTokens");
   // No plan when the window is not three quarters used, or no legal cut folds enough.
   const plan = planFold(session, contextLimit, used);
   if (!plan) {
@@ -170,23 +170,19 @@ async function prune(session: Session, contextLimit: number, compacted = false):
   return true;
 }
 
-/** The last turn's final prompt, which the next turn's first request should find cached. */
-function latestPromptTokens(session: Session): number {
+/**
+ * A count off the last turn that has one. A turn whose server reported no usage is stored with
+ * stats and without counts, and is walked past: an older number is a better estimate than none.
+ *
+ * @param count `lastPromptTokens` is the last turn's final prompt, which the next turn's first
+ * request should find cached. `contextTokens` is what the last turn actually cost, which is the
+ * best estimate of what the next one will.
+ */
+function latestCount(session: Session, count: "lastPromptTokens" | "contextTokens"): number {
   for (let i = session.messages.length - 1; i >= 0; i--) {
-    const { stats } = session.messages[i];
-    if (stats) {
-      return stats.lastPromptTokens ?? 0;
-    }
-  }
-  return 0;
-}
-
-/** What the last turn actually cost, which is the best estimate of what the next one will. */
-function latestContextTokens(session: Session): number {
-  for (let i = session.messages.length - 1; i >= 0; i--) {
-    const { stats } = session.messages[i];
-    if (stats?.contextTokens) {
-      return stats.contextTokens;
+    const counted = session.messages[i].stats?.[count];
+    if (counted) {
+      return counted;
     }
   }
   return 0;
@@ -932,7 +928,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // The last request's prompt, to tell whether this one found it in the cache. The first step
   // is held to the turn before's last, unless a compaction just rewrote the history under it,
   // or the pruning marker moved and turned results it had sent whole into stubs.
-  let previousPrompt = headMoved ? 0 : latestPromptTokens(session);
+  let previousPrompt = headMoved ? 0 : latestCount(session, "lastPromptTokens");
   // The marker's check between tool steps, which is where a long turn needs it: nothing compacts
   // mid-turn, and a turn of thirty tool calls is thirty results replayed whole on every step. Owed
   // from the moment a step's last result is stored, and paid before the next request or, where
