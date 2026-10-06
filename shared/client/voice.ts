@@ -1,3 +1,5 @@
+import { VOICE_DEFAULTS } from "../defaults.ts";
+
 /**
  * The client's half of voice: turning a recording into text, and text into sound.
  *
@@ -80,10 +82,12 @@ export function speakableText(markdown: string): string {
  * fifth so a merely-long reply is not cut short hunting for a full stop.
  */
 export function spokenChunk(text: string, limit: number): string {
-  if (text.length <= limit) return text;
+  if (text.length <= limit) {
+    return text;
+  }
 
   const head = text.slice(0, limit);
-  const floor = Math.floor(limit * 0.8);
+  const floor = Math.floor(limit * VOICE_DEFAULTS.sentenceFloorShare);
 
   const ends = [...head.matchAll(/[.!?][)"'\]]*(?=\s|$)/g)];
   const last = ends[ends.length - 1];
@@ -118,7 +122,10 @@ export function createVoiceClient({ baseUrl, fetch: fetchImpl }: VoiceClientOpti
         headers: { "content-type": "application/json" },
         body: JSON.stringify(recording),
       });
-      if (!response.ok) await complain(response, "transcription");
+      const requestFailed = response.ok === false;
+      if (requestFailed) {
+        await complain(response, "transcription");
+      }
       const { text } = (await response.json()) as { text: string };
       return text;
     },
@@ -133,7 +140,10 @@ export function createVoiceClient({ baseUrl, fetch: fetchImpl }: VoiceClientOpti
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ text: speakableText(text) }),
       });
-      if (!response.ok) await complain(response, "speech");
+      const requestFailed = response.ok === false;
+      if (requestFailed) {
+        await complain(response, "speech");
+      }
       return {
         bytes: await response.arrayBuffer(),
         mime: response.headers.get("content-type") ?? "audio/mpeg",

@@ -1,3 +1,5 @@
+import { FRESHNESS_DEFAULTS } from "@shared/defaults.ts";
+import { MS_PER_SECOND } from "@shared/units.ts";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
@@ -72,7 +74,7 @@ const MARK_LABEL: Record<TabMark, string> = {
  * server that fell over while you were on Agent is worth noticing, and it is not worth a
  * request every five seconds to notice it a little sooner.
  */
-const MCP_WATCH = 30_000;
+const MCP_WATCH = FRESHNESS_DEFAULTS.mcpWatchSeconds * MS_PER_SECOND;
 
 const PANELS: Record<SettingsTab, (props: PanelProps) => React.JSX.Element | null> = {
   model: ModelPanel,
@@ -104,11 +106,20 @@ export default function SettingsScreen() {
   // A broken server outranks an unsaved form: one is something that happened to you, the
   // other is something you did and can still see when you go back.
   const marks: Partial<Record<SettingsTab, TabMark>> = {};
-  for (const { key } of SETTINGS_TABS) if (dirty[key]) marks[key] = "unsaved";
-  if (mcp.data?.some((server) => server.status === "error")) marks.mcp = "attention";
+  for (const { key } of SETTINGS_TABS) {
+    if (dirty[key]) {
+      marks[key] = "unsaved";
+    }
+  }
+  if (mcp.data?.some((server) => server.status === "error")) {
+    marks.mcp = "attention";
+  }
 
   const open = (key: string) => {
-    if (!isTab(key)) return;
+    const isUnknownTab = isTab(key) === false;
+    if (isUnknownTab) {
+      return;
+    }
     setActive(key);
     setVisited((current) => (current.includes(key) ? current : [...current, key]));
     // Keeps the web URL honest about which panel is open, so a reload or a shared link lands

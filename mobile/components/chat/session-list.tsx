@@ -1,9 +1,5 @@
-import {
-  type Bucket,
-  groupSessions,
-  matchSessions,
-  SEARCH_AFTER,
-} from "@shared/client/sessions.ts";
+import { type Bucket, groupSessions, matchSessions } from "@shared/client/sessions.ts";
+import { SESSION_LIST_DEFAULTS } from "@shared/defaults.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
@@ -37,15 +33,15 @@ import { cn } from "@/lib/utils.ts";
  * weekday is what you actually remember; older than that the time of day means nothing and
  * the date is the whole of it.
  */
+const TIME_FORMAT_BY_BUCKET: Record<Bucket, Intl.DateTimeFormatOptions> = {
+  today: { hour: "2-digit", minute: "2-digit" },
+  yesterday: { hour: "2-digit", minute: "2-digit" },
+  week: { weekday: "short", hour: "2-digit", minute: "2-digit" },
+  earlier: { month: "short", day: "numeric" },
+};
+
 const when = (iso: string, bucket: Bucket) =>
-  new Date(iso).toLocaleString(
-    undefined,
-    bucket === "earlier"
-      ? { month: "short", day: "numeric" }
-      : bucket === "week"
-        ? { weekday: "short", hour: "2-digit", minute: "2-digit" }
-        : { hour: "2-digit", minute: "2-digit" },
-  );
+  new Date(iso).toLocaleString(undefined, TIME_FORMAT_BY_BUCKET[bucket]);
 
 /**
  * Starting a chat and landing in it.
@@ -101,7 +97,9 @@ function useSessions(activeId?: string) {
       await queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
       // Deleting the chat that is open would otherwise leave it on screen with nothing
       // behind it.
-      if (id === activeId) router.replace("/");
+      if (id === activeId) {
+        router.replace("/");
+      }
     },
   });
 
@@ -135,7 +133,9 @@ type List = ReturnType<typeof useSessions>;
  */
 function RenameDialog({ list }: { list: List }) {
   const target = list.renaming;
-  if (!target) return null;
+  if (!target) {
+    return null;
+  }
   return <RenameForm key={target.id} list={list} id={target.id} title={target.title} />;
 }
 
@@ -146,7 +146,9 @@ function RenameForm({ list, id, title }: { list: List; id: string; title: string
     onSubmit: async ({ value }) => {
       const trimmed = value.title.trim();
       // A title that did not change, or was emptied, is not a rename.
-      if (trimmed && trimmed !== title) await list.rename.mutateAsync({ id, title: trimmed });
+      if (trimmed && trimmed !== title) {
+        await list.rename.mutateAsync({ id, title: trimmed });
+      }
       close();
     },
   });
@@ -155,7 +157,10 @@ function RenameForm({ list, id, title }: { list: List; id: string; title: string
     <FormDialog
       open
       onOpenChange={(open) => {
-        if (!open) close();
+        const isClosing = open === false;
+        if (isClosing) {
+          close();
+        }
       }}
       title="Rename chat"
     >
@@ -174,7 +179,7 @@ function RenameForm({ list, id, title }: { list: List; id: string; title: string
 }
 
 /** Whether there are enough chats that reading down the list is the slower way to find one. */
-const searchable = (list: List) => list.all.length > SEARCH_AFTER;
+const searchable = (list: List) => list.all.length > SESSION_LIST_DEFAULTS.searchAfter;
 
 /** Search box, shown only once there are enough chats for scanning to be the slower way. */
 function Search({ list }: { list: List }) {
@@ -183,7 +188,10 @@ function Search({ list }: { list: List }) {
   // was never taken, because the browser's own ⌘K would have done something.
   useShortcut("mod+k", searchable(list) ? () => box.current?.focus() : undefined);
 
-  if (!searchable(list)) return null;
+  const isShortList = searchable(list) === false;
+  if (isShortList) {
+    return null;
+  }
   return (
     <SearchInput
       ref={box}

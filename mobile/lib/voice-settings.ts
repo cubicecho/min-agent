@@ -25,7 +25,9 @@ let current: VoiceSettings = DEFAULTS;
 const listeners = new Set<() => void>();
 
 const announce = () => {
-  for (const listener of listeners) listener();
+  for (const listener of listeners) {
+    listener();
+  }
 };
 
 /** Read synchronously, for the callers that are not components. */

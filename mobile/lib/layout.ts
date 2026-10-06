@@ -1,3 +1,4 @@
+import { LAYOUT_DEFAULTS } from "@shared/defaults.ts";
 import { useEffect, useState } from "react";
 import { Keyboard, Platform, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,9 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
  * of styling one. `useWindowDimensions` re-renders on rotation and on a resized browser
  * window, so the layout follows the window rather than only the width it started at.
  */
-export const WIDE = 768;
-
-export const useWide = () => useWindowDimensions().width >= WIDE;
+export const useWide = () => useWindowDimensions().width >= LAYOUT_DEFAULTS.wideWidthPx;
 
 /**
  * The room to leave under the last thing on a screen: the system bar at the foot of the

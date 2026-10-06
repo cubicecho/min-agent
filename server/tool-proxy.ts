@@ -56,7 +56,7 @@ export function proxyLoadResult(
   loaded: ReadonlySet<string>,
 ): string {
   const lines: string[] = [];
-  const fresh = definitions.filter((tool) => !loaded.has(tool.function.name));
+  const fresh = definitions.filter((tool) => loaded.has(tool.function.name) === false);
   const again = resolved.matched.filter((name) => loaded.has(name));
   if (fresh.length) {
     lines.push(`Loaded ${fresh.length} tool(s). Run them with \`call_tool\`.`);
@@ -72,7 +72,9 @@ export function proxyLoadResult(
     }
   }
   if (again.length) {
-    if (lines.length) lines.push("");
+    if (lines.length) {
+      lines.push("");
+    }
     lines.push(
       `Already loaded earlier in this turn: ${again.join(", ")}. Run them with \`call_tool\`; ` +
         "do not load them again.",
@@ -82,7 +84,9 @@ export function proxyLoadResult(
   // are agent-core's, worded the same in both modes.
   const { overBroad, deferred, unknown, matched } = resolved;
   if (overBroad.length || deferred.length || unknown.length || !matched.length) {
-    if (lines.length) lines.push("");
+    if (lines.length) {
+      lines.push("");
+    }
     lines.push(loadResult({ ...resolved, matched: [] }, catalog));
   }
   return lines.join("\n");

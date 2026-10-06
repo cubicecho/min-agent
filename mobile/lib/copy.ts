@@ -1,3 +1,4 @@
+import { CHAT_DEFAULTS } from "@shared/defaults.ts";
 import * as Clipboard from "expo-clipboard";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -10,9 +11,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * a button that lies about it is worse than one that does nothing.
  */
 
-/** How long the button says it worked before going back to offering. */
-const CONFIRM_FOR = 1500;
-
 export function useCopy() {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -20,17 +18,24 @@ export function useCopy() {
   // The timer outlives the component otherwise, and fires setState into nothing.
   useEffect(
     () => () => {
-      if (timer.current) clearTimeout(timer.current);
+      if (timer.current) {
+        clearTimeout(timer.current);
+      }
     },
     [],
   );
 
   const copy = useCallback(async (text: string) => {
     const ok = await Clipboard.setStringAsync(text).catch(() => false);
-    if (!ok) return false;
+    const refused = ok === false;
+    if (refused) {
+      return false;
+    }
     setCopied(true);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setCopied(false), CONFIRM_FOR);
+    if (timer.current) {
+      clearTimeout(timer.current);
+    }
+    timer.current = setTimeout(() => setCopied(false), CHAT_DEFAULTS.copiedForMs);
     return true;
   }, []);
 

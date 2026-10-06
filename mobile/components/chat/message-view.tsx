@@ -101,7 +101,7 @@ function Details({
       }
       title={title}
       // Only while closed: once the row is open the whole of it is right underneath.
-      description={!open && summary ? summary : undefined}
+      description={open === false && summary ? summary : undefined}
       contentSlot={content}
       className={cn(
         "bg-card",
@@ -285,7 +285,9 @@ const StoredMessages = memo(function StoredMessages({
   return (
     <>
       {messages.map((item, index) => {
-        if (item.role === "tool" || item.role === "system") return null;
+        if (item.role === "tool" || item.role === "system") {
+          return null;
+        }
         const key = `${item.role}-${index}`;
 
         if (item.role === "user") {
@@ -310,14 +312,16 @@ const StoredMessages = memo(function StoredMessages({
             />
           );
         }
-        if (item.role !== "assistant") return null;
+        if (item.role !== "assistant") {
+          return null;
+        }
 
         const body = messageText(item);
         // Where the live turn had them: a hook that ran ahead of the question is noted ahead of
         // the answer, and one that reported after it stays under it.
         const hooks = item.stats?.hooks ?? [];
         const before = hooks.filter((hook) => INJECT_EVENTS.has(hook.event));
-        const after = hooks.filter((hook) => !INJECT_EVENTS.has(hook.event));
+        const after = hooks.filter((hook) => INJECT_EVENTS.has(hook.event) === false);
         return (
           <View key={key} className="gap-2">
             {before.map((hook) => (
@@ -326,7 +330,9 @@ const StoredMessages = memo(function StoredMessages({
             {item.reasoning_content ? <Reasoning text={item.reasoning_content} /> : null}
             {body ? <Bubble from="assistant" content={<MarkdownBody text={body} />} /> : null}
             {(item.tool_calls ?? []).map((call) => {
-              if (call.type !== "function") return null;
+              if (call.type !== "function") {
+                return null;
+              }
               const result = results.get(call.id);
               const shown = shownCall(call.function.name, call.function.arguments);
               return (
@@ -401,9 +407,13 @@ const LiveRow = memo(function LiveRow({ part }: { part: LivePart }) {
       <ToolCall name={part.name} input={part.input} result={part.result} isError={part.isError} />
     );
   }
-  if (part.kind === "hook") return <HookLine hook={part.hook} />;
+  if (part.kind === "hook") {
+    return <HookLine hook={part.hook} />;
+  }
   // Thinking that is arriving right now is worth watching; stored thinking is not.
-  if (part.kind === "reasoning") return <Reasoning defaultOpen text={part.text} />;
+  if (part.kind === "reasoning") {
+    return <Reasoning defaultOpen text={part.text} />;
+  }
   return <Bubble from="assistant" content={<MarkdownBody text={part.text} />} />;
 });
 

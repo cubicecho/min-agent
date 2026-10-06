@@ -63,7 +63,10 @@ function CopySpec() {
   const fetched = useMutation({
     mutationFn: async () => {
       const ok = await copy(JSON.stringify(await api.spec(), null, 2));
-      if (!ok) throw new Error("The clipboard refused the copy.");
+      const refused = ok === false;
+      if (refused) {
+        throw new Error("The clipboard refused the copy.");
+      }
     },
   });
 

@@ -35,13 +35,20 @@ interface GraphQLResponse<T> {
  * A 200 that will not parse is almost always a dev server answering an unknown path with its
  * `index.html`, and `Unexpected token '<'` says nothing about why. Name the address.
  */
+/** The field of a server-sent event that carries its payload. */
+const DATA_FIELD = "data:";
+
 const wrongServer = (endpoint: string) =>
   new Error(`${endpoint} answered with HTML, not JSON — is that the min-agent server?`);
 
 /** GraphQL reports failure in the body, so an error list is the error even on a 200. */
 function unwrap<T>(payload: GraphQLResponse<T>): T {
-  if (payload.errors?.length) throw new Error(payload.errors.map((e) => e.message).join("; "));
-  if (payload.data == null) throw new Error("no data");
+  if (payload.errors?.length) {
+    throw new Error(payload.errors.map((e) => e.message).join("; "));
+  }
+  if (payload.data == null) {
+    throw new Error("no data");
+  }
   return payload.data;
 }
 
@@ -77,7 +84,10 @@ export function createGqlClient({ endpoint, fetch: fetchImpl }: GqlOptions) {
     try {
       payload = (await response.json()) as GraphQLResponse<TResult>;
     } catch {
-      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+      const requestFailed = response.ok === false;
+      if (requestFailed) {
+        throw new Error(`${response.status} ${response.statusText}`);
+      }
       throw wrongServer(url());
     }
     return unwrap(payload);
@@ -99,9 +109,12 @@ export function createGqlClient({ endpoint, fetch: fetchImpl }: GqlOptions) {
       signal,
     );
 
-    if (!response.ok || !response.body) {
+    const hasNoStream = response.ok === false || !response.body;
+    if (hasNoStream) {
       const detail = (await response.json().catch(() => null)) as GraphQLResponse<never> | null;
-      if (detail) unwrap(detail);
+      if (detail) {
+        unwrap(detail);
+      }
       throw new Error(`${response.status} ${response.statusText}`);
     }
 
@@ -113,7 +126,9 @@ export function createGqlClient({ endpoint, fetch: fetchImpl }: GqlOptions) {
     try {
       while (true) {
         const { value, done } = await reader.read();
-        if (done) break;
+        if (done) {
+          break;
+        }
         buffer += decoder.decode(value, { stream: true });
 
         const frames = buffer.split("\n\n");
@@ -124,10 +139,12 @@ export function createGqlClient({ endpoint, fetch: fetchImpl }: GqlOptions) {
           // colon.
           const data = frame
             .split("\n")
-            .filter((line) => line.startsWith("data:"))
-            .map((line) => line.slice(5).trim())
+            .filter((line) => line.startsWith(DATA_FIELD))
+            .map((line) => line.slice(DATA_FIELD.length).trim())
             .join("");
-          if (data) yield unwrap(JSON.parse(data) as GraphQLResponse<TResult>);
+          if (data) {
+            yield unwrap(JSON.parse(data) as GraphQLResponse<TResult>);
+          }
         }
       }
     } finally {

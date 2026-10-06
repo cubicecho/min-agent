@@ -38,7 +38,10 @@ type Progress =
  * there; a browser has the page's own reload. Neither is a failure worth a red badge, so the
  * card says which one it is and drops the button rather than offering one that throws.
  */
-const updatable = Platform.OS !== "web" && Updates.isEnabled && !__DEV__;
+const updatable = Platform.OS !== "web" && Updates.isEnabled && __DEV__ === false;
+
+/** Enough of an update's id to tell two apart at a glance. */
+const SHORT_ID_CHARS = 8;
 
 /** The running update, in the four facts that identify it. */
 function Running() {
@@ -52,7 +55,7 @@ function Running() {
           <PropertyRow label="Runtime" value={Updates.runtimeVersion || "Unknown"} />
           <PropertyRow
             label="Update"
-            value={id ? id.slice(0, 8) : "The JavaScript this app was built with"}
+            value={id ? id.slice(0, SHORT_ID_CHARS) : "The JavaScript this app was built with"}
           />
           {built ? <PropertyRow label="Published" value={built.toLocaleString()} /> : null}
         </>
@@ -75,7 +78,7 @@ function Dictation() {
     },
   });
 
-  const dirty = useStore(form.store, (state) => !state.isDefaultValue);
+  const dirty = useStore(form.store, (state) => state.isDefaultValue === false);
   useReportDirty("device", dirty);
 
   return (
@@ -102,7 +105,7 @@ function Dictation() {
             </Text>
           </Form>
         }
-        footerActionsSlot={<form.SubmitButton createLabel="Save" disabled={!dirty} />}
+        footerActionsSlot={<form.SubmitButton createLabel="Save" disabled={dirty === false} />}
       />
     </form.AppForm>
   );
@@ -121,7 +124,8 @@ export function DevicePanel() {
     setProgress({ kind: "checking" });
     try {
       const found = await Updates.checkForUpdateAsync();
-      if (!found.isAvailable) {
+      const isUpToDate = found.isAvailable === false;
+      if (isUpToDate) {
         setProgress({ kind: "none" });
         return;
       }

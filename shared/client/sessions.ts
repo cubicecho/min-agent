@@ -1,7 +1,5 @@
+import { DAYS_PER_WEEK, MS_PER_DAY } from "../units.ts";
 import { matchTerms } from "./search.ts";
-
-/** Below this many chats the box is just something in the way, so the list hides it. */
-export const SEARCH_AFTER = 8;
 
 /** Filters the session list by title, on the rule in `matchTerms`. */
 export const matchSessions = <T extends { title: string }>(sessions: T[], query: string): T[] =>
@@ -21,8 +19,6 @@ export const BUCKET_LABEL: Record<Bucket, string> = {
 /** Fixed, so a group never moves about between renders as chats come and go. */
 const ORDER: Bucket[] = ["today", "yesterday", "week", "earlier"];
 
-const DAY = 86_400_000;
-
 const startOfDay = (at: number) => {
   const day = new Date(at);
   day.setHours(0, 0, 0, 0);
@@ -38,10 +34,16 @@ const startOfDay = (at: number) => {
  * A timestamp in the future is today — that is a clock out of step, not a bucket to invent.
  */
 export function bucketOf(iso: string, now: number = Date.now()): Bucket {
-  const days = Math.round((startOfDay(now) - startOfDay(new Date(iso).getTime())) / DAY);
-  if (days <= 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 7) return "week";
+  const days = Math.round((startOfDay(now) - startOfDay(new Date(iso).getTime())) / MS_PER_DAY);
+  if (days <= 0) {
+    return "today";
+  }
+  if (days === 1) {
+    return "yesterday";
+  }
+  if (days < DAYS_PER_WEEK) {
+    return "week";
+  }
   return "earlier";
 }
 
@@ -61,12 +63,14 @@ export function groupSessions<T extends { updatedAt: string }>(
   for (const session of sessions) {
     const bucket = bucketOf(session.updatedAt, now);
     const group = held.get(bucket);
-    if (group) group.push(session);
-    else held.set(bucket, [session]);
+    if (group) {
+      group.push(session);
+    } else {
+      held.set(bucket, [session]);
+    }
   }
-  return ORDER.filter((bucket) => held.has(bucket)).map((bucket) => ({
-    bucket,
-    label: BUCKET_LABEL[bucket],
-    sessions: held.get(bucket) as T[],
-  }));
+  return ORDER.flatMap((bucket) => {
+    const group = held.get(bucket);
+    return group ? [{ bucket, label: BUCKET_LABEL[bucket], sessions: group }] : [];
+  });
 }

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { DATABASE_DEFAULTS } from "../../shared/defaults.ts";
 import { DATABASE_URL } from "../paths.ts";
 import { relations } from "./schema.ts";
 
@@ -13,10 +14,6 @@ import { relations } from "./schema.ts";
 export const db = drizzle({ connection: DATABASE_URL, relations });
 
 export type Db = typeof db;
-
-/** Roughly half a minute of trying, backing off 250ms, 500ms, 1s… to a 4s ceiling. */
-const ATTEMPTS = 12;
-const CEILING_MS = 4_000;
 
 /**
  * Waits for the database to answer before anything tries to use it.
@@ -36,13 +33,18 @@ export async function waitForDatabase() {
       await db.execute(sql`select 1`);
       return;
     } catch (error) {
-      if (attempt >= ATTEMPTS) throw error;
-      const delay = Math.min(CEILING_MS, 125 * 2 ** attempt);
+      if (attempt >= DATABASE_DEFAULTS.connectAttempts) {
+        throw error;
+      }
+      const delay = Math.min(
+        DATABASE_DEFAULTS.backoffCeilingMs,
+        DATABASE_DEFAULTS.backoffBaseMs * 2 ** attempt,
+      );
       // Drizzle's message carries the failed query and its params across several lines, which
       // is noise in a line that repeats. The driver's own reason is the first one.
       const [reason] = String((error as Error).cause ?? (error as Error).message).split("\n");
       console.warn(
-        `database not ready (${reason}); retrying in ${delay}ms [${attempt}/${ATTEMPTS - 1}]`,
+        `database not ready (${reason}); retrying in ${delay}ms [${attempt}/${DATABASE_DEFAULTS.connectAttempts - 1}]`,
       );
       await new Promise((resolve) => setTimeout(resolve, delay));
     }

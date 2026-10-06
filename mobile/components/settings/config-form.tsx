@@ -125,7 +125,9 @@ type ConfigFormProps<T extends Partial<Draft>> = {
  */
 export function ConfigForm<T extends Partial<Draft>>(props: ConfigFormProps<T>) {
   const config = useQuery({ queryKey: queryKeys.config, queryFn: api.config });
-  if (config.data) return <Loaded {...props} view={config.data} />;
+  if (config.data) {
+    return <Loaded {...props} view={config.data} />;
+  }
   return (
     <StickyHeaderContentFooter
       width="prose"

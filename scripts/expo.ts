@@ -15,7 +15,9 @@ import path from "node:path";
 import { displayHost, PORT, ROOT } from "../server/paths.ts";
 
 const [script, ...rest] = process.argv.slice(2);
-if (!script) throw new Error("usage: expo.ts <mobile package script> [args…]");
+if (!script) {
+  throw new Error("usage: expo.ts <mobile package script> [args…]");
+}
 
 const agentUrl = process.env.EXPO_PUBLIC_AGENT_URL || `http://${displayHost()}:${PORT}`;
 process.env.EXPO_PUBLIC_AGENT_URL = agentUrl;
@@ -34,7 +36,9 @@ if (moved) {
 }
 
 const args = ["--prefix", "mobile", "run", script];
-if (moved || rest.length > 0) args.push("--", ...(moved ? ["--clear"] : []), ...rest);
+if (moved || rest.length > 0) {
+  args.push("--", ...(moved ? ["--clear"] : []), ...rest);
+}
 
 spawn("npm", args, { stdio: "inherit", env: process.env }).on("exit", (code) =>
   process.exit(code ?? 0),

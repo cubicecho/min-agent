@@ -1,3 +1,4 @@
+import { FRESHNESS_DEFAULTS } from "@shared/defaults.ts";
 import {
   HOOK_EVENTS_FIRED,
   INJECT_EVENTS,
@@ -6,6 +7,7 @@ import {
   type McpStatus,
   type ToolHookConfig,
 } from "@shared/types.ts";
+import { MS_PER_SECOND } from "@shared/units.ts";
 import { useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -68,7 +70,9 @@ const blank = (taken: McpServerConfig[]): McpServerConfig => {
   // Ids are unique or the save is refused, and the id of the row just deleted is the one the
   // next `server-N` would land on.
   let n = taken.length + 1;
-  while (taken.some((server) => server.id === `server-${n}`)) n += 1;
+  while (taken.some((server) => server.id === `server-${n}`)) {
+    n += 1;
+  }
   return {
     id: `server-${n}`,
     label: "",
@@ -152,13 +156,17 @@ const fromDraft = (draft: ServerDraft): McpServerConfig => ({
 /** The next `hook-N` this row has not used, for the same reason `blank` counts servers. */
 const nextHookId = (hooks: HookDraft[]) => {
   let n = hooks.length + 1;
-  while (hooks.some((hook) => hook.id === `hook-${n}`)) n += 1;
+  while (hooks.some((hook) => hook.id === `hook-${n}`)) {
+    n += 1;
+  }
   return `hook-${n}`;
 };
 
 /** Why the arguments are not JSON yet, or nothing when they are. Save waits on this. */
 const argsProblem = (text: string) => {
-  if (!text.trim()) return undefined;
+  if (!text.trim()) {
+    return undefined;
+  }
   try {
     JSON.parse(text);
     return undefined;
@@ -266,7 +274,7 @@ function Editor({
     onSubmit: ({ value }) => onSave(fromDraft(value)).catch(() => {}),
   });
 
-  const dirty = useStore(form.store, (store) => !store.isDefaultValue);
+  const dirty = useStore(form.store, (store) => store.isDefaultValue === false);
   // Puts a dot on the tab while there is a server typed and not yet saved behind it.
   useReportDirty("mcp", dirty);
 
@@ -287,12 +295,15 @@ function Editor({
       <DialogLayout
         open={visible}
         onOpenChange={(open) => {
-          if (!open) onCancel();
+          const isClosing = open === false;
+          if (isClosing) {
+            onCancel();
+          }
         }}
         size="lg"
         title={existing ? name : "Add a server"}
         description="An MCP server, and what min-agent does with its tools."
-        hasUnsavedChanges={() => !form.state.isDefaultValue}
+        hasUnsavedChanges={() => form.state.isDefaultValue === false}
         footerSlot={
           existing ? (
             <ConfirmButton
@@ -354,7 +365,7 @@ function Editor({
                                 id={`mcp-tool-${tool.name}`}
                                 label={tool.name}
                                 labelClassName={hidden ? "line-through" : "text-card-foreground"}
-                                checked={!hidden}
+                                checked={hidden === false}
                                 onCheckedChange={(offered) =>
                                   field.handleChange(
                                     offered
@@ -379,7 +390,9 @@ function Editor({
             ) : null}
 
             <form.AppField name="label">
-              {() => <TextField label="Label" placeholder="Filesystem" autoFocus={!existing} />}
+              {() => (
+                <TextField label="Label" placeholder="Filesystem" autoFocus={existing === false} />
+              )}
             </form.AppField>
 
             <form.AppField name="transport">
@@ -550,7 +563,7 @@ function Editor({
 }
 
 /** How often the panel asks after the servers while it is the one on screen. */
-const POLL = 5000;
+const POLL = FRESHNESS_DEFAULTS.mcpPollSeconds * MS_PER_SECOND;
 
 export function McpPanel({ active = true }: { active?: boolean }) {
   const queryClient = useQueryClient();

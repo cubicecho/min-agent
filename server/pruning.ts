@@ -1,5 +1,6 @@
 import { pruneToolResults } from "@cubicecho/agent-core";
 import type OpenAI from "openai";
+import { PRUNING_DEFAULTS } from "../shared/defaults.ts";
 import type { PruningRecord, Session, StoredMessage } from "../shared/types.ts";
 import { messageText, textTokens } from "./compaction.ts";
 import { holdsDefinitions } from "./tool-proxy.ts";
@@ -25,44 +26,13 @@ import { holdsDefinitions } from "./tool-proxy.ts";
  * the chat shows them as it always has.
  */
 
-/**
- * How many of the latest tool results a move of the marker leaves whole. agent-core's default.
- *
- * Read where the marker is *placed*, not where the stubs are made: `planPrune` puts the marker on
- * the fifth result from the end, and `sentWithStubs` then clears everything behind it. Handing
- * this to `pruneToolResults` instead would keep the last five results *behind* the marker whole,
- * and the next move would stub them — changing the request from somewhere before the old marker
- * rather than from it. Either way the model keeps the same five results at the moment of a move.
- */
-export const PRUNE_KEEP_LAST = 5;
-
-/** A result this long or shorter is left whole wherever it is. agent-core's default. */
-export const PRUNE_MAX_CHARS = 256;
-
-/**
- * The share of the window a move must clear before the marker moves on its own.
- *
- * A move costs one cache miss, from the old marker to the end of the request, and what it buys is
- * the window: every token cleared is one the conversation can use before a compaction — a
- * summariser's round trip, a miss from the very head, and the detail a summary loses — or, in a
- * long turn of tool steps, before the request overflows, since nothing compacts mid-turn. At a
- * quarter of the window a conversation can move the marker at most three times on its way from
- * empty to compaction's three quarters, each move hands a quarter of the window back for one
- * re-read of what lies after the old marker, and a conversation that is mostly talk never moves
- * it at all.
- *
- * A constant and not a setting, like the planner's own ratios: the number that would go in the
- * box is a share of a window that already is a setting.
- */
-export const PRUNE_AT = 0.25;
-
 type Sent = OpenAI.ChatCompletionMessageParam;
 
 /**
  * The stored transcript with the tool results behind the marker replaced by stubs.
  *
  * agent-core's `pruneToolResults` over the messages before the marker, keeping none: the stub is
- * `[result cleared, 12,345 chars]`, a result of `PRUNE_MAX_CHARS` or fewer is left as it is, and
+ * `[result cleared, 12,345 chars]`, a result of `PRUNING_DEFAULTS.maxChars` or fewer is left as it is, and
  * so is anything that is not a tool result. One exemption is min-agent's own — a proxied
  * `load_tools` result that carries definitions (`holdsDefinitions`), which is the only copy of
  * them the model has; stubbed, the tool is one it can still name and no longer call correctly.
@@ -83,19 +53,27 @@ export function sentWithStubs(
 ): StoredMessage[] {
   // Clamped, so a marker left past the end of a transcript cannot reach messages not yet written.
   const through = Math.min(pruning?.through ?? 0, messages.length);
-  if (through <= 0) return messages;
+  if (through <= 0) {
+    return messages;
+  }
 
   const head = messages.slice(0, through);
   const stubbed = pruneToolResults(head as Sent[], {
     keepLast: 0,
-    maxChars: PRUNE_MAX_CHARS,
+    maxChars: PRUNING_DEFAULTS.maxChars,
   }) as StoredMessage[];
-  if (stubbed === head) return messages;
+  if (stubbed === head) {
+    return messages;
+  }
 
   let cleared = false;
   const out = stubbed.map((message, at) => {
-    if (message === head[at]) return message;
-    if (holdsDefinitions(messageText(head[at]))) return head[at];
+    if (message === head[at]) {
+      return message;
+    }
+    if (holdsDefinitions(messageText(head[at]))) {
+      return head[at];
+    }
     cleared = true;
     return message;
   });
@@ -115,10 +93,15 @@ function clearedBetween(
   weigh: (message: StoredMessage) => number,
 ): number {
   const sent = sentWithStubs(messages, { through: to });
-  if (sent === messages) return 0;
+  if (sent === messages) {
+    return 0;
+  }
   let total = 0;
-  for (let at = Math.max(0, from); at < Math.min(to, messages.length); at++)
-    if (sent[at] !== messages[at]) total += weigh(messages[at]) - weigh(sent[at]);
+  for (let at = Math.max(0, from); at < Math.min(to, messages.length); at++) {
+    if (sent[at] !== messages[at]) {
+      total += weigh(messages[at]) - weigh(sent[at]);
+    }
+  }
   return total;
 }
 
@@ -145,14 +128,17 @@ export const clearedChars = (
   );
 
 /**
- * Where a move would put the marker: on the earliest of the latest `PRUNE_KEEP_LAST` tool
+ * Where a move would put the marker: on the earliest of the latest `PRUNING_DEFAULTS.keepLast` tool
  * results, so those stay whole and everything behind them is cleared. Zero when there are not
  * that many results, which is nowhere.
  */
 function keepBoundary(messages: StoredMessage[]): number {
   let kept = 0;
-  for (let at = messages.length - 1; at >= 0; at--)
-    if (messages[at].role === "tool" && ++kept === PRUNE_KEEP_LAST) return at;
+  for (let at = messages.length - 1; at >= 0; at--) {
+    if (messages[at].role === "tool" && ++kept === PRUNING_DEFAULTS.keepLast) {
+      return at;
+    }
+  }
   return 0;
 }
 
@@ -167,7 +153,7 @@ function keepBoundary(messages: StoredMessage[]): number {
  *   nothing.
  * - **With a compaction.** A fold has just rewritten the head of the request, so the cache is
  *   lost from the first message whatever happens here, and anything a move clears is free.
- * - **On its own, past `PRUNE_AT`.** Otherwise the move has to pay for the miss it causes: what
+ * - **On its own, past `PRUNING_DEFAULTS.windowShare`.** Otherwise the move has to pay for the miss it causes: what
  *   it would clear, by the planner's own count (`textTokens`), must be that share of the window.
  *   With no window known — a `limit` of zero — there is nothing to be a share of, and the marker
  *   does not move on its own, the same answer compaction gives to the same question.
@@ -189,14 +175,23 @@ export function planPrune(
 ): number | undefined {
   const current = session.pruning?.through ?? 0;
   const target = keepBoundary(session.messages);
-  if (target <= current) return undefined;
+  if (target <= current) {
+    return undefined;
+  }
 
   const from = Math.max(current, session.compaction?.through ?? 0);
   const cleared = clearedBetween(session.messages, from, target, textTokens);
-  if (cleared <= 0) return undefined;
-  if (compacted) return target;
-  if (!(limit > 0)) return undefined;
-  return cleared >= limit * PRUNE_AT ? target : undefined;
+  if (cleared <= 0) {
+    return undefined;
+  }
+  if (compacted) {
+    return target;
+  }
+  const hasNoWindow = Number.isNaN(limit) || limit <= 0;
+  if (hasNoWindow) {
+    return undefined;
+  }
+  return cleared >= limit * PRUNING_DEFAULTS.windowShare ? target : undefined;
 }
 
 /**

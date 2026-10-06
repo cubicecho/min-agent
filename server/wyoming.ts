@@ -1,4 +1,6 @@
 import { connect } from "node:net";
+import { VOICE_DEFAULTS } from "../shared/defaults.ts";
+import { MS_PER_SECOND } from "../shared/units.ts";
 
 /**
  * The Wyoming protocol, which is what Home Assistant's voice services speak.
@@ -47,8 +49,11 @@ export const PCM_CHANNELS = 1;
  */
 const CHUNK = (PCM_RATE / 10) * PCM_WIDTH * PCM_CHANNELS;
 
-/** Long enough for a slow model on a Pi to finish a sentence, short enough to not hang a request. */
-const TIMEOUT = 120_000;
+/** The byte that ends a header line. */
+const NEWLINE = 0x0a;
+
+/** What Piper speaks at, for a server that does not say. */
+const FALLBACK_RATE = 22_050;
 
 const AUDIO_FORMAT = { rate: PCM_RATE, width: PCM_WIDTH, channels: PCM_CHANNELS };
 
@@ -80,8 +85,10 @@ class Frames {
 
   *take(): Generator<WyomingEvent> {
     for (;;) {
-      const newline = this.buffer.indexOf(0x0a);
-      if (newline === -1) return;
+      const newline = this.buffer.indexOf(NEWLINE);
+      if (newline === -1) {
+        return;
+      }
 
       const header = JSON.parse(this.buffer.subarray(0, newline).toString("utf8")) as {
         type: string;
@@ -94,7 +101,9 @@ class Frames {
       const body = newline + 1;
       const end = body + dataLength + payloadLength;
       // The rest of it has not arrived. Leave the header in place and read it again next time.
-      if (this.buffer.length < end) return;
+      if (this.buffer.length < end) {
+        return;
+      }
 
       const data = dataLength
         ? {
@@ -137,21 +146,33 @@ function ask(
     socket.setNoDelay(true);
 
     const finish = (error: Error | null) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
       clearTimeout(timer);
       socket.destroy();
-      if (error) reject(error);
-      else resolve(heard);
+      if (error) {
+        reject(error);
+      } else {
+        resolve(heard);
+      }
     };
 
     const timer = setTimeout(
-      () => finish(new Error(`${host}:${port} did not answer within ${TIMEOUT / 1000}s`)),
-      TIMEOUT,
+      () =>
+        finish(
+          new Error(
+            `${host}:${port} did not answer within ${VOICE_DEFAULTS.wyomingTimeoutSeconds}s`,
+          ),
+        ),
+      VOICE_DEFAULTS.wyomingTimeoutSeconds * MS_PER_SECOND,
     );
 
     socket.on("connect", () => {
-      for (const event of send) socket.write(frame(event));
+      for (const event of send) {
+        socket.write(frame(event));
+      }
     });
 
     socket.on("data", (chunk: Buffer) => {
@@ -192,7 +213,10 @@ export async function transcribe(address: WyomingAddress, pcm: Buffer): Promise<
   for (let at = 0; at < pcm.length; at += CHUNK) {
     send.push({
       type: "audio-chunk",
-      data: { ...AUDIO_FORMAT, timestamp: Math.floor((at / (PCM_RATE * PCM_WIDTH)) * 1000) },
+      data: {
+        ...AUDIO_FORMAT,
+        timestamp: Math.floor((at / (PCM_RATE * PCM_WIDTH)) * MS_PER_SECOND),
+      },
       payload: pcm.subarray(at, at + CHUNK),
     });
   }
@@ -236,13 +260,17 @@ export async function synthesize(
   );
 
   const start = heard.find((event) => event.type === "audio-start")?.data ?? {};
-  const chunks = heard.filter((event) => event.type === "audio-chunk" && event.payload);
-  if (chunks.length === 0) throw new Error("the speech server sent no audio");
+  const chunks = heard.flatMap((event) =>
+    event.type === "audio-chunk" && event.payload ? [event.payload] : [],
+  );
+  if (chunks.length === 0) {
+    throw new Error("the speech server sent no audio");
+  }
 
   return {
-    pcm: Buffer.concat(chunks.map((event) => event.payload as Buffer)),
-    rate: Number(start.rate) || 22_050,
-    width: Number(start.width) || 2,
+    pcm: Buffer.concat(chunks),
+    rate: Number(start.rate) || FALLBACK_RATE,
+    width: Number(start.width) || PCM_WIDTH,
     channels: Number(start.channels) || 1,
   };
 }

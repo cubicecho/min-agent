@@ -8,6 +8,7 @@ import { waitForDatabase } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
 import { surfaced } from "./errors.ts";
 import { schema } from "./graphql/schema.ts";
+import { HttpStatus } from "./http-status.ts";
 import * as mcp from "./mcp.ts";
 import { displayHost, HOST, PORT, ROOT } from "./paths.ts";
 import { voice } from "./voice.ts";
@@ -66,7 +67,7 @@ app.use(
   "/graphql",
   compression({
     filter: (_request, response) =>
-      !String(response.getHeader("Content-Type") ?? "").includes("text/event-stream"),
+      String(response.getHeader("Content-Type") ?? "").includes("text/event-stream") === false,
   }),
 );
 
@@ -116,7 +117,7 @@ if (fs.existsSync(web)) {
 app.use(
   (error: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(error);
-    res.status(500).json({ error: error.message });
+    res.status(HttpStatus.internalServerError).json({ error: error.message });
   },
 );
 

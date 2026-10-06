@@ -23,7 +23,9 @@ import { client, promptServers } from "./mcp.ts";
 /** The prompts every connected prompt-serving server offers, in configuration order. */
 export async function list(): Promise<McpPrompt[]> {
   const servers = promptServers();
-  if (servers.length === 0) return [];
+  if (servers.length === 0) {
+    return [];
+  }
 
   const listings = await Promise.all(
     servers.map(async ({ id, label }) => {
@@ -69,12 +71,15 @@ export async function get(
   name: string,
   args: Record<string, string>,
 ): Promise<string> {
-  if (!promptServers().some((offered) => offered.id === server)) {
+  const isUnknownServer = promptServers().some((offered) => offered.id === server) === false;
+  if (isUnknownServer) {
     throw new Error(`${server} is not a connected MCP server that offers prompts`);
   }
 
   const { messages } = await (await client(server)).getPrompt({ name, arguments: args });
-  if (messages.length === 1) return messageText(messages[0].content);
+  if (messages.length === 1) {
+    return messageText(messages[0].content);
+  }
   return messages
     .map((message) => `${message.role}: ${messageText(message.content)}`)
     .join("\n\n")

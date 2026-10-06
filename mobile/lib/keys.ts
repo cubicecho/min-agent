@@ -34,24 +34,34 @@ function comboOf(event: KeyboardEvent): string {
 /** A box someone is typing in, where a bare letter is a letter and nothing else. */
 function typing(target: EventTarget | null): boolean {
   const node = target as HTMLElement | null;
-  if (!node) return false;
+  if (!node) {
+    return false;
+  }
   const tag = node.tagName;
   return tag === "INPUT" || tag === "TEXTAREA" || node.isContentEditable;
 }
 
 function onKeyDown(event: KeyboardEvent) {
   // A held key is one shortcut, and something that has already been handled is not ours.
-  if (event.defaultPrevented || event.repeat) return;
+  if (event.defaultPrevented || event.repeat) {
+    return;
+  }
 
   const combo = comboOf(event);
   const stack = bound.get(combo);
   const handler = stack?.[stack.length - 1];
-  if (!handler) return;
+  if (!handler) {
+    return;
+  }
 
   // A chord is unambiguous wherever the caret is — ⌘K while writing a message is exactly
   // when you want it — and Escape in a text box is the whole point of Escape. A bare key
   // is not: in a text box it is what the person is typing.
-  if (!combo.startsWith("mod+") && combo !== "escape" && typing(event.target)) return;
+  const isTypedCharacter =
+    combo.startsWith("mod+") === false && combo !== "escape" && typing(event.target);
+  if (isTypedCharacter) {
+    return;
+  }
 
   event.preventDefault();
   handler();
@@ -62,10 +72,15 @@ let listening = false;
 /** The listener exists exactly while something is bound to it, and no longer. */
 function sync() {
   const wanted = bound.size > 0;
-  if (wanted === listening) return;
+  if (wanted === listening) {
+    return;
+  }
   listening = wanted;
-  if (wanted) document.addEventListener("keydown", onKeyDown);
-  else document.removeEventListener("keydown", onKeyDown);
+  if (wanted) {
+    document.addEventListener("keydown", onKeyDown);
+  } else {
+    document.removeEventListener("keydown", onKeyDown);
+  }
 }
 
 /**
@@ -83,7 +98,10 @@ export function useShortcut(combo: string, handler: Handler | undefined | null) 
   const armed = Platform.OS === "web" && Boolean(handler);
 
   useEffect(() => {
-    if (!armed) return;
+    const isUnbound = armed === false;
+    if (isUnbound) {
+      return;
+    }
     const run = () => latest.current?.();
 
     let stack = bound.get(combo);
@@ -96,8 +114,12 @@ export function useShortcut(combo: string, handler: Handler | undefined | null) 
 
     return () => {
       const at = stack.indexOf(run);
-      if (at >= 0) stack.splice(at, 1);
-      if (!stack.length) bound.delete(combo);
+      if (at >= 0) {
+        stack.splice(at, 1);
+      }
+      if (!stack.length) {
+        bound.delete(combo);
+      }
       sync();
     };
   }, [combo, armed]);

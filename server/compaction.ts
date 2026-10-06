@@ -18,14 +18,19 @@ import type { Session, StoredMessage } from "../shared/types.ts";
  * chat still displays every message and a later compaction can start from the summary before it.
  */
 
+/** A message's content as one string, whichever of its shapes it was stored in. */
+function bodyText(content: StoredMessage["content"]): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content.map((part) => ("text" in part ? part.text : "")).join(" ");
+  }
+  return "";
+}
+
 export const messageText = (message: StoredMessage): string => {
-  const { content } = message;
-  const body =
-    typeof content === "string"
-      ? content
-      : Array.isArray(content)
-        ? content.map((part) => ("text" in part ? part.text : "")).join(" ")
-        : "";
+  const body = bodyText(message.content);
   const calls =
     "tool_calls" in message && message.tool_calls
       ? message.tool_calls

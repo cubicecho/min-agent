@@ -34,14 +34,16 @@ export class UserError extends Error {
  */
 export function userErrorIn(error: unknown): UserError | undefined {
   for (let link = error; link instanceof Error; link = originalOf(link)) {
-    if (link instanceof UserError || link.name === "UserError") return link as UserError;
+    if (link instanceof UserError || link.name === "UserError") {
+      return link as UserError;
+    }
   }
   return undefined;
 }
 
 /** GraphQL spells the wrapped error `originalError`; everything else spells it `cause`. */
 const originalOf = (error: Error): unknown =>
-  (error as { originalError?: unknown }).originalError ?? error.cause;
+  ("originalError" in error ? error.originalError : undefined) ?? error.cause;
 
 /**
  * The error to send in place of one that was written to be read, or `undefined` when there is

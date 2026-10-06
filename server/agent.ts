@@ -35,6 +35,7 @@ import {
 import { McpPoolError, type ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { measureRequest, splitContext } from "../shared/client/usage.ts";
+import { FOLLOWUP_DEFAULTS, TITLE_DEFAULTS, TURN_DEFAULTS } from "../shared/defaults.ts";
 import { CALL_TOOL, shownCall } from "../shared/tool-proxy.ts";
 import {
   type ContextBreakdown,
@@ -48,6 +49,7 @@ import {
   type TokenUsage,
   type TurnStats,
 } from "../shared/types.ts";
+import { MS_PER_SECOND } from "../shared/units.ts";
 import { planFold } from "./compaction.ts";
 import { endpoint, loadLlmConfig } from "./config.ts";
 import {
@@ -77,12 +79,8 @@ export async function listModels(): Promise<ModelInfo[]> {
   return listEndpointModels(endpoint());
 }
 
-/** The longest title shown whole, and how much of a longer one is kept ahead of its ellipsis. */
-const MAX_TITLE_CHARS = 60;
-const CUT_TITLE_CHARS = 57;
-
 const truncateTitle = (title: string) =>
-  title.length > MAX_TITLE_CHARS ? `${title.slice(0, CUT_TITLE_CHARS)}…` : title;
+  title.length > TITLE_DEFAULTS.maxChars ? `${title.slice(0, TITLE_DEFAULTS.keptChars)}…` : title;
 
 function titleFrom(text: string) {
   const line = text.trim().split("\n")[0] ?? "";
@@ -129,7 +127,9 @@ async function compact(
   const used = latestContextTokens(session);
   // No plan when the window is not three quarters used, or no legal cut folds enough.
   const plan = planFold(session, contextLimit, used);
-  if (!plan) return "";
+  if (!plan) {
+    return "";
+  }
 
   // A memory server gets what is about to be folded away while the summary is written. Beside
   // it, not ahead of it: nothing is deleted, only what is sent changes, so filing it is not a
@@ -140,7 +140,9 @@ async function compact(
     summariser(endpoint(config), model, { signal, onNotice: notice }),
     { hooks: compactionHooks(session) },
   );
-  if (!record) return "";
+  if (!record) {
+    return "";
+  }
 
   session.compaction = record;
   await updateSession(session.id, { compaction: record });
@@ -160,7 +162,9 @@ async function compact(
  */
 async function prune(session: Session, contextLimit: number, compacted = false): Promise<boolean> {
   const through = planPrune(session, contextLimit, { compacted });
-  if (through === undefined) return false;
+  if (through === undefined) {
+    return false;
+  }
 
   const from = session.pruning?.through ?? 0;
   session.pruning = { through, at: new Date().toISOString() };
@@ -173,7 +177,9 @@ async function prune(session: Session, contextLimit: number, compacted = false):
 function latestPromptTokens(session: Session): number {
   for (let i = session.messages.length - 1; i >= 0; i--) {
     const { stats } = session.messages[i];
-    if (stats) return stats.lastPromptTokens ?? 0;
+    if (stats) {
+      return stats.lastPromptTokens ?? 0;
+    }
   }
   return 0;
 }
@@ -182,7 +188,9 @@ function latestPromptTokens(session: Session): number {
 function latestContextTokens(session: Session): number {
   for (let i = session.messages.length - 1; i >= 0; i--) {
     const { stats } = session.messages[i];
-    if (stats?.contextTokens) return stats.contextTokens;
+    if (stats?.contextTokens) {
+      return stats.contextTokens;
+    }
   }
   return 0;
 }
@@ -205,29 +213,11 @@ async function generateTitle(
     "You name conversations. Reply with a title of at most six words for a chat that opens " +
       "with the message below. Reply with the title alone — no quotes, no trailing punctuation, " +
       "no preamble.",
-    prompt.slice(0, 2000),
+    prompt.slice(0, TITLE_DEFAULTS.promptChars),
     { signal, onNotice: notice },
   );
   return truncateTitle(clean(reply.split("\n").filter(Boolean).pop() ?? ""));
 }
-
-/**
- * How many times a lost request is worth sending again before the turn gives up.
- *
- * Not a setting. min-agent talks to one endpoint, usually on the same machine or the next one
- * over, and the number that would go in that box is the same number for everyone.
- *
- * It is a budget for the round trip rather than for opening it. The loop it used to guard could
- * only ever fire on a request that never became an answer, because it wrapped the call that
- * resolves before the first chunk; `runTurn` bounds the read as well, and stops retrying the
- * moment the server has said anything. A downgrade does not spend an attempt — that is a
- * different request, not the same one again.
- */
-const OPEN_RETRIES = 2;
-
-/** Cap on suggestions offered, and on the length of one before it stops reading as a chip. */
-const MAX_FOLLOWUPS = 3;
-const MAX_FOLLOWUP_CHARS = 80;
 
 /**
  * Three questions worth asking next, from the exchange that just happened.
@@ -247,14 +237,14 @@ async function suggestFollowups(
   const text = await ask(
     endpoint(config),
     model,
-    `Below is a question and the answer it got. Suggest at most ${MAX_FOLLOWUPS} questions the ` +
+    `Below is a question and the answer it got. Suggest at most ${FOLLOWUP_DEFAULTS.maxCount} questions the ` +
       "person might sensibly ask next. Each must be specific to what was actually said and " +
       'answerable from here — no generic invitations like "tell me more". Write them as the ' +
       "person would type them, under a dozen words each, one per line, nothing else.",
-    `Question:\n${prompt.slice(0, 2000)}\n\nAnswer:\n${reply.slice(0, 6000)}`,
-    { maxTokens: 200, signal, onNotice: notice },
+    `Question:\n${prompt.slice(0, FOLLOWUP_DEFAULTS.questionChars)}\n\nAnswer:\n${reply.slice(0, FOLLOWUP_DEFAULTS.answerChars)}`,
+    { maxTokens: FOLLOWUP_DEFAULTS.maxTokens, signal, onNotice: notice },
   );
-  return listLines(text, MAX_FOLLOWUPS, MAX_FOLLOWUP_CHARS);
+  return listLines(text, FOLLOWUP_DEFAULTS.maxCount, FOLLOWUP_DEFAULTS.maxChars);
 }
 
 /**
@@ -300,7 +290,9 @@ export function forApi(session: Session): OpenAI.ChatCompletionMessageParam[] {
  *   heading never introduces an empty section.
  */
 export function instructionsPrompt(servers: { label: string; text: string }[]) {
-  if (servers.length === 0) return "";
+  if (servers.length === 0) {
+    return "";
+  }
   return [
     "# MCP server instructions",
     "",
@@ -325,7 +317,10 @@ export function instructionsPrompt(servers: { label: string; text: string }[]) {
  */
 function withWindow(error: unknown, contextLimit: number): unknown {
   const detail = errorMessage(error);
-  if (!isOverflow(detail)) return error;
+  const isOtherFailure = isOverflow(detail) === false;
+  if (isOtherFailure) {
+    return error;
+  }
   return new ContextOverflow(
     contextLimit > 0
       ? `${detail} — this turn was built to ${compactTokens(contextLimit)} tokens, so the window ` +
@@ -361,8 +356,9 @@ export interface SendOptions
  * What is left here is the overflow; see `withWindow`.
  *
  * Nothing in the server calls this since the turn's steps became agent-core's `runAgentLoop`
- * (#52), which makes the same round trip itself. It is kept for `tests/negotiate.test.ts` and
- * `tests/reasoning.test.ts`, which pin the negotiation through it.
+ * (#52), which makes the same round trip itself. It is kept for
+ * `tests/server/negotiate.test.ts` and `tests/server/reasoning.test.ts`, which pin the
+ * negotiation through it.
  *
  * @param client The pooled client for this endpoint. `getClient` builds it with the SDK's own
  * retrying off, because a stream that has already produced tokens must never be replayed from
@@ -379,7 +375,7 @@ export async function sendTurn(
     return await runRoundTrip(client, supports, request, {
       ...stream,
       model,
-      maxRetries: OPEN_RETRIES,
+      maxRetries: TURN_DEFAULTS.openRetries,
       onNotice: notice,
     });
   } catch (error) {
@@ -467,7 +463,7 @@ function turnStats({
       ? {
           generationMs,
           ...(usage.completionTokens
-            ? { tokensPerSecond: usage.completionTokens / (generationMs / 1000) }
+            ? { tokensPerSecond: usage.completionTokens / (generationMs / MS_PER_SECOND) }
             : {}),
         }
       : {}),
@@ -534,7 +530,9 @@ async function store(session: Session, message: StoredMessage) {
 async function planTurn(session: Session, model: string | undefined) {
   const config = loadLlmConfig();
   const chosenModel = model || session.model || config.model;
-  if (!chosenModel) throw new Error("No model selected — pick one in Config.");
+  if (!chosenModel) {
+    throw new Error("No model selected — pick one in Config.");
+  }
 
   const server = endpoint(config);
   const contextLimit = await contextLimitFor(
@@ -624,7 +622,10 @@ function toolRunner({ catalog, onDemand, proxied, carried }: TurnPlan, signal?: 
   // it and loses the cache for the whole history behind them.
   const loaded: string[] = [...carried];
   const load = (name: string) => {
-    if (!loaded.includes(name)) loaded.push(name);
+    const isNew = loaded.includes(name) === false;
+    if (isNew) {
+      loaded.push(name);
+    }
   };
   // Only tools the model actually *called* carry over to the next turn. Everything else it
   // pulled in was a guess, and keeping the guesses would grow the tool array turn over turn
@@ -656,8 +657,12 @@ function toolRunner({ catalog, onDemand, proxied, carried }: TurnPlan, signal?: 
         // What was loaded before this call, so a repeat load is answered "already loaded"
         // rather than as fresh — the model's cue to call the tool instead of loading again.
         const before = new Set(loaded);
-        for (const name of resolved.matched) load(name);
-        if (resolved.matched.length === 0) failed.add(id);
+        for (const name of resolved.matched) {
+          load(name);
+        }
+        if (resolved.matched.length === 0) {
+          failed.add(id);
+        }
         return proxied
           ? proxyLoadResult(resolved, catalog, mcp.tools(resolved.matched), before)
           : loadResult(resolved, catalog, before);
@@ -671,17 +676,23 @@ function toolRunner({ catalog, onDemand, proxied, carried }: TurnPlan, signal?: 
           mcp.call(name, input, signal),
         );
       }
-      if (called === LIST_RESOURCES) return await listResources();
+      if (called === LIST_RESOURCES) {
+        return await listResources();
+      }
       if (called === READ_RESOURCE) {
         // Named rather than positional in the schema, so an empty one is a model that filled
         // the call in wrongly — worth saying so, since the uri is the whole of the request.
         const uri = typeof args.uri === "string" ? args.uri.trim() : "";
-        if (!uri) throw new Error("read_resource needs a uri; pass the one list_resources gave.");
+        if (!uri) {
+          throw new Error("read_resource needs a uri; pass the one list_resources gave.");
+        }
         return await readResource(uri);
       }
       // A model that skips `load_tools` and calls a catalogued tool straight from its name is
       // right about what it wants. On demand the loop has loaded it already.
-      if (proxied && inCatalog(catalog, called)) load(called);
+      if (proxied && inCatalog(catalog, called)) {
+        load(called);
+      }
       used.add(called);
       return await callOnce(answered, `${called}\u0000${raw}`, () =>
         mcp.call(called, args, signal),
@@ -739,7 +750,9 @@ async function settleHistory(
       { signal, emit },
     ),
   ]);
-  if (preselected.length) console.log(`[agent] preselected: ${preselected.join(", ")}`);
+  if (preselected.length) {
+    console.log(`[agent] preselected: ${preselected.join(", ")}`);
+  }
   // After the fold rather than beside it, because a fold makes this free: the head of the request
   // has just been rewritten, so the miss a move costs is already being paid. And before the
   // question, for compaction's reason — what is cleared is settled history.
@@ -829,7 +842,9 @@ function startTitle(
   return tryAsk("title", () => generateTitle(config, titleModel, prompt, signal), {
     onNotice: notice,
   }).then(async (title) => {
-    if (!title) return;
+    if (!title) {
+      return;
+    }
     session.title = title;
     await updateSession(session.id, { title });
     emit({ type: "title", title });
@@ -891,10 +906,14 @@ async function afterTurn({
     reply: body,
     turn: { ...hookContext.turn, messages: turnMessages(session, turnStart) },
   }).then(async (notes) => {
-    if (!notes.length) return;
+    if (!notes.length) {
+      return;
+    }
     stats.hooks = [...(stats.hooks ?? []), ...notes];
     await persist();
-    for (const hook of notes) emit({ type: "hook", hook });
+    for (const hook of notes) {
+      emit({ type: "hook", hook });
+    }
   });
 
   // After the answer, not before: it is on screen and being read by the time this runs, so the
@@ -948,7 +967,9 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   session.model = chosenModel;
   const turnStart = await askQuestion(plan, session, prompt, gathered.context, preselected, emit);
   const { dispatch, load, used, failed } = toolRunner(plan, signal);
-  for (const name of preselected) load(name);
+  for (const name of preselected) {
+    load(name);
+  }
 
   const titling = startTitle(config, session, prompt, emit, signal);
   await updateSession(session.id, { title: session.title, model: chosenModel });
@@ -963,7 +984,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   let lastRoundTrip = emptyUsage();
   // Measured on the way out, in characters, because nothing on the way back reports it: a
   // completion says how many prompt tokens it read and nothing about where they came from.
-  let lastRequest = null as ContextBreakdown | null;
+  let lastRequest: ContextBreakdown | null = null;
   // The last request's prompt, to tell whether this one found it in the cache. The first step
   // is held to the turn before's last, unless a compaction just rewrote the history under it,
   // or the pruning marker moved and turned results it had sent whole into stubs.
@@ -976,9 +997,13 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // not held to the last one's prompt.
   let pruneOwed = false;
   const pruneBetweenSteps = async () => {
-    if (!pruneOwed) return;
+    if (pruneOwed === false) {
+      return;
+    }
     pruneOwed = false;
-    if (await prune(session, contextLimit)) previousPrompt = 0;
+    if (await prune(session, contextLimit)) {
+      previousPrompt = 0;
+    }
   };
 
   // What has streamed since the last message was stored. Kept here because an abort never hands a
@@ -1021,7 +1046,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         reasoningEffort: config.reasoningEffort,
         maxToolIterations: config.maxToolIterations,
         toolDiscovery: LOOP_DISCOVERY[discovery],
-        maxRetries: OPEN_RETRIES,
+        maxRetries: TURN_DEFAULTS.openRetries,
       },
       // On demand the loop appends the catalogue itself, to the same text `system` is.
       system: native ? [config.systemPrompt, guidance].filter(Boolean).join("\n\n") : system,
@@ -1035,7 +1060,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       loaded: [...always, ...carried],
       toolOrder:
         native && always.length > 0
-          ? (a, b) => Number(!always.includes(a)) - Number(!always.includes(b))
+          ? (a, b) => Number(always.includes(a) === false) - Number(always.includes(b) === false)
           : false,
       // The same head on every step, the first included: the shortlist is loaded like anything
       // else, at the end, rather than given a first step of its own that no later step matches.
@@ -1051,7 +1076,9 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       signal,
       dispatch,
       beforeStep: async (_sent, step) => {
-        if (step === 0) return undefined;
+        if (step === 0) {
+          return undefined;
+        }
         await pruneBetweenSteps();
         return transcript();
       },
@@ -1076,17 +1103,31 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         });
       },
       onEvent: ({ kind, text: delta = "" }) => {
-        if (kind === "notice") notice(delta);
-        if (kind !== "thinking" && kind !== "output") return;
-        if (!firstTokenAt) firstTokenAt = Date.now();
+        if (kind === "notice") {
+          notice(delta);
+        }
+        if (kind !== "thinking" && kind !== "output") {
+          return;
+        }
+        if (!firstTokenAt) {
+          firstTokenAt = Date.now();
+        }
         lastTokenAt = Date.now();
-        if (kind === "output") text += delta;
-        else reasoning += delta;
+        if (kind === "output") {
+          text += delta;
+        } else {
+          reasoning += delta;
+        }
         emit({ type: kind === "output" ? "text_delta" : "reasoning_delta", text: delta });
       },
       onToolCall: ({ id, name, raw }) => emit({ type: "tool_use", id, ...shownCall(name, raw) }),
       onToolResult: ({ id, ok, content }) =>
-        emit({ type: "tool_result", toolUseId: id, content, isError: !ok || failed.has(id) }),
+        emit({
+          type: "tool_result",
+          toolUseId: id,
+          content,
+          isError: ok === false || failed.has(id),
+        }),
       // Each message is written as it is produced, so a crash mid-run still leaves readable
       // history: the reply before its tools run, every result before the next request.
       onMessage: async (message, _step, turn) => {
@@ -1096,10 +1137,14 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
             tool_call_id: message.tool_call_id,
             content: message.content as string,
           });
-          if (--unanswered === 0) pruneOwed = true;
+          if (--unanswered === 0) {
+            pruneOwed = true;
+          }
           return;
         }
-        if (!turn) return;
+        if (!turn) {
+          return;
+        }
 
         // Assigned, not accumulated. `stream_options.include_usage` sends one final chunk and a
         // sum over the chunks agreed with it, but llama.cpp reports cumulatively per chunk — so
@@ -1119,11 +1164,15 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         // much less than the last one's prompt in the cache is the server's doing — an eviction,
         // a side task on the same slot — or a prefix that moved anyway. Only where the server
         // said what it cached.
-        if (turn.usage.uncached !== undefined && turn.usage.cached < previousPrompt * 0.9)
+        if (
+          turn.usage.uncached !== undefined &&
+          turn.usage.cached < previousPrompt * TURN_DEFAULTS.cachedShare
+        ) {
           console.warn(
             `[agent] prompt cache missed: ${turn.usage.cached} of ${turn.usage.prompt} cached, ` +
               `after a ${previousPrompt}-token request`,
           );
+        }
         previousPrompt = turn.usage.prompt;
 
         // Loading a definition is bookkeeping, not work the model did for the user.
@@ -1145,9 +1194,12 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     // is only appended once the stream ends, so an abort left the reply on screen and nothing in
     // the transcript. Keep the part that streamed, then let the error through — the route stays
     // quiet about a turn its reader ended.
-    if (signal?.aborted && (text || reasoning))
+    if (signal?.aborted && (text || reasoning)) {
       await store(session, assistantMessage(text, reasoning));
-    if (error instanceof ToolIterationLimit) throw new Error(error.message);
+    }
+    if (error instanceof ToolIterationLimit) {
+      throw new Error(error.message);
+    }
     // The loop wraps what it caught to hang the run on it. Every message is stored already, so
     // the run is not needed and the error goes on as it was thrown.
     throw withWindow(failedRun(error) ? (error as Error).cause : error, contextLimit);
@@ -1173,14 +1225,17 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   assistant.stats = stats;
   // What was called, in the order it was loaded, and only what was loaded: a name the model
   // made up is called, and fails, but is nothing to declare next turn.
-  if (native)
+  if (native) {
     session.loadedTools = carryOver(
       carried,
       new Set(result.loaded.filter((name) => used.has(name))),
     );
+  }
   await titling;
   await patchMessage(assistantRow, { stats });
-  if (native) await updateSession(session.id, { loadedTools: session.loadedTools });
+  if (native) {
+    await updateSession(session.id, { loadedTools: session.loadedTools });
+  }
   emit({ type: "stats", stats });
   // The turn is over at this point and the reader should not be held by what comes after it, so
   // `done` — the composer's cue to unlock — goes out here rather than once the route returns.
@@ -1233,7 +1288,10 @@ export async function callOnce(
     const inFlight = run();
     answered.set(key, inFlight);
     inFlight.catch((error: unknown) => {
-      if (!isToolError(error)) answered.delete(key);
+      const isTransient = isToolError(error) === false;
+      if (isTransient) {
+        answered.delete(key);
+      }
     });
     return inFlight;
   }
@@ -1242,7 +1300,10 @@ export async function callOnce(
   } catch (error) {
     // Only a tool's own rejection is certain to repeat. Anything else reached this caller because
     // it was sharing a call still in flight, and is forgotten already.
-    if (!isToolError(error)) throw error;
+    const isTransient = isToolError(error) === false;
+    if (isTransient) {
+      throw error;
+    }
     throw new Error(
       `${errorMessage(error)}\n\n(Identical call already failed this turn; it will fail the same way again. Change the arguments or try something else.)`,
     );
@@ -1256,10 +1317,14 @@ const add = (a: TokenUsage | undefined, b: TokenUsage): TokenUsage => ({
 });
 
 function parseArgs(args: string): Record<string, unknown> {
-  if (!args.trim()) return {};
+  if (!args.trim()) {
+    return {};
+  }
   try {
     return JSON.parse(args) as Record<string, unknown>;
   } catch {
-    throw new Error(`model produced invalid tool arguments: ${args.slice(0, 200)}`);
+    throw new Error(
+      `model produced invalid tool arguments: ${args.slice(0, TURN_DEFAULTS.quotedArgumentChars)}`,
+    );
   }
 }

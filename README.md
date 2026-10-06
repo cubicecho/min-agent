@@ -158,7 +158,7 @@ release still goes out to GHCR. A run of chores publishes nothing.
   reader), `live.ts` (streaming-event reducer), `use-live-parts.ts` (frame-batched streaming
   state), `sessions.ts` (the session-list filter), `queries.ts` (how long settings stay fresh),
   `usage.ts` (token/cost formatting).
-- `tests/` — Vitest (`npm test`).
+- `tests/` — Vitest (`npm test`), in the same folders as the source it covers.
 
 Two pieces of the runner are not in this repo. `@cubicecho/agent-core` holds the parts that do
 not know what the agent is *for* — making a tool schema a strict server will accept, getting
@@ -726,8 +726,8 @@ leaving the bottom unpins it and a *Jump to latest* button brings it back.
 so a fence looks the way it always has. There is no stylesheet in it, because React Native has
 no `hljs-*` classes to hang one on.
 
-The split is what keeps the interesting half testable: `tests/highlight.test.ts` exercises the
-tokeniser under the root Vitest, which cannot load a React Native component, and the React
+The split is what keeps the interesting half testable: `tests/shared/highlight.test.ts` exercises
+the tokeniser under the root Vitest, which cannot load a React Native component, and the React
 Native half holds nothing worth a test.
 
 Registering a dozen languages by hand (`bash`, `css`, `go`, `json`, `markdown`, `python`, `rust`,

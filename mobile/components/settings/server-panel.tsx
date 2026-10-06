@@ -34,7 +34,9 @@ const hint = () => {
   if (needsServerUrl()) {
     return `${EXAMPLE} Nothing is guessed for you, so until this is filled in the app has nowhere to ask.`;
   }
-  if (!defaultServerUrl()) return "Leave blank to use the origin this page was served from.";
+  if (!defaultServerUrl()) {
+    return "Leave blank to use the origin this page was served from.";
+  }
   return EXAMPLE;
 };
 
@@ -69,7 +71,7 @@ export function ServerPanel() {
   });
 
   // The panel keeps the typed address when you switch tabs, so the tab says it is holding one.
-  const dirty = useStore(form.store, (state) => !state.isDefaultValue);
+  const dirty = useStore(form.store, (state) => state.isDefaultValue === false);
   useReportDirty("server", dirty);
 
   return (

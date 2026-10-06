@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { VOICE_DEFAULTS } from "../shared/defaults.ts";
+import { MS_PER_SECOND } from "../shared/units.ts";
 import { PCM_CHANNELS, PCM_RATE, PCM_WIDTH } from "./wyoming.ts";
 
 /**
@@ -19,8 +21,7 @@ import { PCM_CHANNELS, PCM_RATE, PCM_WIDTH } from "./wyoming.ts";
  * OpenAI-compatible path uploads the recording untouched, as it always has.
  */
 
-/** Long enough for a minute of speech on a slow disk; a clip that takes longer is not decoding. */
-const TIMEOUT = 30_000;
+const TIMEOUT_MS = VOICE_DEFAULTS.decodeTimeoutSeconds * MS_PER_SECOND;
 
 const NOT_INSTALLED =
   "ffmpeg is not on the PATH, and a Wyoming server needs the recording decoded to PCM first. " +
@@ -69,17 +70,24 @@ function decode(source: string): Promise<Buffer> {
     const err: Buffer[] = [];
     let settled = false;
 
-    const finish = (error: Error | null, pcm?: Buffer) => {
-      if (settled) return;
+    const finish = (outcome: Error | Buffer) => {
+      if (settled) {
+        return;
+      }
       settled = true;
       clearTimeout(timer);
-      if (error) {
+      if (outcome instanceof Error) {
         ffmpeg.kill("SIGKILL");
-        reject(error);
-      } else resolve(pcm as Buffer);
+        reject(outcome);
+      } else {
+        resolve(outcome);
+      }
     };
 
-    const timer = setTimeout(() => finish(new Error("decoding the recording timed out")), TIMEOUT);
+    const timer = setTimeout(
+      () => finish(new Error("decoding the recording timed out")),
+      TIMEOUT_MS,
+    );
 
     ffmpeg.stdout.on("data", (chunk: Buffer) => out.push(chunk));
     ffmpeg.stderr.on("data", (chunk: Buffer) => err.push(chunk));
@@ -95,8 +103,11 @@ function decode(source: string): Promise<Buffer> {
         return;
       }
       const pcm = Buffer.concat(out);
-      if (pcm.length === 0) finish(new Error("the recording decoded to no audio"));
-      else finish(null, pcm);
+      if (pcm.length === 0) {
+        finish(new Error("the recording decoded to no audio"));
+      } else {
+        finish(pcm);
+      }
     });
   });
 }

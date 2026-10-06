@@ -86,7 +86,10 @@ export function PromptPicker({
     <DialogLayout
       open={visible}
       onOpenChange={(open) => {
-        if (!open) close();
+        const isClosing = open === false;
+        if (isClosing) {
+          close();
+        }
       }}
       title={chosen ? titleOf(chosen) : "MCP prompts"}
       description={chosen?.description || undefined}

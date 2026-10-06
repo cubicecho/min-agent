@@ -1,4 +1,5 @@
 import { speakableText, spokenChunk } from "@shared/client/voice.ts";
+import { VOICE_DEFAULTS } from "@shared/defaults.ts";
 import {
   createAudioPlayer,
   RecordingPresets,
@@ -36,9 +37,6 @@ import { voice } from "./client.ts";
  * to be using.
  */
 
-/** What a device voice will take in one call, and past which the tail is silence anyway. */
-const MAX_SPOKEN = 4000;
-
 /* ------------------------------------------------------------------ recordings */
 
 /**
@@ -66,7 +64,9 @@ const mimeOf = (uri: string) =>
  * a real file `expo-file-system` can. See `server/voice.ts` for why the wire format is this.
  */
 async function readRecording(uri: string) {
-  if (Platform.OS !== "web") return { audio: await new File(uri).base64(), mime: mimeOf(uri) };
+  if (Platform.OS !== "web") {
+    return { audio: await new File(uri).base64(), mime: mimeOf(uri) };
+  }
 
   const blob = await fetch(uri).then((response) => response.blob());
   const audio = await new Promise<string>((resolve, reject) => {
@@ -116,15 +116,21 @@ interface Recognition {
  * DOM `SpeechRecognition` and this is the smaller contract the app actually depends on.
  */
 function recognitionClass(): (new () => Recognition) | undefined {
-  if (Platform.OS !== "web") return ExpoWebSpeechRecognition as unknown as new () => Recognition;
-  if (typeof window === "undefined") return undefined;
+  if (Platform.OS !== "web") {
+    return ExpoWebSpeechRecognition as unknown as new () => Recognition;
+  }
+  if (typeof window === "undefined") {
+    return undefined;
+  }
   const scope = window as unknown as Record<string, (new () => Recognition) | undefined>;
   return scope.SpeechRecognition ?? scope.webkitSpeechRecognition;
 }
 
 /** What to ask to be recognised in, which off web has no `navigator` to read it from. */
 function currentLocale(): string {
-  if (typeof navigator !== "undefined" && navigator.language) return navigator.language;
+  if (typeof navigator !== "undefined" && navigator.language) {
+    return navigator.language;
+  }
   try {
     return Intl.DateTimeFormat().resolvedOptions().locale || "en-US";
   } catch {
@@ -142,10 +148,14 @@ function currentLocale(): string {
  * `no-speech` error from a model that is not installed for the language being spoken.
  */
 async function onDeviceLocales(): Promise<string[]> {
-  if (Platform.OS === "web" || !ExpoSpeechRecognitionModule.supportsOnDeviceRecognition())
+  if (
+    Platform.OS === "web" ||
+    ExpoSpeechRecognitionModule.supportsOnDeviceRecognition() === false
+  ) {
     return [];
+  }
   const { installedLocales } = await ExpoSpeechRecognitionModule.getSupportedLocales({}).catch(
-    () => ({ installedLocales: [] as string[] }),
+    (): { installedLocales: string[] } => ({ installedLocales: [] }),
   );
   return installedLocales;
 }
@@ -241,7 +251,9 @@ export function useDictation({
    * ends as "nothing was recorded", a true sentence about the wrong thing.
    */
   const only = useCallback((work: () => Promise<void>) => {
-    if (busy.current) return;
+    if (busy.current) {
+      return;
+    }
     busy.current = true;
     work()
       .catch((thrown) => setError((thrown as Error).message))
@@ -253,7 +265,9 @@ export function useDictation({
   useEffect(() => {
     let live = true;
     void onDeviceLocales().then((locales) => {
-      if (live) offline.current = locales;
+      if (live) {
+        offline.current = locales;
+      }
     });
     return () => {
       live = false;
@@ -281,7 +295,10 @@ export function useDictation({
         session.onerror = null;
         session.onend = null;
       }
-      if (!recorder.isRecording) return;
+      const isIdle = recorder.isRecording === false;
+      if (isIdle) {
+        return;
+      }
       void recorder.stop().catch(() => {});
       void setAudioModeAsync({ allowsRecording: false }).catch(() => {});
     };
@@ -294,16 +311,22 @@ export function useDictation({
     await setAudioModeAsync({ allowsRecording: false }).catch(() => {});
 
     const uri = recorder.uri;
-    if (!uri) throw new Error("nothing was recorded");
+    if (!uri) {
+      throw new Error("nothing was recorded");
+    }
 
     setTranscribing(true);
     try {
       const text = await voice.transcribe(await readRecording(uri));
-      if (text) hand(text);
+      if (text) {
+        hand(text);
+      }
     } finally {
       setTranscribing(false);
     }
-    if (heard.current) finished.current?.();
+    if (heard.current) {
+      finished.current?.();
+    }
   }, [hand, recorder]);
 
   /** How a recording ends, whether the button ended it or the pause did. */
@@ -316,7 +339,10 @@ export function useDictation({
 
   const record = useCallback(async () => {
     const permission = await requestRecordingPermissionsAsync();
-    if (!permission.granted) throw new Error("the microphone was not allowed");
+    const isDenied = permission.granted === false;
+    if (isDenied) {
+      throw new Error("the microphone was not allowed");
+    }
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
     await recorder.prepareToRecordAsync();
     recorder.record();
@@ -324,37 +350,58 @@ export function useDictation({
 
   /** The recogniser and its three handlers, made on first use and kept from then on. */
   const recogniser = useCallback(() => {
-    if (recognition.current) return recognition.current;
+    if (recognition.current) {
+      return recognition.current;
+    }
 
     const Recogniser = recognitionClass();
-    if (!Recogniser) throw new Error("this build has no speech recognition");
+    if (!Recogniser) {
+      throw new Error("this build has no speech recognition");
+    }
     const session = new Recogniser();
 
     session.onresult = ({ results, resultIndex = 0 }) => {
-      if (!alive.current) return;
+      const isUnmounted = alive.current === false;
+      if (isUnmounted) {
+        return;
+      }
       let phrase = "";
       // From `resultIndex`, not from zero: `results` is the session's history rather than its
       // latest event, and a recogniser that settles a second phrase hands the first one back
       // along with it.
       for (let index = resultIndex; index < results.length; index++) {
         const result = results[index];
-        if (!result?.isFinal) continue;
+        if (!result?.isFinal) {
+          continue;
+        }
         phrase = phrase ? `${phrase} ${result[0].transcript}` : result[0].transcript;
       }
-      if (phrase.trim()) hand(phrase.trim());
+      if (phrase.trim()) {
+        hand(phrase.trim());
+      }
     };
     // `no-speech` and `aborted` are what a held-and-released button sounds like, not faults.
     session.onerror = ({ error: reason }) => {
-      if (!alive.current) return;
-      if (reason !== "no-speech" && reason !== "aborted") setError(reason);
+      const isUnmounted = alive.current === false;
+      if (isUnmounted) {
+        return;
+      }
+      if (reason !== "no-speech" && reason !== "aborted") {
+        setError(reason);
+      }
     };
     session.onend = () => {
-      if (!alive.current || !open.current) return;
+      const isOver = alive.current === false || open.current === false;
+      if (isOver) {
+        return;
+      }
       open.current = false;
       setListening(false);
       // The recogniser stopping on its own is the only sign there is that you have finished
       // talking. A session that heard nothing is a button pressed twice, and not that.
-      if (heard.current) finished.current?.();
+      if (heard.current) {
+        finished.current?.();
+      }
     };
 
     recognition.current = session;
@@ -368,7 +415,10 @@ export function useDictation({
     // A browser asks for the microphone itself, as part of starting. Android does not.
     if (Platform.OS !== "web") {
       const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-      if (!permission.granted) throw new Error("the microphone was not allowed");
+      const isDenied = permission.granted === false;
+      if (isDenied) {
+        throw new Error("the microphone was not allowed");
+      }
     }
 
     // Every setting written afresh, because the object outlives the session: `start()` reads
@@ -404,9 +454,13 @@ export function useDictation({
         }
       });
 
-    if (!viaModel) {
-      if (listening) recognition.current?.stop();
-      else start(listen);
+    const onDevice = viaModel === false;
+    if (onDevice) {
+      if (listening) {
+        recognition.current?.stop();
+      } else {
+        start(listen);
+      }
       return;
     }
 
@@ -472,7 +526,9 @@ export function useSpeech({ model }: { model: string }): Speaker {
       const element = new Audio(url);
       const done = () => {
         URL.revokeObjectURL(url);
-        if (turn.current === mine) setSpeaking(false);
+        if (turn.current === mine) {
+          setSpeaking(false);
+        }
       };
       element.onended = done;
       element.onerror = done;
@@ -494,10 +550,15 @@ export function useSpeech({ model }: { model: string }): Speaker {
 
     const player = createAudioPlayer(file.uri);
     const subscription = player.addListener("playbackStatusUpdate", (status) => {
-      if (!status.didJustFinish) return;
+      const isStillPlaying = status.didJustFinish === false;
+      if (isStillPlaying) {
+        return;
+      }
       subscription.remove();
       player.remove();
-      if (turn.current === mine) setSpeaking(false);
+      if (turn.current === mine) {
+        setSpeaking(false);
+      }
     });
     playing.current = {
       // `pause` first, and not for tidiness: on Android `remove` only drops the module's
@@ -518,7 +579,9 @@ export function useSpeech({ model }: { model: string }): Speaker {
     (text: string): boolean => {
       silence();
       const body = speakableText(text);
-      if (!body) return false;
+      if (!body) {
+        return false;
+      }
 
       const mine = turn.current;
       setError(null);
@@ -529,15 +592,21 @@ export function useSpeech({ model }: { model: string }): Speaker {
         // to. `onStopped` fires for the cancel in `silence`, which is not an interruption
         // worth reporting — the state it would clear has already been claimed by the
         // utterance that replaced it, hence the guard on every one of these.
-        Speech.speak(spokenChunk(body, MAX_SPOKEN), {
+        Speech.speak(spokenChunk(body, VOICE_DEFAULTS.maxSpokenChars), {
           onDone: () => {
-            if (turn.current === mine) setSpeaking(false);
+            if (turn.current === mine) {
+              setSpeaking(false);
+            }
           },
           onStopped: () => {
-            if (turn.current === mine) setSpeaking(false);
+            if (turn.current === mine) {
+              setSpeaking(false);
+            }
           },
           onError: (thrown) => {
-            if (turn.current !== mine) return;
+            if (turn.current !== mine) {
+              return;
+            }
             setError(thrown.message);
             setSpeaking(false);
           },
@@ -548,11 +617,15 @@ export function useSpeech({ model }: { model: string }): Speaker {
       voice
         .speak(body)
         .then(({ bytes, mime }) => {
-          if (turn.current !== mine) return undefined;
+          if (turn.current !== mine) {
+            return undefined;
+          }
           return play(bytes, mime, mine);
         })
         .catch((thrown: Error) => {
-          if (turn.current !== mine) return;
+          if (turn.current !== mine) {
+            return;
+          }
           setError(thrown.message);
           setSpeaking(false);
         });

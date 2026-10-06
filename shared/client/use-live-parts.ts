@@ -23,7 +23,9 @@ export function useLiveParts() {
   const flush = useCallback(() => {
     frame.current = null;
     const batch = queued.current;
-    if (!batch.length) return;
+    if (!batch.length) {
+      return;
+    }
     queued.current = [];
     setParts((current) => batch.reduce(applyEvent, current));
   }, []);
@@ -31,14 +33,18 @@ export function useLiveParts() {
   const push = useCallback(
     (event: StreamEvent) => {
       queued.current.push(event);
-      if (frame.current === null) frame.current = requestAnimationFrame(flush);
+      if (frame.current === null) {
+        frame.current = requestAnimationFrame(flush);
+      }
     },
     [flush],
   );
 
   /** Between turns: drop what was showing and anything still queued for a frame that has not run. */
   const reset = useCallback(() => {
-    if (frame.current !== null) cancelAnimationFrame(frame.current);
+    if (frame.current !== null) {
+      cancelAnimationFrame(frame.current);
+    }
     frame.current = null;
     queued.current = [];
     setParts([]);
@@ -46,7 +52,9 @@ export function useLiveParts() {
 
   useEffect(
     () => () => {
-      if (frame.current !== null) cancelAnimationFrame(frame.current);
+      if (frame.current !== null) {
+        cancelAnimationFrame(frame.current);
+      }
     },
     [],
   );
