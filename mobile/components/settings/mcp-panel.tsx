@@ -1,3 +1,4 @@
+import { FRESHNESS_DEFAULTS } from "@shared/defaults.ts";
 import {
   HOOK_EVENTS_FIRED,
   INJECT_EVENTS,
@@ -6,6 +7,7 @@ import {
   type McpStatus,
   type ToolHookConfig,
 } from "@shared/types.ts";
+import { MS_PER_SECOND } from "@shared/units.ts";
 import { useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -561,7 +563,7 @@ function Editor({
 }
 
 /** How often the panel asks after the servers while it is the one on screen. */
-const POLL = 5000;
+const POLL = FRESHNESS_DEFAULTS.mcpPollSeconds * MS_PER_SECOND;
 
 export function McpPanel({ active = true }: { active?: boolean }) {
   const queryClient = useQueryClient();

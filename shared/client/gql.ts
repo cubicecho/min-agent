@@ -35,6 +35,9 @@ interface GraphQLResponse<T> {
  * A 200 that will not parse is almost always a dev server answering an unknown path with its
  * `index.html`, and `Unexpected token '<'` says nothing about why. Name the address.
  */
+/** The field of a server-sent event that carries its payload. */
+const DATA_FIELD = "data:";
+
 const wrongServer = (endpoint: string) =>
   new Error(`${endpoint} answered with HTML, not JSON — is that the min-agent server?`);
 
@@ -136,8 +139,8 @@ export function createGqlClient({ endpoint, fetch: fetchImpl }: GqlOptions) {
           // colon.
           const data = frame
             .split("\n")
-            .filter((line) => line.startsWith("data:"))
-            .map((line) => line.slice(5).trim())
+            .filter((line) => line.startsWith(DATA_FIELD))
+            .map((line) => line.slice(DATA_FIELD.length).trim())
             .join("");
           if (data) {
             yield unwrap(JSON.parse(data) as GraphQLResponse<TResult>);

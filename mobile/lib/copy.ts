@@ -1,3 +1,4 @@
+import { CHAT_DEFAULTS } from "@shared/defaults.ts";
 import * as Clipboard from "expo-clipboard";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -9,9 +10,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * tick only appears if the write actually happened — a browser can refuse the clipboard, and
  * a button that lies about it is worse than one that does nothing.
  */
-
-/** How long the button says it worked before going back to offering. */
-const CONFIRM_FOR = 1500;
 
 export function useCopy() {
   const [copied, setCopied] = useState(false);
@@ -37,7 +35,7 @@ export function useCopy() {
     if (timer.current) {
       clearTimeout(timer.current);
     }
-    timer.current = setTimeout(() => setCopied(false), CONFIRM_FOR);
+    timer.current = setTimeout(() => setCopied(false), CHAT_DEFAULTS.copiedForMs);
     return true;
   }, []);
 

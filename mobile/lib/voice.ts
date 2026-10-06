@@ -1,4 +1,5 @@
 import { speakableText, spokenChunk } from "@shared/client/voice.ts";
+import { VOICE_DEFAULTS } from "@shared/defaults.ts";
 import {
   createAudioPlayer,
   RecordingPresets,
@@ -35,9 +36,6 @@ import { voice } from "./client.ts";
  * because the device ones are missing in exactly the two builds a self-hoster is most likely
  * to be using.
  */
-
-/** What a device voice will take in one call, and past which the tail is silence anyway. */
-const MAX_SPOKEN = 4000;
 
 /* ------------------------------------------------------------------ recordings */
 
@@ -594,7 +592,7 @@ export function useSpeech({ model }: { model: string }): Speaker {
         // to. `onStopped` fires for the cancel in `silence`, which is not an interruption
         // worth reporting — the state it would clear has already been claimed by the
         // utterance that replaced it, hence the guard on every one of these.
-        Speech.speak(spokenChunk(body, MAX_SPOKEN), {
+        Speech.speak(spokenChunk(body, VOICE_DEFAULTS.maxSpokenChars), {
           onDone: () => {
             if (turn.current === mine) {
               setSpeaking(false);

@@ -1,3 +1,5 @@
+import { VOICE_DEFAULTS } from "../defaults.ts";
+
 /**
  * The client's half of voice: turning a recording into text, and text into sound.
  *
@@ -85,7 +87,7 @@ export function spokenChunk(text: string, limit: number): string {
   }
 
   const head = text.slice(0, limit);
-  const floor = Math.floor(limit * 0.8);
+  const floor = Math.floor(limit * VOICE_DEFAULTS.sentenceFloorShare);
 
   const ends = [...head.matchAll(/[.!?][)"'\]]*(?=\s|$)/g)];
   const last = ends[ends.length - 1];

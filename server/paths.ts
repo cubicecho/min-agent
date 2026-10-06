@@ -1,11 +1,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import manifest from "../package.json" with { type: "json" };
+import { SERVER_DEFAULTS } from "../shared/defaults.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 export const ROOT = path.resolve(here, "..");
-export const PORT = Number(process.env.PORT ?? 8787);
+export const PORT = Number(process.env.PORT ?? SERVER_DEFAULTS.port);
 
 /**
  * What min-agent calls itself when something asks — currently the `clientInfo` an MCP server is

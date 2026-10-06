@@ -35,6 +35,7 @@ import {
 import { McpPoolError, type ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { measureRequest, splitContext } from "../shared/client/usage.ts";
+import { FOLLOWUP_DEFAULTS, TITLE_DEFAULTS, TURN_DEFAULTS } from "../shared/defaults.ts";
 import { CALL_TOOL, shownCall } from "../shared/tool-proxy.ts";
 import {
   type ContextBreakdown,
@@ -48,6 +49,7 @@ import {
   type TokenUsage,
   type TurnStats,
 } from "../shared/types.ts";
+import { MS_PER_SECOND } from "../shared/units.ts";
 import { planFold } from "./compaction.ts";
 import { endpoint, loadLlmConfig } from "./config.ts";
 import {
@@ -77,12 +79,8 @@ export async function listModels(): Promise<ModelInfo[]> {
   return listEndpointModels(endpoint());
 }
 
-/** The longest title shown whole, and how much of a longer one is kept ahead of its ellipsis. */
-const MAX_TITLE_CHARS = 60;
-const CUT_TITLE_CHARS = 57;
-
 const truncateTitle = (title: string) =>
-  title.length > MAX_TITLE_CHARS ? `${title.slice(0, CUT_TITLE_CHARS)}…` : title;
+  title.length > TITLE_DEFAULTS.maxChars ? `${title.slice(0, TITLE_DEFAULTS.keptChars)}…` : title;
 
 function titleFrom(text: string) {
   const line = text.trim().split("\n")[0] ?? "";
@@ -215,29 +213,11 @@ async function generateTitle(
     "You name conversations. Reply with a title of at most six words for a chat that opens " +
       "with the message below. Reply with the title alone — no quotes, no trailing punctuation, " +
       "no preamble.",
-    prompt.slice(0, 2000),
+    prompt.slice(0, TITLE_DEFAULTS.promptChars),
     { signal, onNotice: notice },
   );
   return truncateTitle(clean(reply.split("\n").filter(Boolean).pop() ?? ""));
 }
-
-/**
- * How many times a lost request is worth sending again before the turn gives up.
- *
- * Not a setting. min-agent talks to one endpoint, usually on the same machine or the next one
- * over, and the number that would go in that box is the same number for everyone.
- *
- * It is a budget for the round trip rather than for opening it. The loop it used to guard could
- * only ever fire on a request that never became an answer, because it wrapped the call that
- * resolves before the first chunk; `runTurn` bounds the read as well, and stops retrying the
- * moment the server has said anything. A downgrade does not spend an attempt — that is a
- * different request, not the same one again.
- */
-const OPEN_RETRIES = 2;
-
-/** Cap on suggestions offered, and on the length of one before it stops reading as a chip. */
-const MAX_FOLLOWUPS = 3;
-const MAX_FOLLOWUP_CHARS = 80;
 
 /**
  * Three questions worth asking next, from the exchange that just happened.
@@ -257,14 +237,14 @@ async function suggestFollowups(
   const text = await ask(
     endpoint(config),
     model,
-    `Below is a question and the answer it got. Suggest at most ${MAX_FOLLOWUPS} questions the ` +
+    `Below is a question and the answer it got. Suggest at most ${FOLLOWUP_DEFAULTS.maxCount} questions the ` +
       "person might sensibly ask next. Each must be specific to what was actually said and " +
       'answerable from here — no generic invitations like "tell me more". Write them as the ' +
       "person would type them, under a dozen words each, one per line, nothing else.",
-    `Question:\n${prompt.slice(0, 2000)}\n\nAnswer:\n${reply.slice(0, 6000)}`,
-    { maxTokens: 200, signal, onNotice: notice },
+    `Question:\n${prompt.slice(0, FOLLOWUP_DEFAULTS.questionChars)}\n\nAnswer:\n${reply.slice(0, FOLLOWUP_DEFAULTS.answerChars)}`,
+    { maxTokens: FOLLOWUP_DEFAULTS.maxTokens, signal, onNotice: notice },
   );
-  return listLines(text, MAX_FOLLOWUPS, MAX_FOLLOWUP_CHARS);
+  return listLines(text, FOLLOWUP_DEFAULTS.maxCount, FOLLOWUP_DEFAULTS.maxChars);
 }
 
 /**
@@ -394,7 +374,7 @@ export async function sendTurn(
     return await runRoundTrip(client, supports, request, {
       ...stream,
       model,
-      maxRetries: OPEN_RETRIES,
+      maxRetries: TURN_DEFAULTS.openRetries,
       onNotice: notice,
     });
   } catch (error) {
@@ -482,7 +462,7 @@ function turnStats({
       ? {
           generationMs,
           ...(usage.completionTokens
-            ? { tokensPerSecond: usage.completionTokens / (generationMs / 1000) }
+            ? { tokensPerSecond: usage.completionTokens / (generationMs / MS_PER_SECOND) }
             : {}),
         }
       : {}),
@@ -1065,7 +1045,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         reasoningEffort: config.reasoningEffort,
         maxToolIterations: config.maxToolIterations,
         toolDiscovery: LOOP_DISCOVERY[discovery],
-        maxRetries: OPEN_RETRIES,
+        maxRetries: TURN_DEFAULTS.openRetries,
       },
       // On demand the loop appends the catalogue itself, to the same text `system` is.
       system: native ? [config.systemPrompt, guidance].filter(Boolean).join("\n\n") : system,
@@ -1183,7 +1163,10 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         // much less than the last one's prompt in the cache is the server's doing — an eviction,
         // a side task on the same slot — or a prefix that moved anyway. Only where the server
         // said what it cached.
-        if (turn.usage.uncached !== undefined && turn.usage.cached < previousPrompt * 0.9) {
+        if (
+          turn.usage.uncached !== undefined &&
+          turn.usage.cached < previousPrompt * TURN_DEFAULTS.cachedShare
+        ) {
           console.warn(
             `[agent] prompt cache missed: ${turn.usage.cached} of ${turn.usage.prompt} cached, ` +
               `after a ${previousPrompt}-token request`,
@@ -1339,6 +1322,8 @@ function parseArgs(args: string): Record<string, unknown> {
   try {
     return JSON.parse(args) as Record<string, unknown>;
   } catch {
-    throw new Error(`model produced invalid tool arguments: ${args.slice(0, 200)}`);
+    throw new Error(
+      `model produced invalid tool arguments: ${args.slice(0, TURN_DEFAULTS.quotedArgumentChars)}`,
+    );
   }
 }

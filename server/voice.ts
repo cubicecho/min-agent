@@ -2,9 +2,11 @@ import { NO_KEY, resolveApiKey } from "@cubicecho/agent-core";
 import express from "express";
 import OpenAI, { toFile } from "openai";
 import { spokenChunk } from "../shared/client/voice.ts";
+import { VOICE_DEFAULTS } from "../shared/defaults.ts";
 import { type LlmConfig, voiceBaseUrlFor, wyomingAddress } from "../shared/types.ts";
 import { toPcm, wav } from "./audio.ts";
 import { loadLlmConfig } from "./config.ts";
+import { HttpStatus } from "./http-status.ts";
 import { synthesize, transcribe } from "./wyoming.ts";
 
 /**
@@ -27,12 +29,6 @@ import { synthesize, transcribe } from "./wyoming.ts";
  * protocol, so a whisper or a Piper someone already runs at home answers instead of a vendor.
  * It is the same proxy for the same reason and swaps only the wire; see `wyoming.ts`.
  */
-
-/** Whisper's own ceiling. A minute of speech is about a megabyte, so a turn is nowhere near. */
-const MAX_AUDIO = "25mb";
-
-/** OpenAI's ceiling on one `speech` call, and long enough for any reply worth hearing. */
-const MAX_SPEECH = 4096;
 
 /**
  * Whisper decides how to decode by the *filename*, so the upload needs an extension that
@@ -80,7 +76,7 @@ function requireModel(model: string, what: string, response: express.Response): 
   if (model.trim()) {
     return true;
   }
-  response.status(409).json({ error: `no ${what} model configured` });
+  response.status(HttpStatus.conflict).json({ error: `no ${what} model configured` });
   return false;
 }
 
@@ -88,7 +84,7 @@ function requireModel(model: string, what: string, response: express.Response): 
 function failed(label: string, error: unknown, response: express.Response) {
   const message = (error as Error).message || String(error);
   console.warn(`[voice] ${label}: ${message}`);
-  response.status(502).json({ error: message });
+  response.status(HttpStatus.badGateway).json({ error: message });
 }
 
 export const voice = express.Router();
@@ -102,41 +98,45 @@ export const voice = express.Router();
  * without a second transport. A voice clip is kilobytes, and the third it costs to encode is
  * not worth a multipart parser to save.
  */
-voice.post("/transcribe", express.json({ limit: MAX_AUDIO }), async (request, response) => {
-  const config = loadLlmConfig();
-  const hasNoModel = requireModel(config.sttModel, "transcription", response) === false;
-  if (hasNoModel) {
-    return;
-  }
-
-  const { audio, mime } = request.body as { audio?: string; mime?: string };
-  if (!audio) {
-    response.status(400).json({ error: "no audio" });
-    return;
-  }
-
-  try {
-    const bytes = Buffer.from(audio, "base64");
-    const extension = audioExtension(mime ?? "");
-    const wyoming = wyomingAddress(config.sttModel);
-
-    // Wyoming speaks PCM and the app records AAC or Opus, so this path decodes on the way in.
-    // See `audio.ts` for why that is `ffmpeg` and not a recording setting.
-    if (wyoming) {
-      response.json({ text: await transcribe(wyoming, await toPcm(bytes, extension)) });
+voice.post(
+  "/transcribe",
+  express.json({ limit: VOICE_DEFAULTS.maxAudioBody }),
+  async (request, response) => {
+    const config = loadLlmConfig();
+    const hasNoModel = requireModel(config.sttModel, "transcription", response) === false;
+    if (hasNoModel) {
       return;
     }
 
-    const file = await toFile(bytes, `speech.${extension}`, { type: mime || "audio/webm" });
-    const result = await voiceClient(config).audio.transcriptions.create({
-      file,
-      model: config.sttModel,
-    });
-    response.json({ text: result.text.trim() });
-  } catch (error) {
-    failed("transcribe", error, response);
-  }
-});
+    const { audio, mime } = request.body as { audio?: string; mime?: string };
+    if (!audio) {
+      response.status(HttpStatus.badRequest).json({ error: "no audio" });
+      return;
+    }
+
+    try {
+      const bytes = Buffer.from(audio, "base64");
+      const extension = audioExtension(mime ?? "");
+      const wyoming = wyomingAddress(config.sttModel);
+
+      // Wyoming speaks PCM and the app records AAC or Opus, so this path decodes on the way in.
+      // See `audio.ts` for why that is `ffmpeg` and not a recording setting.
+      if (wyoming) {
+        response.json({ text: await transcribe(wyoming, await toPcm(bytes, extension)) });
+        return;
+      }
+
+      const file = await toFile(bytes, `speech.${extension}`, { type: mime || "audio/webm" });
+      const result = await voiceClient(config).audio.transcriptions.create({
+        file,
+        model: config.sttModel,
+      });
+      response.json({ text: result.text.trim() });
+    } catch (error) {
+      failed("transcribe", error, response);
+    }
+  },
+);
 
 /**
  * Text in, audio out.
@@ -153,7 +153,7 @@ voice.post("/speak", express.json({ limit: "1mb" }), async (request, response) =
 
   const { text } = request.body as { text?: string };
   if (!text?.trim()) {
-    response.status(400).json({ error: "no text" });
+    response.status(HttpStatus.badRequest).json({ error: "no text" });
     return;
   }
 
@@ -165,7 +165,7 @@ voice.post("/speak", express.json({ limit: "1mb" }), async (request, response) =
     if (wyoming) {
       const { pcm, ...format } = await synthesize(
         wyoming,
-        spokenChunk(text, MAX_SPEECH),
+        spokenChunk(text, VOICE_DEFAULTS.maxSpeechChars),
         config.ttsVoice,
       );
       const file = wav(pcm, format);
@@ -179,7 +179,7 @@ voice.post("/speak", express.json({ limit: "1mb" }), async (request, response) =
       model: config.ttsModel,
       // The API insists on a voice; a server that has only one ignores what it is told.
       voice: config.ttsVoice.trim() || "alloy",
-      input: spokenChunk(text, MAX_SPEECH),
+      input: spokenChunk(text, VOICE_DEFAULTS.maxSpeechChars),
     });
     const audio = Buffer.from(await spoken.arrayBuffer());
     response.setHeader("Content-Type", spoken.headers.get("content-type") ?? "audio/mpeg");

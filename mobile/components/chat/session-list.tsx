@@ -1,9 +1,5 @@
-import {
-  type Bucket,
-  groupSessions,
-  matchSessions,
-  SEARCH_AFTER,
-} from "@shared/client/sessions.ts";
+import { type Bucket, groupSessions, matchSessions } from "@shared/client/sessions.ts";
+import { SESSION_LIST_DEFAULTS } from "@shared/defaults.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
@@ -183,7 +179,7 @@ function RenameForm({ list, id, title }: { list: List; id: string; title: string
 }
 
 /** Whether there are enough chats that reading down the list is the slower way to find one. */
-const searchable = (list: List) => list.all.length > SEARCH_AFTER;
+const searchable = (list: List) => list.all.length > SESSION_LIST_DEFAULTS.searchAfter;
 
 /** Search box, shown only once there are enough chats for scanning to be the slower way. */
 function Search({ list }: { list: List }) {

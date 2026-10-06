@@ -1,5 +1,6 @@
 import path from "node:path";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { DATABASE_DEFAULTS } from "../../shared/defaults.ts";
 import { ROOT } from "../paths.ts";
 import { db } from "./client.ts";
 import { settings } from "./schema.ts";
@@ -38,9 +39,6 @@ const RACED = new Set([
   "42710", // duplicate_object, for a constraint or index
 ]);
 
-/** Enough to outlast a migration that is mid-flight, and few enough to fail a real error fast. */
-const ATTEMPTS = 4;
-
 /** Every code down an error's chain — drizzle wraps the driver's error in its own. */
 const codes = (error: unknown): string[] =>
   error instanceof Error
@@ -60,12 +58,16 @@ async function withoutRacing<T>(migration: () => Promise<T>): Promise<T> {
     try {
       return await migration();
     } catch (error) {
-      const isFatal = attempt >= ATTEMPTS || codes(error).some((code) => RACED.has(code)) === false;
+      const isFatal =
+        attempt >= DATABASE_DEFAULTS.migrateAttempts ||
+        codes(error).some((code) => RACED.has(code)) === false;
       if (isFatal) {
         throw error;
       }
       console.warn(`migrations: another migrator got there first; retrying [${attempt}]`);
-      await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+      await new Promise((resolve) =>
+        setTimeout(resolve, DATABASE_DEFAULTS.migrateStepMs * attempt),
+      );
     }
   }
 }

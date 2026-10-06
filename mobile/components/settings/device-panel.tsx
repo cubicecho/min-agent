@@ -40,6 +40,9 @@ type Progress =
  */
 const updatable = Platform.OS !== "web" && Updates.isEnabled && __DEV__ === false;
 
+/** Enough of an update's id to tell two apart at a glance. */
+const SHORT_ID_CHARS = 8;
+
 /** The running update, in the four facts that identify it. */
 function Running() {
   const built = Updates.createdAt;
@@ -52,7 +55,7 @@ function Running() {
           <PropertyRow label="Runtime" value={Updates.runtimeVersion || "Unknown"} />
           <PropertyRow
             label="Update"
-            value={id ? id.slice(0, 8) : "The JavaScript this app was built with"}
+            value={id ? id.slice(0, SHORT_ID_CHARS) : "The JavaScript this app was built with"}
           />
           {built ? <PropertyRow label="Published" value={built.toLocaleString()} /> : null}
         </>

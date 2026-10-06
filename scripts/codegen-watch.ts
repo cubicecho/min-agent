@@ -94,6 +94,9 @@ async function generate(reason: string) {
 
 const watching = process.argv.includes("--watch");
 
+/** How long a file has to stay untouched before a save counts as finished. */
+const DEBOUNCE_MS = 50;
+
 if (stale()) {
   await generate("schema changed");
 } else if (watching === false) {
@@ -110,7 +113,7 @@ if (watching) {
     if (queued) {
       clearTimeout(queued);
     }
-    queued = setTimeout(() => void generate(path.relative(ROOT, file)), 50);
+    queued = setTimeout(() => void generate(path.relative(ROOT, file)), DEBOUNCE_MS);
   };
 
   for (const { dir, ext } of INPUTS) {

@@ -4,6 +4,7 @@ import type { HookEvent, McpStatus } from "@cubicecho/agent-mcp-pool";
 import { HOOK_EVENTS, INJECT_EVENTS } from "@cubicecho/agent-mcp-pool/hooks";
 import type OpenAI from "openai";
 import { z } from "zod";
+import { MODEL_CEILINGS, MODEL_DEFAULTS } from "./defaults.ts";
 import type { ModelTask } from "./model-tasks.ts";
 
 /**
@@ -58,10 +59,24 @@ export const llmConfigSchema = z.object({
    * It has to be enforced on the way in as well as out — see `assertLlmConfigPatch`, which
    * exists because it once was not, and a value stored past it stopped the server booting.
    */
-  maxTokens: z.number().int().min(1).max(200000).default(4096),
-  temperature: z.number().min(0).max(2).default(0.7),
+  maxTokens: z
+    .number()
+    .int()
+    .min(1)
+    .max(MODEL_CEILINGS.maxTokens)
+    .default(MODEL_DEFAULTS.maxTokens),
+  temperature: z
+    .number()
+    .min(0)
+    .max(MODEL_CEILINGS.temperature)
+    .default(MODEL_DEFAULTS.temperature),
   /** Hard stop on runaway tool loops. */
-  maxToolIterations: z.number().int().min(1).max(100).default(20),
+  maxToolIterations: z
+    .number()
+    .int()
+    .min(1)
+    .max(MODEL_CEILINGS.maxToolIterations)
+    .default(MODEL_DEFAULTS.maxToolIterations),
   systemPrompt: z.string().default("You are min-agent, a concise and careful assistant."),
   /** Context window in tokens. 0 asks the server, which not every server answers. */
   contextLimit: z.number().int().min(0).default(0),
@@ -135,13 +150,16 @@ export const voiceBaseUrlFor = (config: Pick<LlmConfig, "baseUrl" | "voiceBaseUr
  * the only thing that could be mistaken for a model name, so anything else stays a model and
  * fails later with the provider's own message rather than here with a guess about intent.
  */
+/** The highest port TCP has. */
+const MAX_PORT = 65_535;
+
 export const wyomingAddress = (value: string): { host: string; port: number } | null => {
   const match = /^tcp:\/\/(\[[^\]]+\]|[^/:]+):(\d{1,5})\/?$/.exec(value.trim());
   if (!match) {
     return null;
   }
   const port = Number(match[2]);
-  if (port < 1 || port > 65535) {
+  if (port < 1 || port > MAX_PORT) {
     return null;
   }
   return { host: match[1].replace(/^\[|\]$/g, ""), port };

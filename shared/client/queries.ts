@@ -1,3 +1,5 @@
+import { FRESHNESS_DEFAULTS } from "../defaults.ts";
+import { MS_PER_MINUTE } from "../units.ts";
 /**
  * How long the connection settings and the model list stay fresh.
  *
@@ -7,4 +9,4 @@
  * the only cost of holding them is a stale list for someone editing the settings row underneath
  * the running server, which a reload settles.
  */
-export const SETTINGS_STALE_TIME = 5 * 60_000;
+export const SETTINGS_STALE_TIME = FRESHNESS_DEFAULTS.settingsStaleMinutes * MS_PER_MINUTE;

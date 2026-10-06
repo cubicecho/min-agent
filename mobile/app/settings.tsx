@@ -1,3 +1,5 @@
+import { FRESHNESS_DEFAULTS } from "@shared/defaults.ts";
+import { MS_PER_SECOND } from "@shared/units.ts";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
@@ -72,7 +74,7 @@ const MARK_LABEL: Record<TabMark, string> = {
  * server that fell over while you were on Agent is worth noticing, and it is not worth a
  * request every five seconds to notice it a little sooner.
  */
-const MCP_WATCH = 30_000;
+const MCP_WATCH = FRESHNESS_DEFAULTS.mcpWatchSeconds * MS_PER_SECOND;
 
 const PANELS: Record<SettingsTab, (props: PanelProps) => React.JSX.Element | null> = {
   model: ModelPanel,

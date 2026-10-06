@@ -1,4 +1,6 @@
+import { FRESHNESS_DEFAULTS } from "@shared/defaults.ts";
 import type { EmbedConfig } from "@shared/types.ts";
+import { MS_PER_MINUTE } from "@shared/units.ts";
 
 /**
  * How long the embed list stays fresh.
@@ -7,7 +9,7 @@ import type { EmbedConfig } from "@shared/types.ts";
  * saves the Apps panel — which invalidates the query by hand. Long, for the same reason the
  * settings are: this is a list of rows a person typed, not something that moves on its own.
  */
-export const EMBEDS_STALE_TIME = 5 * 60_000;
+export const EMBEDS_STALE_TIME = FRESHNESS_DEFAULTS.embedsStaleMinutes * MS_PER_MINUTE;
 
 /** The embeds that get a sidebar row. A disabled one is kept, but not shown. */
 export const visibleEmbeds = (embeds: EmbedConfig[] | undefined) =>

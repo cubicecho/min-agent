@@ -3,16 +3,9 @@ import type OpenAI from "openai";
 import { describe, expect, it } from "vitest";
 import { forApi } from "../server/agent.ts";
 import { textTokens } from "../server/compaction.ts";
-import {
-  clampPruning,
-  clearedChars,
-  PRUNE_AT,
-  PRUNE_KEEP_LAST,
-  PRUNE_MAX_CHARS,
-  planPrune,
-  sentWithStubs,
-} from "../server/pruning.ts";
+import { clampPruning, clearedChars, planPrune, sentWithStubs } from "../server/pruning.ts";
 import { proxyLoadResult } from "../server/tool-proxy.ts";
+import { PRUNING_DEFAULTS } from "../shared/defaults.ts";
 import type { Session, StoredMessage } from "../shared/types.ts";
 
 /**
@@ -68,7 +61,11 @@ const clearedTokens = (messages: StoredMessage[], from: number, through: number)
 
 describe("the constants", () => {
   it("are agent-core's defaults, and a quarter of the window", () => {
-    expect([PRUNE_KEEP_LAST, PRUNE_MAX_CHARS, PRUNE_AT]).toEqual([5, 256, 0.25]);
+    expect([
+      PRUNING_DEFAULTS.keepLast,
+      PRUNING_DEFAULTS.maxChars,
+      PRUNING_DEFAULTS.windowShare,
+    ]).toEqual([5, 256, 0.25]);
   });
 });
 
@@ -109,13 +106,13 @@ describe("sentWithStubs", () => {
   it("leaves a short result whole wherever it is", () => {
     const messages = [
       { role: "user", content: "q" } as StoredMessage,
-      ...step("a", result("edge", PRUNE_MAX_CHARS)),
-      ...step("b", result("over", PRUNE_MAX_CHARS + 1)),
+      ...step("a", result("edge", PRUNING_DEFAULTS.maxChars)),
+      ...step("b", result("over", PRUNING_DEFAULTS.maxChars + 1)),
       ...step("c", "ok"),
     ];
     const sent = sentWithStubs(messages, { through: messages.length });
-    expect(sent[2].content).toBe(result("edge", PRUNE_MAX_CHARS));
-    expect(sent[4].content).toBe(stub(PRUNE_MAX_CHARS + 1));
+    expect(sent[2].content).toBe(result("edge", PRUNING_DEFAULTS.maxChars));
+    expect(sent[4].content).toBe(stub(PRUNING_DEFAULTS.maxChars + 1));
     expect(sent[6].content).toBe("ok");
   });
 
@@ -158,7 +155,7 @@ describe("what is exempt from stubbing", () => {
 
   it("keeps a proxied load's definitions whole behind the marker", () => {
     const definitions = proxyLoadResult(resolved, catalog, [definition], new Set());
-    expect(definitions.length).toBeGreaterThan(PRUNE_MAX_CHARS);
+    expect(definitions.length).toBeGreaterThan(PRUNING_DEFAULTS.maxChars);
     const messages = [
       { role: "user", content: "q" } as StoredMessage,
       ...step("load", definitions, "load_tools"),
@@ -184,7 +181,7 @@ describe("what is exempt from stubbing", () => {
 
   it("stubs an on-demand load's result, which only repeats what the tool array declares", () => {
     const loaded = loadResult(resolved, catalog, new Set());
-    expect(loaded.length).toBeGreaterThan(PRUNE_MAX_CHARS);
+    expect(loaded.length).toBeGreaterThan(PRUNING_DEFAULTS.maxChars);
     const messages = [
       { role: "user", content: "q" } as StoredMessage,
       ...step("load", loaded, "load_tools"),
@@ -195,7 +192,7 @@ describe("what is exempt from stubbing", () => {
 
   it("stubs a proxied load that held no definitions: a pointer back, or a refusal", () => {
     const again = proxyLoadResult(resolved, catalog, [definition], new Set(["fs__read"]));
-    const pointer = `${again}\n${"-".repeat(PRUNE_MAX_CHARS)}`;
+    const pointer = `${again}\n${"-".repeat(PRUNING_DEFAULTS.maxChars)}`;
     const messages = [
       { role: "user", content: "q" } as StoredMessage,
       ...step("load", pointer, "load_tools"),
@@ -218,12 +215,12 @@ describe("what is exempt from stubbing", () => {
 
 describe("planPrune", () => {
   /** A window in which clearing `tokens` is exactly the share that moves the marker. */
-  const windowFor = (tokens: number) => tokens / PRUNE_AT;
+  const windowFor = (tokens: number) => tokens / PRUNING_DEFAULTS.windowShare;
 
   it("puts the marker on the earliest of the latest five results", () => {
     const messages = turn("q", 12);
     const at = results(messages);
-    expect(planPrune(session(messages), 1000)).toBe(at[at.length - PRUNE_KEEP_LAST]);
+    expect(planPrune(session(messages), 1000)).toBe(at[at.length - PRUNING_DEFAULTS.keepLast]);
     // So the five from there on are sent whole and the seven before are not.
     const sent = sentWithStubs(messages, { through: at[7] });
     expect(at.map((index) => sent[index].content === messages[index].content)).toEqual([
@@ -301,7 +298,7 @@ describe("planPrune", () => {
     const messages = [...first, ...turn("q1", 8, 2000, 6)];
     const folded = { summary: "notes", through: first.length, at: AT };
     const at = results(messages);
-    const target = at[at.length - PRUNE_KEEP_LAST];
+    const target = at[at.length - PRUNING_DEFAULTS.keepLast];
     const sentOnly = clearedTokens(messages, first.length, target);
     const everything = clearedTokens(messages, 0, target);
     expect(everything).toBeGreaterThan(sentOnly);
@@ -326,7 +323,7 @@ describe("planPrune", () => {
     const messages = [...first, ...turn("q1", 12, 2000, 2)];
     const at = results(messages);
     const marker = at[5];
-    const target = at[at.length - PRUNE_KEEP_LAST];
+    const target = at[at.length - PRUNING_DEFAULTS.keepLast];
     const held = session(messages, {
       compaction: { summary: "notes", through: first.length, at: AT },
       pruning: { through: marker, at: AT },
@@ -472,7 +469,7 @@ describe("forApi with a pruning marker", () => {
     // A window in which three cleared results are worth a move and two are not.
     const limit = Math.ceil(
       (2.5 * (textTokens({ role: "tool", tool_call_id: "x", content: result("r") }) - 8)) /
-        PRUNE_AT,
+        PRUNING_DEFAULTS.windowShare,
     );
 
     let previous = wire(chat);

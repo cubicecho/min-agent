@@ -9,6 +9,7 @@ import {
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
+import { MODEL_DEFAULTS } from "../../shared/defaults.ts";
 import type {
   Session,
   StoredMessage,
@@ -51,10 +52,10 @@ export const settings = table("settings", {
   apiKey: text().notNull().default(""),
   /** Default model for chat. Picked from the models the server reports. */
   model: text().notNull().default(""),
-  maxTokens: integer().notNull().default(4096),
-  temperature: real().notNull().default(0.7),
+  maxTokens: integer().notNull().default(MODEL_DEFAULTS.maxTokens),
+  temperature: real().notNull().default(MODEL_DEFAULTS.temperature),
   /** Hard stop on runaway tool loops. */
-  maxToolIterations: integer().notNull().default(20),
+  maxToolIterations: integer().notNull().default(MODEL_DEFAULTS.maxToolIterations),
   systemPrompt: text().notNull().default("You are min-agent, a concise and careful assistant."),
   /** Context window in tokens. 0 asks the server, which not every server answers. */
   contextLimit: integer().notNull().default(0),

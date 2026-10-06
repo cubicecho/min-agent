@@ -5,15 +5,25 @@ import type {
   TokenUsage,
   TurnStats,
 } from "../types.ts";
+import { MILLION, MS_PER_MINUTE, MS_PER_SECOND, PERCENT, THOUSAND } from "../units.ts";
 
 type Pricing = LlmConfig["pricing"];
 
+/** A count is written out in full below this, and in thousands from it. */
+const COMPACT_FROM = 10_000;
+
+/** The smallest cost two decimal places can show. */
+const CENT = 0.01;
+
+/** A window less full than this shows a decimal place, so it does not read as nothing. */
+const FINE_PERCENT_BELOW = 0.1;
+
 function compact(n: number) {
-  if (n >= 1_000_000) {
-    return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= MILLION) {
+    return `${(n / MILLION).toFixed(1)}M`;
   }
-  if (n >= 10_000) {
-    return `${(n / 1000).toFixed(1)}k`;
+  if (n >= COMPACT_FROM) {
+    return `${(n / THOUSAND).toFixed(1)}k`;
   }
   return n.toLocaleString();
 }
@@ -23,8 +33,8 @@ export function costOf(usage: TokenUsage, pricing?: Pricing): number | null {
   if (!pricing?.inputPer1M && !pricing?.outputPer1M) {
     return null;
   }
-  const input = (usage.promptTokens * (pricing?.inputPer1M ?? 0)) / 1_000_000;
-  const output = (usage.completionTokens * (pricing?.outputPer1M ?? 0)) / 1_000_000;
+  const input = (usage.promptTokens * (pricing?.inputPer1M ?? 0)) / MILLION;
+  const output = (usage.completionTokens * (pricing?.outputPer1M ?? 0)) / MILLION;
   return input + output;
 }
 
@@ -34,7 +44,7 @@ export function formatUsage(usage: TokenUsage, pricing?: Pricing): string {
   if (cost === null) {
     return tokens;
   }
-  return `${tokens} · ${cost > 0 && cost < 0.01 ? "<$0.01" : `$${cost.toFixed(2)}`}`;
+  return `${tokens} · ${cost > 0 && cost < CENT ? "<$0.01" : `$${cost.toFixed(2)}`}`;
 }
 
 /** "1,024 in · 512 out" — the breakdown behind the total. */
@@ -46,14 +56,14 @@ export const formatTokens = compact;
 
 /** "340ms", "4.6s", "1m 04s" — durations a human reads at a glance. */
 export function formatDuration(ms: number): string {
-  if (ms < 1000) {
+  if (ms < MS_PER_SECOND) {
     return `${Math.round(ms)}ms`;
   }
-  if (ms < 60_000) {
-    return `${(ms / 1000).toFixed(1)}s`;
+  if (ms < MS_PER_MINUTE) {
+    return `${(ms / MS_PER_SECOND).toFixed(1)}s`;
   }
-  const minutes = Math.floor(ms / 60_000);
-  return `${minutes}m ${String(Math.round((ms % 60_000) / 1000)).padStart(2, "0")}s`;
+  const minutes = Math.floor(ms / MS_PER_MINUTE);
+  return `${minutes}m ${String(Math.round((ms % MS_PER_MINUTE) / MS_PER_SECOND)).padStart(2, "0")}s`;
 }
 
 export const formatRate = (tokensPerSecond: number) => `${tokensPerSecond.toFixed(1)} tok/s`;
@@ -84,7 +94,7 @@ export function statsLine(stats: TurnStats, pricing?: Pricing): string[] {
   // session total's "<$0.01".
   const cost = costOf(stats, pricing);
   if (cost) {
-    parts.push(`$${cost.toFixed(cost < 0.01 ? 4 : 2)}`);
+    parts.push(`$${cost.toFixed(cost < CENT ? 4 : 2)}`);
   }
   return parts;
 }
@@ -100,7 +110,7 @@ export function contextFill(stats?: TurnStats | null) {
     limit: stats.contextLimit,
     ratio,
     label: `${compact(stats.contextTokens)} / ${compact(stats.contextLimit)}`,
-    percent: `${(ratio * 100).toFixed(ratio < 0.1 ? 1 : 0)}%`,
+    percent: `${(ratio * PERCENT).toFixed(ratio < FINE_PERCENT_BELOW ? 1 : 0)}%`,
   };
 }
 

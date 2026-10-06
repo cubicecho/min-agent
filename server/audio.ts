@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { VOICE_DEFAULTS } from "../shared/defaults.ts";
+import { MS_PER_SECOND } from "../shared/units.ts";
 import { PCM_CHANNELS, PCM_RATE, PCM_WIDTH } from "./wyoming.ts";
 
 /**
@@ -19,8 +21,7 @@ import { PCM_CHANNELS, PCM_RATE, PCM_WIDTH } from "./wyoming.ts";
  * OpenAI-compatible path uploads the recording untouched, as it always has.
  */
 
-/** Long enough for a minute of speech on a slow disk; a clip that takes longer is not decoding. */
-const TIMEOUT = 30_000;
+const TIMEOUT_MS = VOICE_DEFAULTS.decodeTimeoutSeconds * MS_PER_SECOND;
 
 const NOT_INSTALLED =
   "ffmpeg is not on the PATH, and a Wyoming server needs the recording decoded to PCM first. " +
@@ -83,7 +84,10 @@ function decode(source: string): Promise<Buffer> {
       }
     };
 
-    const timer = setTimeout(() => finish(new Error("decoding the recording timed out")), TIMEOUT);
+    const timer = setTimeout(
+      () => finish(new Error("decoding the recording timed out")),
+      TIMEOUT_MS,
+    );
 
     ffmpeg.stdout.on("data", (chunk: Buffer) => out.push(chunk));
     ffmpeg.stderr.on("data", (chunk: Buffer) => err.push(chunk));

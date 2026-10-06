@@ -13,7 +13,9 @@ import {
   usageDetail,
 } from "@shared/client/usage.ts";
 import { useLiveParts } from "@shared/client/use-live-parts.ts";
+import { CHAT_DEFAULTS } from "@shared/defaults.ts";
 import type { LlmConfig, TokenUsage, TurnStats } from "@shared/types.ts";
+import { MS_PER_SECOND, PERCENT } from "@shared/units.ts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -227,10 +229,11 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     useCallback(() => () => setCreated((held) => (sessionId ? held : null)), [sessionId]),
   );
 
-  /** A hundred pixels of slack, so a stray flick does not count as leaving the bottom. */
+  /** With some slack, so a stray flick does not count as leaving the bottom. */
   function onScroll({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) {
     const { contentSize, contentOffset, layoutMeasurement } = nativeEvent;
-    const now = contentSize.height - contentOffset.y - layoutMeasurement.height < 100;
+    const now =
+      contentSize.height - contentOffset.y - layoutMeasurement.height < CHAT_DEFAULTS.bottomSlackPx;
     // Bail out when nothing changed: scrolling fires many times a second and every real state
     // write here would re-render the transcript.
     setPinned((was) => (was === now ? was : now));
@@ -827,7 +830,7 @@ function TokensDialog({
                 <View
                   key={row.key}
                   className={PART_COLOR[row.key]}
-                  style={{ width: `${row.ratio * 100}%` }}
+                  style={{ width: `${row.ratio * PERCENT}%` }}
                 />
               ))}
             </View>
@@ -839,7 +842,7 @@ function TokensDialog({
                   {formatTokens(row.tokens)}
                   <Text className="text-muted-foreground">
                     {"  "}
-                    {Math.round(row.ratio * 100)}%
+                    {Math.round(row.ratio * PERCENT)}%
                   </Text>
                 </Text>
               </View>
@@ -902,10 +905,10 @@ function DictationIcon({ transcribing, listening }: { transcribing: boolean; lis
 
 /** The meter's colour, which warns as the window fills. */
 function meterTone(ratio: number) {
-  if (ratio > 0.9) {
+  if (ratio > CHAT_DEFAULTS.meterDangerShare) {
     return "bg-destructive";
   }
-  if (ratio > 0.75) {
+  if (ratio > CHAT_DEFAULTS.meterWarnShare) {
     return "bg-amber-500";
   }
   return "bg-primary";
@@ -918,7 +921,7 @@ function ContextMeter({ fill }: { fill: NonNullable<ReturnType<typeof contextFil
       <View className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
         <View
           className={cn("h-full rounded-full", tone)}
-          style={{ width: `${fill.ratio * 100}%` }}
+          style={{ width: `${fill.ratio * PERCENT}%` }}
         />
       </View>
       <Text className={MUTED}>{fill.label}</Text>
@@ -935,7 +938,7 @@ function LiveMeter({ startedAt, live }: { startedAt: number; live: LivePart[] })
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 250);
+    const timer = setInterval(() => setNow(Date.now()), CHAT_DEFAULTS.liveMeterTickMs);
     return () => clearInterval(timer);
   }, []);
 
@@ -943,8 +946,8 @@ function LiveMeter({ startedAt, live }: { startedAt: number; live: LivePart[] })
     return null;
   }
   const elapsed = Math.max(now - startedAt, 0);
-  const tokens = Math.round(liveCharCount(live) / 4);
-  const seconds = elapsed / 1000;
+  const tokens = Math.round(liveCharCount(live) / CHAT_DEFAULTS.charsPerToken);
+  const seconds = elapsed / MS_PER_SECOND;
 
   return (
     <View className="mt-2 flex-row items-center gap-2">
@@ -953,7 +956,7 @@ function LiveMeter({ startedAt, live }: { startedAt: number; live: LivePart[] })
         <>
           <Text className={MUTED}>·</Text>
           <Text className={MUTED}>~{formatTokens(tokens)} tok</Text>
-          {seconds > 0.5 ? (
+          {seconds > CHAT_DEFAULTS.rateAfterSeconds ? (
             <>
               <Text className={MUTED}>·</Text>
               <Text className={MUTED}>~{formatRate(tokens / seconds)}</Text>
