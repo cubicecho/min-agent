@@ -6,7 +6,7 @@ Nothing here is implemented until approved.
 
 Survey of 2026-10-05 read `server/agent.ts`, `mobile/app/_layout.tsx`, `mobile/app/settings.tsx`,
 `mobile/app/embed/[id].tsx` and `mobile/components/chat/{chat-view,message-view,session-list}.tsx`.
-Sweep counts are pattern matches over all app-owned code and are approximate. R1–R4 are done.
+Sweep counts are pattern matches over all app-owned code and are approximate. R1–R4 and D1 are done.
 
 ## Conventions
 
@@ -62,15 +62,6 @@ mistyped key can no longer silently skip a refresh.
 ### R14 [sweep] — tests in the same folders as the source (P21)
 
 **Hits:** 34 test files flat under `tests/`.
-
----
-
-## Docs
-
-### D1 — `sendTurn`'s comment names one of its two test users
-
-**File:** `server/agent.ts`, the block above `sendTurn`. It says the function is kept for
-`tests/negotiate.test.ts`; `tests/reasoning.test.ts` uses it too.
 
 ---
 

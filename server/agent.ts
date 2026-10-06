@@ -360,8 +360,8 @@ export interface SendOptions
  * What is left here is the overflow; see `withWindow`.
  *
  * Nothing in the server calls this since the turn's steps became agent-core's `runAgentLoop`
- * (#52), which makes the same round trip itself. It is kept for `tests/negotiate.test.ts`, which
- * pins the negotiation through it.
+ * (#52), which makes the same round trip itself. It is kept for `tests/negotiate.test.ts` and
+ * `tests/reasoning.test.ts`, which pin the negotiation through it.
  *
  * @param client The pooled client for this endpoint. `getClient` builds it with the SDK's own
  * retrying off, because a stream that has already produced tokens must never be replayed from
