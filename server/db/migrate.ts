@@ -42,7 +42,7 @@ const RACED = new Set([
 /** Every code down an error's chain — drizzle wraps the driver's error in its own. */
 const codes = (error: unknown): string[] =>
   error instanceof Error
-    ? [String((error as { code?: unknown }).code ?? ""), ...codes(error.cause)]
+    ? [String(("code" in error ? error.code : undefined) ?? ""), ...codes(error.cause)]
     : [];
 
 /**

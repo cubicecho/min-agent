@@ -91,8 +91,8 @@ export async function* runTurnEvents(args: TurnArgs): AsyncGenerator<TurnEvent> 
   let seq = 0;
   try {
     while (true) {
-      while (queue.length) {
-        yield flatten(queue.shift() as StreamEvent, ++seq);
+      for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+        yield flatten(next, ++seq);
       }
       if (done) {
         return;

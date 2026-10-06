@@ -260,13 +260,15 @@ export async function synthesize(
   );
 
   const start = heard.find((event) => event.type === "audio-start")?.data ?? {};
-  const chunks = heard.filter((event) => event.type === "audio-chunk" && event.payload);
+  const chunks = heard.flatMap((event) =>
+    event.type === "audio-chunk" && event.payload ? [event.payload] : [],
+  );
   if (chunks.length === 0) {
     throw new Error("the speech server sent no audio");
   }
 
   return {
-    pcm: Buffer.concat(chunks.map((event) => event.payload as Buffer)),
+    pcm: Buffer.concat(chunks),
     rate: Number(start.rate) || FALLBACK_RATE,
     width: Number(start.width) || PCM_WIDTH,
     channels: Number(start.channels) || 1,

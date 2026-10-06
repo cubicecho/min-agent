@@ -69,9 +69,8 @@ export function groupSessions<T extends { updatedAt: string }>(
       held.set(bucket, [session]);
     }
   }
-  return ORDER.filter((bucket) => held.has(bucket)).map((bucket) => ({
-    bucket,
-    label: BUCKET_LABEL[bucket],
-    sessions: held.get(bucket) as T[],
-  }));
+  return ORDER.flatMap((bucket) => {
+    const group = held.get(bucket);
+    return group ? [{ bucket, label: BUCKET_LABEL[bucket], sessions: group }] : [];
+  });
 }

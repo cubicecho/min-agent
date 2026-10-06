@@ -16,7 +16,7 @@ import { useLiveParts } from "@shared/client/use-live-parts.ts";
 import { CHAT_DEFAULTS } from "@shared/defaults.ts";
 import type { LlmConfig, TokenUsage, TurnStats } from "@shared/types.ts";
 import { MS_PER_SECOND, PERCENT } from "@shared/units.ts";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -99,8 +99,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
 
   const session = useQuery({
     queryKey: queryKeys.session(activeId),
-    queryFn: () => api.session(activeId as string),
-    enabled: Boolean(activeId),
+    queryFn: activeId ? () => api.session(activeId) : skipToken,
   });
   const config = useQuery({ queryKey: queryKeys.config, queryFn: api.config });
   const models = useQuery({ queryKey: queryKeys.models, queryFn: api.models });

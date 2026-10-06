@@ -155,7 +155,7 @@ async function onDeviceLocales(): Promise<string[]> {
     return [];
   }
   const { installedLocales } = await ExpoSpeechRecognitionModule.getSupportedLocales({}).catch(
-    () => ({ installedLocales: [] as string[] }),
+    (): { installedLocales: string[] } => ({ installedLocales: [] }),
   );
   return installedLocales;
 }

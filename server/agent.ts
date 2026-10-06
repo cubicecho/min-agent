@@ -983,7 +983,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   let lastRoundTrip = emptyUsage();
   // Measured on the way out, in characters, because nothing on the way back reports it: a
   // completion says how many prompt tokens it read and nothing about where they came from.
-  let lastRequest = null as ContextBreakdown | null;
+  let lastRequest: ContextBreakdown | null = null;
   // The last request's prompt, to tell whether this one found it in the cache. The first step
   // is held to the turn before's last, unless a compaction just rewrote the history under it,
   // or the pruning marker moved and turned results it had sent whole into stubs.
