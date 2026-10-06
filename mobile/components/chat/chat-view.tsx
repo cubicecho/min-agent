@@ -47,6 +47,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { api, streamTurn } from "@/lib/client.ts";
 import { useWide } from "@/lib/layout.ts";
+import { useStableCallback } from "@/lib/stable-callback.ts";
 import { cn } from "@/lib/utils.ts";
 import { useDictation, useSpeech } from "@/lib/voice.ts";
 import { useVoiceSettings } from "@/lib/voice-settings.ts";
@@ -401,29 +402,22 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   }
 
   // A chip must not change identity every render, or the memoised transcript re-renders on
-  // every token. The ref keeps the callback stable while still calling the current `send`.
-  const sendRef = useRef(send);
-  sendRef.current = send;
-  const followup = useCallback((text: string) => void sendRef.current(text), []);
+  // every token.
+  const followup = useStableCallback((text: string) => void send(text));
   // Same for the two transcript buttons, which hang off every stored message.
-  const retryRef = useRef(retry);
-  retryRef.current = retry;
-  const onRetry = useCallback((index: number) => void retryRef.current(index), []);
-  const editRef = useRef(edit);
-  editRef.current = edit;
-  const onEdit = useCallback((index: number) => void editRef.current(index), []);
+  const onRetry = useStableCallback((index: number) => void retry(index));
+  const onEdit = useStableCallback((index: number) => void edit(index));
 
   /** Pressing the button on whatever is already being read is how you stop it. */
-  function toggleSpeak(index: number, text: string) {
+  const onSpeak = useStableCallback((index: number, text: string) => {
     if (spoken === index && speech.speaking) {
       speech.stop();
       return;
     }
-    if (speech.speak(text)) setSpoken(index);
-  }
-  const speakRef = useRef(toggleSpeak);
-  speakRef.current = toggleSpeak;
-  const onSpeak = useCallback((index: number, text: string) => speakRef.current(index, text), []);
+    if (speech.speak(text)) {
+      setSpoken(index);
+    }
+  });
 
   /** What the conversation has cost so far, as the one line the header has room for. */
   const usageLine = shownUsage
