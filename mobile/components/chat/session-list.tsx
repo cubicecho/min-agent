@@ -27,6 +27,7 @@ import type { InputHandle } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
 import { api } from "@/lib/client.ts";
 import { useShortcut } from "@/lib/keys.ts";
+import { invalidateSession, queryKeys } from "@/lib/queries.ts";
 import { cn } from "@/lib/utils.ts";
 
 /**
@@ -58,7 +59,7 @@ export function useNewChat(go: (id: string) => void) {
   return useMutation({
     mutationFn: api.createSession,
     onSuccess: async (created) => {
-      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
       go(created.id);
     },
   });
@@ -73,7 +74,7 @@ function useSessions(activeId?: string) {
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const sessions = useQuery({ queryKey: ["sessions"], queryFn: api.sessions });
+  const sessions = useQuery({ queryKey: queryKeys.sessions, queryFn: api.sessions });
 
   const [query, setQuery] = useState("");
   /** The chat whose rename dialog is open. One dialog for the list, not one per row. */
@@ -89,16 +90,15 @@ function useSessions(activeId?: string) {
   const rename = useMutation({
     mutationFn: ({ id, title }: { id: string; title: string }) => api.renameSession(id, title),
     onSuccess: async (_data, { id }) => {
-      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      // The header above the chat reads its title from the session, not from this list.
-      await queryClient.invalidateQueries({ queryKey: ["session", id] });
+      // Both: the header above the chat reads its title from the session, not from this list.
+      await invalidateSession(queryClient, id);
     },
   });
 
   const remove = useMutation({
     mutationFn: api.deleteSession,
     onSuccess: async (_data, id) => {
-      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
       // Deleting the chat that is open would otherwise leave it on screen with nothing
       // behind it.
       if (id === activeId) router.replace("/");

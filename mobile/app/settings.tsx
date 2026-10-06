@@ -16,6 +16,7 @@ import { SETTINGS_TABS, type SettingsTab } from "@/components/settings/tabs.ts";
 import { VoicePanel } from "@/components/settings/voice-panel.tsx";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/client.ts";
+import { queryKeys } from "@/lib/queries.ts";
 import { cn } from "@/lib/utils";
 
 /**
@@ -97,7 +98,7 @@ export default function SettingsScreen() {
 
   // Same key the MCP panel reads, so opening that tab shows what is already in hand and the
   // two polls share one cache entry rather than racing each other.
-  const mcp = useQuery({ queryKey: ["mcp"], queryFn: api.mcp, refetchInterval: MCP_WATCH });
+  const mcp = useQuery({ queryKey: queryKeys.mcp, queryFn: api.mcp, refetchInterval: MCP_WATCH });
   const { dirty, report } = useDirtyPanels();
 
   // A broken server outranks an unsaved form: one is something that happened to you, the

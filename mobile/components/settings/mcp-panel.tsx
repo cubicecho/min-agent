@@ -26,6 +26,7 @@ import { Form } from "@/components/ui/form";
 import { ChevronRight, Plus, RefreshCw, Trash2, X } from "@/components/ui/icons";
 import { SwitchField as SwitchRow } from "@/components/ui/switch-field";
 import { api } from "@/lib/client.ts";
+import { queryKeys } from "@/lib/queries.ts";
 import { useReportDirty } from "./dirty.tsx";
 import { LongTextField, TextField } from "./fields.tsx";
 import { PanelBody } from "./panel-body.tsx";
@@ -556,7 +557,7 @@ export function McpPanel({ active = true }: { active?: boolean }) {
   // The panel stays mounted behind another tab, so the poll is tied to being looked at. The
   // settings shell keeps a slow one of its own running for the dot on the tab.
   const servers = useQuery({
-    queryKey: ["mcp"],
+    queryKey: queryKeys.mcp,
     queryFn: api.mcp,
     refetchInterval: active ? POLL : false,
   });
@@ -567,7 +568,7 @@ export function McpPanel({ active = true }: { active?: boolean }) {
     // Seeded from what the save read back rather than invalidated: the statuses come back
     // with it, so a refetch would only ask again for what is already in hand.
     onSuccess: (fresh) => {
-      queryClient.setQueryData(["mcp"], fresh);
+      queryClient.setQueryData(queryKeys.mcp, fresh);
       setEditing(null);
     },
   });
@@ -576,7 +577,7 @@ export function McpPanel({ active = true }: { active?: boolean }) {
     mutationFn: api.reconnectMcp,
     // The mutation answers with the same states the query reads, so there is nothing to go
     // and fetch. Only the statuses can have moved.
-    onSuccess: (fresh) => queryClient.setQueryData(["mcp"], fresh),
+    onSuccess: (fresh) => queryClient.setQueryData(queryKeys.mcp, fresh),
   });
 
   const list = servers.data ?? [];
