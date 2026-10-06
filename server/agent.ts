@@ -490,17 +490,22 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     session.compaction?.through !== foldedThrough,
   );
 
+  // Appends to the session and writes the row at the index it landed on, which is its id.
+  const store = async (message: StoredMessage) => {
+    session.messages.push(message);
+    return addMessage(session.id, session.messages.length - 1, message);
+  };
+
   session.model = chosenModel;
   const question: StoredMessage = {
     role: "user",
     content: prompt,
     ...(gathered.context ? { hook_context: gathered.context } : {}),
   };
-  session.messages.push(question);
+  await store(question);
   // Where this turn begins, so the request can be split into what was already there and what
   // this question added — the tool traffic it goes on to produce lands after it too.
   const turnStart = session.messages.length - 1;
-  await addMessage(session.id, session.messages.length - 1, question);
   // Proxied, a shortlist has nowhere to go but the history: the tool array is fixed, so it is
   // answered as though the model had loaded it, and the definitions sit after the question.
   if (proxied && preselected.length) {
@@ -523,8 +528,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       { role: "tool", tool_call_id: id, content },
     ];
     for (const message of exchange) {
-      session.messages.push(message);
-      await addMessage(session.id, session.messages.length - 1, message);
+      await store(message);
     }
   }
   for (const name of preselected) load(name);
@@ -594,11 +598,6 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   let unanswered = 0;
   // Calls `dispatch` answered with a failure. It answers rather than throws; see below.
   const failed = new Set<string>();
-
-  const store = async (message: StoredMessage) => {
-    session.messages.push(message);
-    return addMessage(session.id, session.messages.length - 1, message);
-  };
 
   // The transcript is the session's, not the loop's: `forApi` strips what is private, sends each
   // question with its hooks' context and the pruned results as stubs, and replaces a folded head
