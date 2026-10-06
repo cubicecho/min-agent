@@ -29,6 +29,7 @@ import { api } from "@/lib/client.ts";
 import { EMBEDS_STALE_TIME, visibleEmbeds } from "@/lib/embeds.ts";
 import { useShortcut } from "@/lib/keys.ts";
 import { useBottomInset } from "@/lib/layout.ts";
+import { queryKeys } from "@/lib/queries.ts";
 import { loadServerUrl } from "@/lib/server-url.ts";
 import { colors, pinDarkAppearance } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils";
@@ -60,8 +61,8 @@ const queryClient = new QueryClient({
 });
 
 // Sessions have to stay fresh — the list is redrawn after every turn — but these two do not.
-queryClient.setQueryDefaults(["config"], { staleTime: SETTINGS_STALE_TIME });
-queryClient.setQueryDefaults(["models"], { staleTime: SETTINGS_STALE_TIME });
+queryClient.setQueryDefaults(queryKeys.config, { staleTime: SETTINGS_STALE_TIME });
+queryClient.setQueryDefaults(queryKeys.models, { staleTime: SETTINGS_STALE_TIME });
 
 const MAIN = cn("min-h-0 min-w-0", Platform.select({ web: "h-full", default: "flex-1" }));
 
@@ -97,15 +98,26 @@ function Shell() {
   useShortcut("mod+,", () => router.navigate("/settings"));
 
   const embeds = useQuery({
-    queryKey: ["embeds"],
+    queryKey: queryKeys.embeds,
     queryFn: api.embeds,
     staleTime: EMBEDS_STALE_TIME,
   });
-  const apps = visibleEmbeds(embeds.data);
+  // Worked out once for the rail and the bar, which draw the same places with different rows.
+  const apps = visibleEmbeds(embeds.data).map((embed) => {
+    const Icon = EMBED_ICON[embed.icon];
+    const href = `/embed/${embed.id}` as const;
+    return {
+      embed,
+      label: embedTitle(embed),
+      iconSlot: <Icon />,
+      href,
+      active: pathname === href,
+      isExternal: embed.mode === "external",
+    };
+  });
 
   const onChats = pathname === "/" || pathname.startsWith("/chat/");
   const onSettings = pathname === "/settings";
-  const appHref = (embed: EmbedConfig) => `/embed/${embed.id}`;
 
   return (
     /*
@@ -150,25 +162,20 @@ function Shell() {
                 {apps.length > 0 ? (
                   <SidebarSection
                     title="Apps"
-                    contentSlot={apps.map((embed) => {
-                      const Icon = EMBED_ICON[embed.icon];
-                      return embed.mode === "external" ? (
+                    contentSlot={apps.map(({ embed, label, iconSlot, href, active, isExternal }) =>
+                      isExternal ? (
                         <SidebarNavItem
                           key={embed.id}
-                          label={embedTitle(embed)}
-                          iconSlot={<Icon />}
+                          label={label}
+                          iconSlot={iconSlot}
                           onPress={() => openExternally(embed)}
                         />
                       ) : (
-                        <Link key={embed.id} href={appHref(embed)} asChild>
-                          <SidebarNavItem
-                            label={embedTitle(embed)}
-                            iconSlot={<Icon />}
-                            active={pathname === appHref(embed)}
-                          />
+                        <Link key={embed.id} href={href} asChild>
+                          <SidebarNavItem label={label} iconSlot={iconSlot} active={active} />
                         </Link>
-                      );
-                    })}
+                      ),
+                    )}
                   />
                 ) : null}
               </View>
@@ -187,15 +194,14 @@ function Shell() {
             <Link href="/" asChild>
               <BarNavItem label="Chats" iconSlot={<MessageSquare />} active={onChats} />
             </Link>
-            {apps.map((embed) => {
-              const Icon = EMBED_ICON[embed.icon];
-              return embed.mode === "external" ? (
+            {apps.map(({ embed, label, iconSlot, href, active, isExternal }) =>
+              isExternal ? (
                 // Always a link in the bar, so the address is its `href` on the web; the
                 // press is what a device, which has no `href`, goes by.
                 <BarNavItem
                   key={embed.id}
-                  label={embedTitle(embed)}
-                  iconSlot={<Icon />}
+                  label={label}
+                  iconSlot={iconSlot}
                   href={embed.url}
                   onPress={(event) => {
                     event.preventDefault();
@@ -203,15 +209,11 @@ function Shell() {
                   }}
                 />
               ) : (
-                <Link key={embed.id} href={appHref(embed)} asChild>
-                  <BarNavItem
-                    label={embedTitle(embed)}
-                    iconSlot={<Icon />}
-                    active={pathname === appHref(embed)}
-                  />
+                <Link key={embed.id} href={href} asChild>
+                  <BarNavItem label={label} iconSlot={iconSlot} active={active} />
                 </Link>
-              );
-            })}
+              ),
+            )}
             <Link href="/settings" asChild>
               <BarNavItem label="Settings" iconSlot={<Settings />} active={onSettings} />
             </Link>
