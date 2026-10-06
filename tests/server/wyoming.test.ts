@@ -148,7 +148,7 @@ describe("transcribe", () => {
     // Fifteen tenths of a second, and every sample of it, in order.
     const chunks = said.filter((frame) => frame.type === "audio-chunk");
     expect(chunks).toHaveLength(15);
-    expect(Buffer.concat(chunks.map((frame) => frame.payload as Buffer))).toEqual(pcm);
+    expect(Buffer.concat(chunks.map((frame) => frame.payload ?? Buffer.alloc(0)))).toEqual(pcm);
   });
 
   it("reassembles an answer that arrives a byte at a time", async () => {

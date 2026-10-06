@@ -7,6 +7,7 @@ import { clampPruning, clearedChars, planPrune, sentWithStubs } from "../../serv
 import { proxyLoadResult } from "../../server/tool-proxy.ts";
 import { PRUNING_DEFAULTS } from "../../shared/defaults.ts";
 import type { Session, StoredMessage } from "../../shared/types.ts";
+import { sessionOf, textOf } from "../helpers.ts";
 
 /**
  * Pruning as far as it is pure: what a marker does to what is sent, when the rule moves it, and
@@ -41,7 +42,7 @@ const turn = (question: string, count: number, chars = 2000, from = 0): StoredMe
 ];
 
 const session = (messages: StoredMessage[], patch: Partial<Session> = {}) =>
-  ({ id: "s1", messages, ...patch }) as Session;
+  sessionOf({ messages, ...patch });
 
 /** Where the tool results are, by index into the transcript. */
 const results = (messages: StoredMessage[]) =>
@@ -104,8 +105,8 @@ describe("sentWithStubs", () => {
   });
 
   it("leaves a short result whole wherever it is", () => {
-    const messages = [
-      { role: "user", content: "q" } as StoredMessage,
+    const messages: StoredMessage[] = [
+      { role: "user", content: "q" },
       ...step("a", result("edge", PRUNING_DEFAULTS.maxChars)),
       ...step("b", result("over", PRUNING_DEFAULTS.maxChars + 1)),
       ...step("c", "ok"),
@@ -156,8 +157,8 @@ describe("what is exempt from stubbing", () => {
   it("keeps a proxied load's definitions whole behind the marker", () => {
     const definitions = proxyLoadResult(resolved, catalog, [definition], new Set());
     expect(definitions.length).toBeGreaterThan(PRUNING_DEFAULTS.maxChars);
-    const messages = [
-      { role: "user", content: "q" } as StoredMessage,
+    const messages: StoredMessage[] = [
+      { role: "user", content: "q" },
       ...step("load", definitions, "load_tools"),
       ...step("read", result("file"), "call_tool"),
     ];
@@ -172,8 +173,8 @@ describe("what is exempt from stubbing", () => {
 
   it("hands back the transcript itself when definitions are all there is to clear", () => {
     const definitions = proxyLoadResult(resolved, catalog, [definition], new Set());
-    const messages = [
-      { role: "user", content: "q" } as StoredMessage,
+    const messages: StoredMessage[] = [
+      { role: "user", content: "q" },
       ...step("load", definitions, "load_tools"),
     ];
     expect(sentWithStubs(messages, { through: messages.length })).toBe(messages);
@@ -182,8 +183,8 @@ describe("what is exempt from stubbing", () => {
   it("stubs an on-demand load's result, which only repeats what the tool array declares", () => {
     const loaded = loadResult(resolved, catalog, new Set());
     expect(loaded.length).toBeGreaterThan(PRUNING_DEFAULTS.maxChars);
-    const messages = [
-      { role: "user", content: "q" } as StoredMessage,
+    const messages: StoredMessage[] = [
+      { role: "user", content: "q" },
       ...step("load", loaded, "load_tools"),
     ];
     const sent = sentWithStubs(messages, { through: messages.length });
@@ -193,8 +194,8 @@ describe("what is exempt from stubbing", () => {
   it("stubs a proxied load that held no definitions: a pointer back, or a refusal", () => {
     const again = proxyLoadResult(resolved, catalog, [definition], new Set(["fs__read"]));
     const pointer = `${again}\n${"-".repeat(PRUNING_DEFAULTS.maxChars)}`;
-    const messages = [
-      { role: "user", content: "q" } as StoredMessage,
+    const messages: StoredMessage[] = [
+      { role: "user", content: "q" },
       ...step("load", pointer, "load_tools"),
     ];
     const sent = sentWithStubs(messages, { through: messages.length });
@@ -203,8 +204,8 @@ describe("what is exempt from stubbing", () => {
   });
 
   it("stubs the resource tools' results like any other", () => {
-    const messages = [
-      { role: "user", content: "q" } as StoredMessage,
+    const messages: StoredMessage[] = [
+      { role: "user", content: "q" },
       ...step("list", result("uris"), "list_resources"),
       ...step("read", result("resource"), "read_resource"),
     ];
@@ -295,7 +296,7 @@ describe("planPrune", () => {
   it("does not count results a fold ahead of the marker has already taken out", () => {
     // Two turns; the fold ends where the second begins, well ahead of a marker that is not set.
     const first = turn("q0", 6);
-    const messages = [...first, ...turn("q1", 8, 2000, 6)];
+    const messages: StoredMessage[] = [...first, ...turn("q1", 8, 2000, 6)];
     const folded = { summary: "notes", through: first.length, at: AT };
     const at = results(messages);
     const target = at[at.length - PRUNING_DEFAULTS.keepLast];
@@ -311,7 +312,7 @@ describe("planPrune", () => {
   });
 
   it("does not move for a target the fold has already passed", () => {
-    const messages = [...turn("q0", 12), { role: "user", content: "q1" } as StoredMessage];
+    const messages: StoredMessage[] = [...turn("q0", 12), { role: "user", content: "q1" }];
     const folded = { summary: "notes", through: messages.length - 1, at: AT };
     const held = session(messages, { compaction: folded });
     expect(planPrune(held, 1000)).toBeUndefined();
@@ -320,7 +321,7 @@ describe("planPrune", () => {
 
   it("counts from the marker when the fold is behind it", () => {
     const first = turn("q0", 2);
-    const messages = [...first, ...turn("q1", 12, 2000, 2)];
+    const messages: StoredMessage[] = [...first, ...turn("q1", 12, 2000, 2)];
     const at = results(messages);
     const marker = at[5];
     const target = at[at.length - PRUNING_DEFAULTS.keepLast];
@@ -336,8 +337,8 @@ describe("planPrune", () => {
 
   it("does not count what would be left whole: short results and a proxied load", () => {
     const definitions = `Loaded 1 tool(s). Run them with \`call_tool\`.\n\n${"d".repeat(4000)}`;
-    const messages = [
-      { role: "user", content: "q" } as StoredMessage,
+    const messages: StoredMessage[] = [
+      { role: "user", content: "q" },
       ...step("load", definitions, "load_tools"),
       ...step("short", "ok"),
       ...step("long", result("long")),
@@ -410,8 +411,11 @@ describe("forApi with a pruning marker", () => {
   };
 
   it("sends a session that has no marker exactly as it is stored, however long", () => {
-    const messages = [...turn("q0", 30, 8000), { role: "assistant", content: "Done." }];
-    const sent = forApi(session(messages as StoredMessage[]));
+    const messages: StoredMessage[] = [
+      ...turn("q0", 30, 8000),
+      { role: "assistant", content: "Done." },
+    ];
+    const sent = forApi(session(messages));
     expect(sent).toEqual(messages);
   });
 
@@ -439,7 +443,7 @@ describe("forApi with a pruning marker", () => {
 
   it("stubs behind a fold's summary too, by the stored index", () => {
     const first = turn("q0", 2);
-    const messages = [...first, ...turn("q1", 8, 2000, 2)];
+    const messages: StoredMessage[] = [...first, ...turn("q1", 8, 2000, 2)];
     const at = results(messages);
     const chat = session(messages, {
       compaction: { summary: "notes", through: first.length, at: AT },
@@ -519,8 +523,6 @@ describe("forApi with a pruning marker", () => {
     // Twenty-two requests, five of which missed: not one per tool step.
     expect(moves).toHaveLength(5);
     // And through all of it the transcript kept every result whole.
-    expect(at.every((index) => (chat.messages[index].content as string).length === 2000)).toBe(
-      true,
-    );
+    expect(at.every((index) => textOf(chat.messages[index]).length === 2000)).toBe(true);
   });
 });

@@ -1,6 +1,7 @@
 import { createClient } from "@shared/client/api.ts";
 import type { LlmConfigView } from "@shared/types.ts";
 import { describe, expect, it } from "vitest";
+import { isRecord, jsonBody } from "../../helpers.ts";
 
 /** What the `Config` query answers with — the row the mutation is expected to patch. */
 const STORED = {
@@ -42,15 +43,15 @@ function recording() {
 
   const { api } = createClient({
     baseUrl: "/graphql",
-    fetch: (async (_url: string, init: RequestInit) => {
-      const { query, variables } = JSON.parse(init.body as string);
-      const operation = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "";
-      sent.push({ operation, variables });
+    fetch: async (_url, init) => {
+      const { query, variables } = jsonBody(String(init?.body));
+      const operation = /(?:query|mutation)\s+(\w+)/.exec(String(query))?.[1] ?? "";
+      sent.push({ operation, variables: isRecord(variables) ? variables : {} });
 
       const data = replyTo(operation);
 
       return new Response(JSON.stringify({ data }), { status: 200 });
-    }) as unknown as typeof fetch,
+    },
   });
 
   return { api, sent, of: (operation: string) => sent.filter((s) => s.operation === operation) };

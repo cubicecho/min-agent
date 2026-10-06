@@ -13,14 +13,14 @@ const stats = (total: number): TurnStats => ({
 });
 
 /** user, assistant+tool call, tool result, assistant — two turns, the first with a tool in it. */
-const transcript = [
+const transcript: StoredMessage[] = [
   { role: "user", content: "first" },
   { role: "assistant", content: "", tool_calls: [] },
   { role: "tool", content: "result", tool_call_id: "1" },
   { role: "assistant", content: "answer", stats: stats(100) },
   { role: "user", content: "second" },
   { role: "assistant", content: "again", stats: stats(40) },
-] as unknown as StoredMessage[];
+];
 
 describe("messageText", () => {
   it("reads a plain string", () => {
@@ -33,7 +33,7 @@ describe("messageText", () => {
         content: [
           { type: "text", text: "a" },
           { type: "text", text: "b" },
-        ] as never,
+        ],
       }),
     ).toBe("ab");
   });

@@ -7,6 +7,7 @@ import {
   type Session,
   type StoredMessage,
 } from "../../shared/types.ts";
+import { jsonBody, messagesOf, sessionOf, turnStats } from "../helpers.ts";
 
 /**
  * Compaction as a turn does it, pinned from outside: when the summary is asked for, what the
@@ -87,7 +88,7 @@ async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Res
   if (isOtherRequest) {
     return new Response("{}", { status: 404 });
   }
-  const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+  const body = jsonBody(String(init?.body));
   requests.push(body);
 
   if (!body.stream) {
@@ -134,8 +135,6 @@ async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Res
 const asked = () => requests.filter((body) => !body.stream);
 const chatted = () => requests.filter((body) => body.stream);
 
-type Sent = { role: string; content: unknown };
-
 /** A window of 1000 tokens, so a kept tail of 350, and a model configured to write summaries. */
 const configure = (patch: Partial<LlmConfig> = {}) => {
   settings = llmConfigSchema.parse({
@@ -159,44 +158,34 @@ const long = (tag: string) => `${tag} ${"x".repeat(400 - tag.length - 1)}`;
  * @returns Fourteen messages. Walking back from the end, three fit a 350-token tail, and the
  * first user message at or after that point is index 12.
  */
-const transcript = (contextTokens: number): StoredMessage[] =>
-  [
-    { role: "user", content: long("q0"), hook_context: "<context>tea</context>" },
-    { role: "assistant", content: long("a0"), reasoning_content: "pondering ".repeat(200) },
-    { role: "user", content: long("q1") },
-    {
-      role: "assistant",
-      content: null,
-      tool_calls: [
-        { id: "call-1", type: "function", function: { name: "fs__ls", arguments: '{"path":"/"}' } },
-      ],
-    },
-    { role: "tool", tool_call_id: "call-1", content: long("listing") },
-    { role: "assistant", content: long("a1") },
-    { role: "user", content: long("q2") },
-    { role: "assistant", content: long("a2") },
-    { role: "user", content: long("q3") },
-    { role: "assistant", content: long("a3") },
-    { role: "user", content: long("q4") },
-    { role: "assistant", content: long("a4") },
-    { role: "user", content: long("q5") },
-    {
-      role: "assistant",
-      content: long("a5"),
-      reasoning_content: "thinking",
-      followups: ["Why?"],
-      stats: { model: "m", contextTokens, lastPromptTokens: 700 },
-    },
-  ] as StoredMessage[];
-
-const session = (patch: Partial<Session> = {}): Session => ({
-  id: "s1",
-  title: "A chat",
-  createdAt: "2026-01-01T00:00:00.000Z",
-  updatedAt: "2026-01-01T00:00:00.000Z",
-  messages: [],
-  ...patch,
-});
+const transcript = (contextTokens: number): StoredMessage[] => [
+  { role: "user", content: long("q0"), hook_context: "<context>tea</context>" },
+  { role: "assistant", content: long("a0"), reasoning_content: "pondering ".repeat(200) },
+  { role: "user", content: long("q1") },
+  {
+    role: "assistant",
+    content: null,
+    tool_calls: [
+      { id: "call-1", type: "function", function: { name: "fs__ls", arguments: '{"path":"/"}' } },
+    ],
+  },
+  { role: "tool", tool_call_id: "call-1", content: long("listing") },
+  { role: "assistant", content: long("a1") },
+  { role: "user", content: long("q2") },
+  { role: "assistant", content: long("a2") },
+  { role: "user", content: long("q3") },
+  { role: "assistant", content: long("a3") },
+  { role: "user", content: long("q4") },
+  { role: "assistant", content: long("a4") },
+  { role: "user", content: long("q5") },
+  {
+    role: "assistant",
+    content: long("a5"),
+    reasoning_content: "thinking",
+    followups: ["Why?"],
+    stats: turnStats({ contextTokens, lastPromptTokens: 700 }),
+  },
+];
 
 const run = (chat: Session, prompt = "and now?") =>
   runTurn({ session: chat, prompt, onEvent: () => {} });
@@ -237,7 +226,7 @@ afterEach(() => {
 describe("a turn that finds the window filling", () => {
   it("folds the head into a summary, stores it, and sends the summary in its place", async () => {
     summaries = ["  the notes  "];
-    const chat = session({ messages: transcript(750) });
+    const chat = sessionOf({ messages: transcript(750) });
 
     const stats = await run(chat);
 
@@ -303,7 +292,7 @@ describe("a turn that finds the window filling", () => {
   it("tells beforeCompact what is being folded, by its stored indexes", async () => {
     summaries = ["the notes"];
 
-    await run(session({ messages: transcript(750) }));
+    await run(sessionOf({ messages: transcript(750) }));
 
     // What the user and the assistant said: the call with no words and its result are left out.
     const said = [0, 1, 2, 5, 6, 7, 8, 9, 10, 11];
@@ -327,11 +316,11 @@ describe("a turn that finds the window filling", () => {
   it("continues an earlier fold's notes, and starts where that fold ended", async () => {
     summaries = ["newer notes"];
     const earlier = { summary: "older notes", through: 6, at: "2025-12-31T00:00:00.000Z" };
-    const chat = session({ messages: transcript(750), compaction: earlier });
+    const chat = sessionOf({ messages: transcript(750), compaction: earlier });
 
     await run(chat);
 
-    const [, input] = asked()[0].messages as Sent[];
+    const [, input] = messagesOf(asked()[0]);
     expect(input.content).toBe(
       `Notes so far:\nolder notes\n\nContinue them with this exchange:\n\n${[
         `user: ${long("q2")}`,
@@ -348,7 +337,7 @@ describe("a turn that finds the window filling", () => {
       through: 12,
       at: "2026-01-01T00:00:00.000Z",
     });
-    expect((chatted()[0].messages as Sent[])[1]).toEqual({
+    expect(messagesOf(chatted()[0])[1]).toEqual({
       role: "system",
       content: `${SUMMARY_LEAD}newer notes`,
     });
@@ -369,12 +358,14 @@ describe("a turn that finds the window filling", () => {
               ms: 1,
               inject: false,
               maxTokens: 1000,
+              // Not a field an outcome has, which is the test: a server answering with more
+              // than the protocol carries. So the outcome is asserted, not built.
               veto: true,
             } as HookOutcome,
           ]
         : [],
     );
-    const chat = session({ messages: transcript(750) });
+    const chat = sessionOf({ messages: transcript(750) });
 
     await run(chat);
 
@@ -388,14 +379,14 @@ describe("a turn that leaves the transcript whole", () => {
   const whole = (chat: Session) => {
     expect(chat.compaction).toBeUndefined();
     expect(updates.some((patch) => "compaction" in patch)).toBe(false);
-    const messages = chatted()[0].messages as Sent[];
+    const messages = messagesOf(chatted()[0]);
     expect(messages).toHaveLength(1 + 14 + 1);
     expect(messages[1].content).toContain("<context>tea</context>");
     expect(messages[1].content).toContain(long("q0"));
   };
 
   it("does not fold below three quarters of the window", async () => {
-    const chat = session({ messages: transcript(749) });
+    const chat = sessionOf({ messages: transcript(749) });
 
     await run(chat);
 
@@ -405,7 +396,7 @@ describe("a turn that leaves the transcript whole", () => {
   });
 
   it("does not fold when the last turn reported no usage", async () => {
-    const chat = session({ messages: transcript(0) });
+    const chat = sessionOf({ messages: transcript(0) });
 
     await run(chat);
 
@@ -415,7 +406,7 @@ describe("a turn that leaves the transcript whole", () => {
 
   it("does not fold without a model configured for it", async () => {
     configure({ taskModels: {} });
-    const unconfigured = session({ messages: transcript(990) });
+    const unconfigured = sessionOf({ messages: transcript(990) });
     await run(unconfigured);
     expect(asked()).toHaveLength(0);
     whole(unconfigured);
@@ -424,7 +415,7 @@ describe("a turn that leaves the transcript whole", () => {
   it("does not fold when the only legal cut takes fewer than two messages", async () => {
     // A fold already through 11 leaves one message ahead of the cut at 12.
     const earlier = { summary: "older notes", through: 11, at: "2025-12-31T00:00:00.000Z" };
-    const chat = session({ messages: transcript(750), compaction: earlier });
+    const chat = sessionOf({ messages: transcript(750), compaction: earlier });
 
     await run(chat);
 
@@ -435,7 +426,7 @@ describe("a turn that leaves the transcript whole", () => {
 
   it("stores nothing when the summary comes back empty, though the hooks were told", async () => {
     summaries = ["   "];
-    const chat = session({ messages: transcript(750) });
+    const chat = sessionOf({ messages: transcript(750) });
 
     await run(chat);
 
@@ -446,7 +437,7 @@ describe("a turn that leaves the transcript whole", () => {
 
   it("goes ahead on the whole transcript when the summariser fails", async () => {
     summaries = [{ refusal: "no" }, { refusal: "no" }, { refusal: "no" }];
-    const chat = session({ messages: transcript(750) });
+    const chat = sessionOf({ messages: transcript(750) });
 
     const stats = await run(chat);
 

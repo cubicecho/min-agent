@@ -72,12 +72,12 @@ describe("contextFill", () => {
 
 describe("latestStats", () => {
   it("finds the most recent turn that carries stats", () => {
-    const messages = [
+    const messages: StoredMessage[] = [
       { role: "assistant", content: "one", stats: { ...stats, totalMs: 1 } },
       { role: "user", content: "two" },
       { role: "assistant", content: "three", stats: { ...stats, totalMs: 2 } },
       { role: "user", content: "four" },
-    ] as StoredMessage[];
+    ];
     expect(latestStats(messages)?.totalMs).toBe(2);
     expect(latestStats([])).toBeNull();
   });

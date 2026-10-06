@@ -9,6 +9,7 @@ import {
   type StreamEvent,
   type TurnStats,
 } from "../../shared/types.ts";
+import { declaredTools, errorOf, jsonBody, sessionOf } from "../helpers.ts";
 
 /**
  * The edges of `runTurn`'s loop that `run-turn.test.ts` leaves alone: what a stop does at each
@@ -143,10 +144,7 @@ async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Res
   return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
 }
 
-const bodies = () => requests.map((raw) => JSON.parse(raw) as Record<string, unknown>);
-
-const declared = (body: Record<string, unknown>) =>
-  ((body.tools as ToolDefinition[] | undefined) ?? []).map((tool) => tool.function.name);
+const bodies = () => requests.map(jsonBody);
 
 const tool = (name: string, description: string, properties = {}): ToolDefinition => ({
   type: "function",
@@ -179,15 +177,6 @@ const configure = (patch: Partial<LlmConfig> = {}) => {
   });
 };
 
-const session = (patch: Partial<Session> = {}): Session => ({
-  id: "s1",
-  title: "A chat",
-  createdAt: "2026-01-01T00:00:00.000Z",
-  updatedAt: "2026-01-01T00:00:00.000Z",
-  messages: [],
-  ...patch,
-});
-
 async function run(
   chat: Session,
   prompt: string,
@@ -210,7 +199,7 @@ async function run(
     },
   }).then(
     (stats) => ({ stats }),
-    (error: unknown) => ({ error: error as Error }),
+    (error: unknown) => ({ error: errorOf(error) }),
   );
   return { events, ...settled };
 }
@@ -222,8 +211,7 @@ const results = (events: StreamEvent[]) =>
   );
 
 /** Every marker the turn stored, in order. */
-const markers = () =>
-  updates.flatMap((patch) => ("pruning" in patch ? [patch.pruning as { through: number }] : []));
+const markers = () => updates.flatMap((patch) => ("pruning" in patch ? [patch.pruning] : []));
 
 /** A tool call as a stored assistant message carries it. */
 const call = (id: string, name: string, args: string) => ({
@@ -290,7 +278,7 @@ describe("the order a tool step is written and said in", () => {
       says("Done."),
     ];
 
-    await run(session(), "look");
+    await run(sessionOf(), "look");
 
     expect(log).toEqual([
       "store user",
@@ -326,7 +314,7 @@ describe("stopping a turn while its tools run", () => {
       says("never asked for"),
     ];
 
-    const { events, error } = await run(session(), "look", {
+    const { events, error } = await run(sessionOf(), "look", {
       signal: controller.signal,
       onEvent: (event) => {
         if (event.type === "tool_use" && event.id === "c3") {
@@ -384,7 +372,7 @@ describe("stopping a turn while its tools run", () => {
     };
     script = [asks(["c1", "fs__ls", "{}"]), says("never asked for")];
 
-    const { events, error } = await run(session(), "look", { signal: controller.signal });
+    const { events, error } = await run(sessionOf(), "look", { signal: controller.signal });
 
     expect(error).toBeInstanceOf(Error);
     expect(requests).toHaveLength(1);
@@ -410,7 +398,7 @@ describe("stopping a turn between steps", () => {
     };
     script = [asks(["c1", "fs__ls", "{}"]), says("never asked for")];
 
-    const { events, error } = await run(session(), "look", { signal: controller.signal });
+    const { events, error } = await run(sessionOf(), "look", { signal: controller.signal });
 
     expect(error).toBeInstanceOf(Error);
     // The signal's own reason, read before the next request is built. Before #52 it was the
@@ -440,7 +428,7 @@ describe("a turn that ends on the step after a long load", () => {
     configure({ toolDiscovery: "ondemand", maxToolIterations: 1 });
     offered = many;
     script = [asks(["c1", "load_tools", '{"names":["fs__tool_*"]}']), says("never asked for")];
-    const chat = session();
+    const chat = sessionOf();
 
     const { events, error } = await run(chat, "get ready");
 
@@ -459,7 +447,7 @@ describe("a turn that ends on the step after a long load", () => {
     const controller = new AbortController();
     script = [asks(["c1", "load_tools", '{"names":["fs__tool_*"]}']), says("never asked for")];
 
-    const { events, error } = await run(session(), "get ready", {
+    const { events, error } = await run(sessionOf(), "get ready", {
       signal: controller.signal,
       onEvent: (event) => {
         if (event.type === "tool_result") {
@@ -495,7 +483,7 @@ describe("the pruning marker at the end of a turn that did not finish", () => {
     // The eighth result is the one that earns a move in this window.
     configure({ contextLimit: 4000, maxToolIterations: 8 });
     script = [...reads(8), says("never asked for")];
-    const chat = session();
+    const chat = sessionOf();
 
     const { error } = await run(chat, "read them all");
 
@@ -509,7 +497,7 @@ describe("the pruning marker at the end of a turn that did not finish", () => {
     configure({ contextLimit: 4000 });
     const controller = new AbortController();
     script = [...reads(8), says("never asked for")];
-    const chat = session();
+    const chat = sessionOf();
 
     const { error } = await run(chat, "read them all", {
       signal: controller.signal,
@@ -540,7 +528,7 @@ describe("arguments a model gets wrong", () => {
     offered = [READ, LS];
     script = [asks(["c1", "load_tools", "{'names': ['fs__read'],}"]), says("Sorry.")];
 
-    const { events } = await run(session(), "get ready");
+    const { events } = await run(sessionOf(), "get ready");
 
     expect(results(events)).toEqual([
       [
@@ -549,7 +537,7 @@ describe("arguments a model gets wrong", () => {
         false,
       ],
     ]);
-    expect(bodies().map(declared)).toEqual([["load_tools"], ["load_tools", "fs__read"]]);
+    expect(bodies().map(declaredTools)).toEqual([["load_tools"], ["load_tools", "fs__read"]]);
     expect(stored[1]).toMatchObject({
       tool_calls: [call("c1", "load_tools", "{'names': ['fs__read'],}")],
     });
@@ -564,7 +552,7 @@ describe("arguments a model gets wrong", () => {
     configure({ toolDiscovery: "ondemand" });
     offered = [READ, LS];
     script = [asks(["c1", "fs__read", "{'path': '/a',}"]), says("Sorry.")];
-    const chat = session();
+    const chat = sessionOf();
 
     const { events } = await run(chat, "read it");
 
@@ -572,7 +560,7 @@ describe("arguments a model gets wrong", () => {
     expect(results(events)).toEqual([
       ["c1", "model produced invalid tool arguments: {'path': '/a',}", true],
     ]);
-    expect(bodies().map(declared)).toEqual([["load_tools"], ["load_tools", "fs__read"]]);
+    expect(bodies().map(declaredTools)).toEqual([["load_tools"], ["load_tools", "fs__read"]]);
     expect(chat.loadedTools).toEqual([]);
   });
 
@@ -582,7 +570,7 @@ describe("arguments a model gets wrong", () => {
     mcp.call.mockResolvedValue("contents");
     script = [asks(["c1", "fs__read", '["/a"]']), says("Read.")];
 
-    const { events } = await run(session(), "read it");
+    const { events } = await run(sessionOf(), "read it");
 
     expect(mcp.call).not.toHaveBeenCalled();
     expect(results(events)).toEqual([
@@ -601,7 +589,7 @@ describe("arguments a model gets wrong", () => {
       says("Sorry."),
     ];
 
-    const { events } = await run(session(), "read it");
+    const { events } = await run(sessionOf(), "read it");
 
     expect(mcp.call).not.toHaveBeenCalled();
     const cutOff =
@@ -620,7 +608,7 @@ describe("a reply that ran out of room", () => {
   it("is stored as the answer, and logged as cut short", async () => {
     script = [says("Half an ans", "length")];
 
-    const { stats } = await run(session(), "hi");
+    const { stats } = await run(sessionOf(), "hi");
 
     expect(stats).toMatchObject({ iterations: 1 });
     expect(stored[1]).toMatchObject({ role: "assistant", content: "Half an ans" });
@@ -634,7 +622,7 @@ describe("a request refused on a later step", () => {
     mcp.call.mockResolvedValue("a.txt");
     script = [asks(["c1", "fs__ls", "{}"]), refuses("the model has gone away")];
 
-    const { error } = await run(session(), "look");
+    const { error } = await run(sessionOf(), "look");
 
     expect(error?.name).toBe("Error");
     expect(error?.message).toBe("400 the model has gone away");
@@ -651,7 +639,7 @@ describe("a request refused on a later step", () => {
       refuses("This model's maximum context length is 4096 tokens."),
     ];
 
-    const { error } = await run(session(), "look");
+    const { error } = await run(sessionOf(), "look");
 
     expect(error?.name).toBe("ContextOverflow");
     expect(error?.message).toBe(
@@ -676,8 +664,8 @@ describe("the tools a later step declares", () => {
     });
     script = [asks(["c1", "fs__ls", "{}"]), says("Done.")];
 
-    await run(session(), "look");
+    await run(sessionOf(), "look");
 
-    expect(bodies().map(declared)).toEqual([["fs__ls"], ["fs__ls"]]);
+    expect(bodies().map(declaredTools)).toEqual([["fs__ls"], ["fs__ls"]]);
   });
 });

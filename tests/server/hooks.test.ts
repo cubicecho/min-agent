@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { contextBlocks, type HookOutcome } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { McpServerConfig, Session, StoredMessage } from "../../shared/types.ts";
+import type { McpServerConfig, StoredMessage } from "../../shared/types.ts";
+import { sessionOf, textOf } from "../helpers.ts";
 
 const runHooks = vi.fn();
 
@@ -20,7 +21,7 @@ const { assertMcpServers } = await import("../../server/config.ts");
  * The pool is mocked out. Its running of hooks is tested where it lives.
  */
 
-const session = (messages: StoredMessage[]) => ({ id: "s1", messages }) as unknown as Session;
+const session = (messages: StoredMessage[]) => sessionOf({ messages });
 
 const transcript: StoredMessage[] = [
   { role: "user", content: "what is in /tmp?" },
@@ -31,14 +32,14 @@ const transcript: StoredMessage[] = [
   },
   { role: "tool", tool_call_id: "c1", content: "a.txt\nb.txt" },
   { role: "assistant", content: "Two files." },
-] as StoredMessage[];
+];
 
 /**
  * Every shape a stored message's content comes in: padded text, an answer that is only tool
  * calls, text in parts, a part that is not text, a refusal, blank text, and the roles that are
  * not the conversation.
  */
-const mixed = [
+const mixed: StoredMessage[] = [
   { role: "user", content: "  what is in /tmp?  " },
   {
     role: "assistant",
@@ -65,7 +66,7 @@ const mixed = [
   { role: "assistant", content: "   " },
   { role: "developer", content: "dev" },
   { role: "user", content: "last" },
-] as StoredMessage[];
+];
 
 const outcome = (patch: Partial<HookOutcome>): HookOutcome => ({
   serverId: "mem",
@@ -109,8 +110,11 @@ describe("turnMessages", () => {
 
     // The same message sent again is the same memory; an answer retried into its place is not.
     expect(turnMessages(session(transcript), 0)[1].uuid).toBe(answer.uuid);
-    const retried = [...transcript.slice(0, 3), { role: "assistant", content: "Three." }];
-    expect(turnMessages(session(retried as StoredMessage[]), 3)[0].uuid).not.toBe(answer.uuid);
+    const retried: StoredMessage[] = [
+      ...transcript.slice(0, 3),
+      { role: "assistant", content: "Three." },
+    ];
+    expect(turnMessages(session(retried), 3)[0].uuid).not.toBe(answer.uuid);
   });
 
   it("reads only the stretch it is asked for", () => {
@@ -168,16 +172,16 @@ describe("withContext", () => {
   it("puts the context ahead of the question, and leaves the stored one alone", () => {
     const sent = withContext(question, '<context source="Memory">likes tea</context>');
     expect(sent.content).toContain('<context source="Memory">likes tea</context>');
-    expect((sent.content as string).endsWith("now")).toBe(true);
+    expect(textOf(sent).endsWith("now")).toBe(true);
     expect(question.content).toBe("now");
   });
 
   it("adds a part to a question that is already a list of parts", () => {
     const sent = withContext({ role: "user", content: [{ type: "text", text: "now" }] }, "ctx");
-    const parts = sent.content as OpenAI.ChatCompletionContentPartText[];
-    expect(parts).toHaveLength(2);
-    expect(parts[0].text).toContain("ctx");
-    expect(parts[1].text).toBe("now");
+    expect(sent.content).toEqual([
+      { type: "text", text: expect.stringContaining("ctx") },
+      { type: "text", text: "now" },
+    ]);
   });
 
   it("returns the question as it is when there is no context", () => {

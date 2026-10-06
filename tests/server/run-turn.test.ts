@@ -15,6 +15,15 @@ import {
   type StreamEvent,
   type TurnStats,
 } from "../../shared/types.ts";
+import {
+  declaredTools,
+  errorOf,
+  jsonBody,
+  messagesOf,
+  sessionOf,
+  textOf,
+  turnStats,
+} from "../helpers.ts";
 
 /**
  * `runTurn` as it behaves today, pinned from outside: what it posts to the endpoint, what it
@@ -188,20 +197,15 @@ async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Res
  *
  * @returns Each body posted, parsed.
  */
-const bodies = () => requests.map((raw) => JSON.parse(raw) as Record<string, unknown>);
+const bodies = () => requests.map(jsonBody);
 
 /**
  * @param value Anything a body carries.
  * @returns It as it reads once it has been through a request body.
  */
+// The assertion is the helper: a round trip through JSON hands back the same shape, less what
+// JSON does not carry, and nothing but the caller's type says which shape that was.
 const sent = <T>(value: T) => JSON.parse(JSON.stringify(value)) as T;
-
-/**
- * @param body One posted body.
- * @returns The names it declared, in the order it declared them.
- */
-const declared = (body: Record<string, unknown>) =>
-  ((body.tools as ToolDefinition[] | undefined) ?? []).map((tool) => tool.function.name);
 
 /**
  * @param name The qualified name, `<server>__<tool>`.
@@ -253,19 +257,6 @@ const offer = (...tools: ToolDefinition[]) => {
 };
 
 /**
- * @param patch What differs from an empty, already-titled chat.
- * @returns A session for the turn to write to.
- */
-const session = (patch: Partial<Session> = {}): Session => ({
-  id: "s1",
-  title: "A chat",
-  createdAt: "2026-01-01T00:00:00.000Z",
-  updatedAt: "2026-01-01T00:00:00.000Z",
-  messages: [],
-  ...patch,
-});
-
-/**
  * @param chat The session, which the turn writes to.
  * @param prompt What the user typed.
  * @param onEvent Called with each event after it is recorded.
@@ -288,7 +279,7 @@ async function run(
     },
   }).then(
     (stats) => ({ stats }),
-    (error: unknown) => ({ error: error as Error }),
+    (error: unknown) => ({ error: errorOf(error) }),
   );
   return { events, ...settled };
 }
@@ -353,12 +344,12 @@ describe("the request body", () => {
     configure({ toolDiscovery: "eager", systemPrompt: "" });
     offer(READ, LS, NOW);
     script = [says("hello")];
-    const earlier = [
+    const earlier: StoredMessage[] = [
       { role: "user", content: "earlier" },
       { role: "assistant", content: "before", reasoning_content: "thinking", followups: ["more"] },
-    ] as StoredMessage[];
+    ];
 
-    await run(session({ messages: earlier }), "hi");
+    await run(sessionOf({ messages: earlier }), "hi");
 
     // The whole request, in the order its fields are serialised.
     expect(requests).toEqual([
@@ -383,7 +374,7 @@ describe("the request body", () => {
   it("sends no tools field when there is nothing to declare", async () => {
     script = [says("hello")];
 
-    await run(session(), "hi");
+    await run(sessionOf(), "hi");
 
     expect(Object.keys(bodies()[0])).toEqual([
       "max_tokens",
@@ -403,7 +394,7 @@ describe("the request body", () => {
     script = [says("hello")];
 
     // Carried in the order it was loaded, which is neither name order nor the pool's.
-    await run(session({ loadedTools: ["fs__read", "clock__now"] }), "hi");
+    await run(sessionOf({ loadedTools: ["fs__read", "clock__now"] }), "hi");
 
     // One request, the turn's own: with no tool-select model there is no preselection to send.
     expect(requests).toHaveLength(1);
@@ -445,7 +436,7 @@ describe("the request body", () => {
     offer(READ, LS, NOW);
     script = [says("hello")];
 
-    await run(session({ loadedTools: ["fs__read"] }), "hi");
+    await run(sessionOf({ loadedTools: ["fs__read"] }), "hi");
 
     expect(bodies()).toEqual([
       {
@@ -475,7 +466,7 @@ describe("the request body", () => {
       says("hello"),
     ];
 
-    const { stats } = await run(session(), "hi");
+    const { stats } = await run(sessionOf(), "hi");
 
     // One round trip, however many times it was sent.
     expect(stats?.iterations).toBe(1);
@@ -506,7 +497,7 @@ describe("the request body", () => {
       "Supported values are: 'low', 'medium', and 'high'.";
     script = [refuses(refusal), says("hello")];
 
-    const { error, stats } = await run(session(), "hi");
+    const { error, stats } = await run(sessionOf(), "hi");
 
     expect(error).toBeUndefined();
     expect(stats?.iterations).toBe(1);
@@ -517,7 +508,7 @@ describe("the request body", () => {
 describe("a plain answer", () => {
   it("stores the question and the reply, and reports the turn in order", async () => {
     script = [says("Hel", "lo.")];
-    const chat = session({ title: "New chat" });
+    const chat = sessionOf({ title: "New chat" });
 
     // Half a second between the two deltas, and another after the last.
     const { events, stats } = await run(chat, "hi there", {
@@ -601,7 +592,7 @@ describe("a tool round trip", () => {
     ];
     const controller = new AbortController();
 
-    const { events, stats } = await run(session(), "read it", { signal: controller.signal });
+    const { events, stats } = await run(sessionOf(), "read it", { signal: controller.signal });
 
     const repeated =
       "contents of a\n\n(Identical call already made this turn; the result is unchanged. " +
@@ -677,7 +668,7 @@ describe("a tool round trip", () => {
       says("never asked for"),
     ];
 
-    const { events, error } = await run(session(), "look around");
+    const { events, error } = await run(sessionOf(), "look around");
 
     expect(error?.message).toBe("Stopped after 2 tool iterations.");
     expect(requests).toHaveLength(2);
@@ -708,18 +699,18 @@ describe("loading tools", () => {
       asks(["c2", "clock__now", "{}"]),
       says("Noon."),
     ];
-    const chat = session({ loadedTools: ["fs__ls"] });
+    const chat = sessionOf({ loadedTools: ["fs__ls"] });
 
     const { events, stats } = await run(chat, "what time is it");
 
     // Appended, never re-sorted: each step's array is a prefix of the next one's.
-    expect(bodies().map(declared)).toEqual([
+    expect(bodies().map(declaredTools)).toEqual([
       ["load_tools", "fs__ls"],
       ["load_tools", "fs__ls", "fs__read", "clock__now"],
       ["load_tools", "fs__ls", "fs__read", "clock__now"],
     ]);
     // The same head on every step: what was loaded is said in the tool array, not the catalogue.
-    const heads = bodies().map((body) => (body.messages as object[])[0]);
+    const heads = bodies().map((body) => messagesOf(body)[0]);
     expect(new Set(heads.map((head) => JSON.stringify(head))).size).toBe(1);
 
     expect(events.slice(0, 2)).toEqual([
@@ -757,12 +748,12 @@ describe("loading tools", () => {
       asks(["c2", "call_tool", proxied]),
       says("Read."),
     ];
-    const chat = session({ loadedTools: ["fs__ls"] });
+    const chat = sessionOf({ loadedTools: ["fs__ls"] });
 
     const { events, stats } = await run(chat, "read /a");
 
     // The array never moves, whatever is loaded.
-    expect(bodies().map(declared)).toEqual(Array(3).fill(["load_tools", "call_tool"]));
+    expect(bodies().map(declaredTools)).toEqual(Array(3).fill(["load_tools", "call_tool"]));
     const definition = JSON.stringify({
       name: "fs__read",
       description: "Read a file",
@@ -799,7 +790,7 @@ describe("hooks", () => {
     );
     script = [says("Tea, then.")];
 
-    const { events, stats } = await run(session(), "what should I drink?");
+    const { events, stats } = await run(sessionOf(), "what should I drink?");
 
     // A session's first turn is also its start.
     expect(mcp.runHooks.mock.calls.map(([event]) => event)).toEqual([
@@ -820,10 +811,10 @@ describe("hooks", () => {
       content: "what should I drink?",
       hook_context: context,
     });
-    const [, question] = bodies()[0].messages as { role: string; content: string }[];
+    const [, question] = messagesOf(bodies()[0]);
     expect(question.role).toBe("user");
     expect(question.content).toContain(context);
-    expect(question.content.endsWith("\n\nwhat should I drink?")).toBe(true);
+    expect(textOf(question).endsWith("\n\nwhat should I drink?")).toBe(true);
 
     const note = {
       event: "beforeTurn",
@@ -844,12 +835,12 @@ describe("hooks", () => {
         : [],
     );
     script = [says("Hello.")];
-    const earlier = [
+    const earlier: StoredMessage[] = [
       { role: "user", content: "earlier" },
       { role: "assistant", content: "before" },
-    ] as StoredMessage[];
+    ];
 
-    const { events } = await run(session({ messages: earlier }), "hi");
+    const { events } = await run(sessionOf({ messages: earlier }), "hi");
 
     // Not a first turn, so no `sessionStart`; the reply and the turn's messages go to afterTurn.
     expect(mcp.runHooks.mock.calls.map(([event]) => event)).toEqual(["beforeTurn", "afterTurn"]);
@@ -883,7 +874,7 @@ describe("stopping a turn", () => {
     script = [stalls("Half an ans")];
     const controller = new AbortController();
 
-    const { events, error } = await run(session(), "hi", {
+    const { events, error } = await run(sessionOf(), "hi", {
       signal: controller.signal,
       onEvent: (event) => {
         if (event.type === "text_delta") {
@@ -953,7 +944,7 @@ describe("what the loop decides beyond the common path", () => {
       says("One file."),
     ];
 
-    const { events } = await run(session(), "what is here");
+    const { events } = await run(sessionOf(), "what is here");
 
     expect(events.slice(0, 3)).toEqual([
       { type: "reasoning_delta", text: "They want " },
@@ -966,7 +957,7 @@ describe("what the loop decides beyond the common path", () => {
       reasoning_content: "They want a listing.",
       tool_calls: [call("c1", "fs__ls", "{}")],
     });
-    const [, , replayed] = bodies()[1].messages as Record<string, unknown>[];
+    const [, , replayed] = messagesOf(bodies()[1]);
     expect(replayed).toEqual({
       role: "assistant",
       content: null,
@@ -991,9 +982,9 @@ describe("what the loop decides beyond the common path", () => {
       says("Read."),
     ];
 
-    const { events, stats } = await run(session(), "what do you have");
+    const { events, stats } = await run(sessionOf(), "what do you have");
 
-    expect(declared(bodies()[0])).toEqual(["list_resources", "read_resource", "fs__read"]);
+    expect(declaredTools(bodies()[0])).toEqual(["list_resources", "read_resource", "fs__read"]);
     expect(stored.slice(2, 5)).toEqual([
       { role: "tool", tool_call_id: "c1", content: "Files:\n  file:///a — a" },
       { role: "tool", tool_call_id: "c2", content: "hello" },
@@ -1028,11 +1019,11 @@ describe("what the loop decides beyond the common path", () => {
       throw new Error(`no such tool: ${name}`);
     });
     script = [asks(["c1", "clock__now", "{}"], ["c2", "clock__then", "{}"]), says("Noon.")];
-    const chat = session();
+    const chat = sessionOf();
 
     const { events, stats } = await run(chat, "what time is it");
 
-    expect(bodies().map(declared)).toEqual([["load_tools"], ["load_tools", "clock__now"]]);
+    expect(bodies().map(declaredTools)).toEqual([["load_tools"], ["load_tools", "clock__now"]]);
     // A name nothing offers is called, and fails, and is nothing to declare or carry.
     expect(mcp.call.mock.calls.map(([name]) => name)).toEqual(["clock__now", "clock__then"]);
     expect(events.filter((event) => event.type === "tool_result")).toEqual([
@@ -1063,7 +1054,7 @@ describe("what the loop decides beyond the common path", () => {
       ),
       says("Loaded."),
     ];
-    const chat = session({ loadedTools: ["fs__read"] });
+    const chat = sessionOf({ loadedTools: ["fs__read"] });
 
     const { events, stats } = await run(chat, "get ready");
 
@@ -1087,7 +1078,7 @@ describe("what the loop decides beyond the common path", () => {
         isError: true,
       },
     ]);
-    expect(declared(bodies()[1])).toEqual(["load_tools", "fs__read", "fs__ls"]);
+    expect(declaredTools(bodies()[1])).toEqual(["load_tools", "fs__read", "fs__ls"]);
     expect(stats).toMatchObject({ iterations: 2, toolCalls: 0 });
     // Nothing was called, so only what was carried in is carried out.
     expect(chat.loadedTools).toEqual(["fs__read"]);
@@ -1100,7 +1091,7 @@ describe("what the loop decides beyond the common path", () => {
     offer(...many);
     script = [asks(["c1", "load_tools", '{"names":["fs__tool_*"]}']), says("Loaded.")];
 
-    const { events } = await run(session(), "get ready");
+    const { events } = await run(sessionOf(), "get ready");
 
     const result = events.find((event) => event.type === "tool_result");
     const content = result?.type === "tool_result" ? result.content : "";
@@ -1119,7 +1110,7 @@ describe("what the loop decides beyond the common path", () => {
       says("Done."),
     ];
 
-    await run(session(), "read it twice");
+    await run(sessionOf(), "read it twice");
 
     expect(mcp.call).toHaveBeenCalledTimes(1);
     expect(stored[2]).toEqual({ role: "tool", tool_call_id: "c1", content: "contents of a" });
@@ -1141,7 +1132,7 @@ describe("what the loop decides beyond the common path", () => {
     offer(READ);
     script = [asks(["c1", "fs__read", "{'path': '/a',}"]), says("Sorry.")];
 
-    const { events } = await run(session(), "read it");
+    const { events } = await run(sessionOf(), "read it");
 
     expect(mcp.call).not.toHaveBeenCalled();
     expect(events[1]).toEqual({
@@ -1165,7 +1156,7 @@ describe("what the loop decides beyond the common path", () => {
     offer(READ);
     script = [asks(["c1", "fs__read", written]), says("Sorry.")];
 
-    const { events } = await run(session(), "read it");
+    const { events } = await run(sessionOf(), "read it");
 
     expect(mcp.call).not.toHaveBeenCalled();
     expect(events[1]).toEqual({
@@ -1181,7 +1172,7 @@ describe("what the loop decides beyond the common path", () => {
     mcp.call.mockResolvedValue("contents of a");
     const proxied = '{"name":"fs__read","arguments":{"path":"/a"}}';
     script = [asks(["c1", "call_tool", proxied]), says("Read.")];
-    const chat = session();
+    const chat = sessionOf();
 
     const { events } = await run(chat, "read /a");
 
@@ -1190,16 +1181,16 @@ describe("what the loop decides beyond the common path", () => {
       { type: "tool_result", toolUseId: "c1", content: "contents of a", isError: false },
     ]);
     expect(mcp.call.mock.calls).toEqual([["fs__read", { path: "/a" }, undefined]]);
-    expect(bodies().map(declared)).toEqual([["load_tools"], ["load_tools"]]);
+    expect(bodies().map(declaredTools)).toEqual([["load_tools"], ["load_tools"]]);
     expect(chat.loadedTools).toEqual([]);
   });
 
   it("warns when a step finds much less cached than the request before it sent", async () => {
     const warn = vi.mocked(console.warn);
-    const earlier = [
+    const earlier: StoredMessage[] = [
       { role: "user", content: "earlier" },
-      { role: "assistant", content: "before", stats: { lastPromptTokens: 1000 } },
-    ] as StoredMessage[];
+      { role: "assistant", content: "before", stats: turnStats({ lastPromptTokens: 1000 }) },
+    ];
     configure({ toolDiscovery: "eager" });
     offer(LS);
     mcp.call.mockResolvedValue("a.txt");
@@ -1216,7 +1207,7 @@ describe("what the loop decides beyond the common path", () => {
       { chunks: [chunk({ content: "One file." }), chunk({}, "stop"), usage(1200, 1090)] },
     ];
 
-    await run(session({ messages: earlier }), "what is here");
+    await run(sessionOf({ messages: earlier }), "what is here");
 
     expect(warn.mock.calls.map(([line]) => line)).toEqual([
       "[agent] prompt cache missed: 100 of 1100 cached, after a 1000-token request",
@@ -1224,13 +1215,13 @@ describe("what the loop decides beyond the common path", () => {
   });
 
   it("says nothing about the cache where the server reports none", async () => {
-    const earlier = [
+    const earlier: StoredMessage[] = [
       { role: "user", content: "earlier" },
-      { role: "assistant", content: "before", stats: { lastPromptTokens: 1000 } },
-    ] as StoredMessage[];
+      { role: "assistant", content: "before", stats: turnStats({ lastPromptTokens: 1000 }) },
+    ];
     script = [says("hello")];
 
-    await run(session({ messages: earlier }), "hi");
+    await run(sessionOf({ messages: earlier }), "hi");
 
     expect(vi.mocked(console.warn)).not.toHaveBeenCalled();
   });
@@ -1238,7 +1229,7 @@ describe("what the loop decides beyond the common path", () => {
   it("answers an overflow once, in the server's words and with the window it was built to", async () => {
     script = [refuses("This model's maximum context length is 4096 tokens."), says("never sent")];
 
-    const { events, error } = await run(session(), "hi");
+    const { events, error } = await run(sessionOf(), "hi");
 
     expect(error?.name).toBe("ContextOverflow");
     expect(error?.message).toBe(
@@ -1262,7 +1253,7 @@ describe("what the loop decides beyond the common path", () => {
     );
     script = [asks(["c1", "fs__ls", "{}"]), says("never asked for")];
 
-    const { events, error } = await run(session(), "look around", {
+    const { events, error } = await run(sessionOf(), "look around", {
       signal: controller.signal,
       onEvent: (event) => {
         // Once the call is in flight, not as it is announced.

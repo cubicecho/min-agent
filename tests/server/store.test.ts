@@ -72,8 +72,10 @@ describe.skipIf(!url)("session store", () => {
     await store.deleteSession(session.id);
 
     expect(await store.getSession(session.id)).toBeNull();
-    const [{ count }] = (await db.execute(sql`select count(*)::int as count from messages`))
-      .rows as { count: number }[];
+    const counted = await db.execute<{ count: number }>(
+      sql`select count(*)::int as count from messages`,
+    );
+    const [{ count }] = counted.rows;
     expect(count).toBe(0);
   });
 

@@ -17,7 +17,7 @@ function serving(chunks: string[]) {
 
   const { streamTurn } = createClient({
     baseUrl: "/graphql",
-    fetch: (async () => new Response(body, { status: 200 })) as unknown as typeof fetch,
+    fetch: async () => new Response(body, { status: 200 }),
   });
 
   return {

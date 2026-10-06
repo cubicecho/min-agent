@@ -11,6 +11,7 @@ import { schema } from "../../server/graphql/schema.ts";
 import { SPEC_EXTENSION, settingsSpec } from "../../server/spec.ts";
 import { SpecDocument } from "../../shared/gql/graphql.ts";
 import { type LlmConfig, llmConfigSchema } from "../../shared/types.ts";
+import { isRecord } from "../helpers.ts";
 
 /**
  * The settings row on its way out as an agent spec, and what has to be true of the document
@@ -44,6 +45,12 @@ const row = (patch: Partial<LlmConfig> = {}): LlmConfig =>
   });
 
 /**
+ * @param extension What a document carries under min-agent's own key.
+ * @returns The columns it holds, or none where it is not an object.
+ */
+const ownColumns = (extension: unknown) => (isRecord(extension) ? extension : {});
+
+/**
  * A resolved agent back in the shape of a settings row: what an import would hand
  * `coerceLlmConfig`.
  * @param agent What `resolveAgentSpec` returned.
@@ -63,7 +70,7 @@ const settingsOf = (agent: ResolvedAgent): Record<string, unknown> => ({
   taskModels: Object.fromEntries(
     Object.entries(agent.tasks).map(([task, { model }]) => [task, model]),
   ),
-  ...(agent.extensions[SPEC_EXTENSION] as Record<string, unknown>),
+  ...ownColumns(agent.extensions[SPEC_EXTENSION]),
 });
 
 /**

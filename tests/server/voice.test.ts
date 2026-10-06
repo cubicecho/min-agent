@@ -1,11 +1,11 @@
 import { once } from "node:events";
 import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { createVoiceClient, speakableText, spokenChunk } from "@shared/client/voice.ts";
 import express from "express";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { refreshLlmConfig } from "../../server/config.ts";
 import { audioExtension, voice } from "../../server/voice.ts";
+import { jsonBody } from "../helpers.ts";
+import { storedSettings } from "./helpers.ts";
 
 /**
  * The two ends of voice that are worth pinning down: what a reply sounds like once the
@@ -61,25 +61,21 @@ describe("audioExtension", () => {
  * @param server A listening server.
  * @returns Its base URL on the loopback.
  */
-const urlOf = (server: Server) => `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-
-/**
- * Puts a row in the settings cache without a database behind it.
- * @param row What the settings table would have held.
- * @returns The settings as loaded.
- */
-const stored = (row: Record<string, unknown>) =>
-  refreshLlmConfig({
-    select: () => ({ from: () => ({ where: () => ({ limit: async () => [row] }) }) }),
-  } as unknown as Parameters<typeof refreshLlmConfig>[0]);
+function urlOf(server: Server) {
+  const address = server.address();
+  if (typeof address === "string" || !address) {
+    throw new Error("no port");
+  }
+  return `http://127.0.0.1:${address.port}`;
+}
 
 /** Answers whatever it is handed, and records the requests it was given. */
 function server(reply: () => Response) {
   const seen: { url: string; body: Record<string, unknown> }[] = [];
-  const fetch = (async (url: string, init: RequestInit) => {
-    seen.push({ url, body: JSON.parse(init.body as string) });
+  const fetch: typeof globalThis.fetch = async (url, init) => {
+    seen.push({ url: String(url), body: jsonBody(String(init?.body)) });
     return reply();
-  }) as unknown as typeof globalThis.fetch;
+  };
   return { seen, fetch };
 }
 
@@ -208,7 +204,7 @@ describe("the key the voice proxy sends", () => {
    * @returns The `Authorization` header the provider received.
    */
   const spoken = async (apiKey: string) => {
-    await stored({ baseUrl: urlOf(provider), ttsModel: "tts-1", apiKey });
+    await storedSettings({ baseUrl: urlOf(provider), ttsModel: "tts-1", apiKey });
     const response = await fetch(`${urlOf(agent)}/speak`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -230,7 +226,7 @@ describe("the key the voice proxy sends", () => {
   });
 
   afterAll(async () => {
-    await stored({});
+    await storedSettings({});
     provider.close();
     agent.close();
   });
@@ -288,13 +284,17 @@ describe("a voice request that is not one", () => {
   };
 
   beforeAll(async () => {
-    await stored({ baseUrl: "http://127.0.0.1:1", sttModel: "whisper-1", ttsModel: "tts-1" });
+    await storedSettings({
+      baseUrl: "http://127.0.0.1:1",
+      sttModel: "whisper-1",
+      ttsModel: "tts-1",
+    });
     agent = express().use(voice).listen(0, "127.0.0.1");
     await once(agent, "listening");
   });
 
   afterAll(async () => {
-    await stored({});
+    await storedSettings({});
     agent.close();
   });
 
