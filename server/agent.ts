@@ -1321,6 +1321,8 @@ function parseArgs(args: string): Record<string, unknown> {
     return {};
   }
   try {
+    // Named, not checked: the loop refuses arguments that parse to anything but an object
+    // before it dispatches the call, so only an object's text arrives here.
     return JSON.parse(args) as Record<string, unknown>;
   } catch {
     throw new Error(

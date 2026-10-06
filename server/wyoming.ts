@@ -1,4 +1,5 @@
 import { connect } from "node:net";
+import { z } from "zod";
 import { VOICE_DEFAULTS } from "../shared/defaults.ts";
 import { MS_PER_SECOND } from "../shared/units.ts";
 
@@ -67,6 +68,38 @@ function frame({ type, data, payload }: WyomingEvent): Buffer {
     : Buffer.from(`${header}\n`, "utf8");
 }
 
+/** What an event carries beside its type: whatever the server chose to say. */
+const EventData = z.record(z.string(), z.unknown());
+
+const Length = z.number().int().nonnegative();
+
+/** The line that opens every event, and says how many bytes of it follow. */
+const Header = z.object({
+  type: z.string(),
+  data: EventData.optional(),
+  data_length: Length.optional(),
+  payload_length: Length.optional(),
+});
+
+/**
+ * Reads one JSON part of an event as what it has to be.
+ *
+ * A line that parses is not yet an event: a server speaking something else can send valid JSON
+ * that has no type, or a length that is not a number, and the framing that follows would be
+ * counted from nothing.
+ * @param schema What the part has to be.
+ * @param bytes The part, as it arrived.
+ * @param part What to call it in the error.
+ * @returns The part, checked.
+ */
+function read<T>(schema: z.ZodType<T>, bytes: Buffer, part: string): T {
+  const parsed = schema.safeParse(JSON.parse(bytes.toString("utf8")));
+  if (parsed.success === false) {
+    throw new Error(`the ${part} is not a Wyoming event's`);
+  }
+  return parsed.data;
+}
+
 /**
  * Events out of a byte stream.
  *
@@ -90,12 +123,7 @@ class Frames {
         return;
       }
 
-      const header = JSON.parse(this.buffer.subarray(0, newline).toString("utf8")) as {
-        type: string;
-        data?: Record<string, unknown>;
-        data_length?: number;
-        payload_length?: number;
-      };
+      const header = read(Header, this.buffer.subarray(0, newline), "header");
       const dataLength = header.data_length ?? 0;
       const payloadLength = header.payload_length ?? 0;
       const body = newline + 1;
@@ -108,9 +136,7 @@ class Frames {
       const data = dataLength
         ? {
             ...header.data,
-            ...(JSON.parse(this.buffer.subarray(body, body + dataLength).toString("utf8")) as
-              | Record<string, unknown>
-              | undefined),
+            ...read(EventData, this.buffer.subarray(body, body + dataLength), "data"),
           }
         : (header.data ?? {});
       // Copied, not sliced: the subarray shares memory with a buffer this class reassigns.

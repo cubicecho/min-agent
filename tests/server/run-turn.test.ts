@@ -1153,6 +1153,29 @@ describe("what the loop decides beyond the common path", () => {
     expect(stored[1]).toMatchObject({ tool_calls: [call("c1", "fs__read", "{'path': '/a',}")] });
   });
 
+  // Arguments are an object by the protocol, and a list or a bare value is as much a mistake
+  // as a missing brace: nothing a tool was declared to take. The loop refuses these before a
+  // call is dispatched, which is what lets `parseArgs` name what it parsed as a record.
+  it.each([
+    ["a list", "[1, 2]"],
+    ["a string", '"/a"'],
+    ["null", "null"],
+  ])("refuses arguments that are %s", async (_what, written) => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ);
+    script = [asks(["c1", "fs__read", written]), says("Sorry.")];
+
+    const { events } = await run(session(), "read it");
+
+    expect(mcp.call).not.toHaveBeenCalled();
+    expect(events[1]).toEqual({
+      type: "tool_result",
+      toolUseId: "c1",
+      content: `model produced tool arguments that are not an object: ${written}`,
+      isError: true,
+    });
+  });
+
   it("runs a call_tool on demand as well, without loading or carrying what it named", async () => {
     offer(READ, LS);
     mcp.call.mockResolvedValue("contents of a");

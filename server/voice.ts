@@ -1,6 +1,7 @@
 import { NO_KEY, resolveApiKey } from "@cubicecho/agent-core";
 import express from "express";
 import OpenAI, { toFile } from "openai";
+import { z } from "zod";
 import { spokenChunk } from "../shared/client/voice.ts";
 import { VOICE_DEFAULTS } from "../shared/defaults.ts";
 import { type LlmConfig, voiceBaseUrlFor, wyomingAddress } from "../shared/types.ts";
@@ -87,6 +88,12 @@ function failed(label: string, error: unknown, response: express.Response) {
   response.status(HttpStatus.badGateway).json({ error: message });
 }
 
+/** What `/transcribe` is posted: a recording as base64, and what kind of file it is. */
+const RecordingBody = z.object({ audio: z.string().min(1), mime: z.string().optional() });
+
+/** What `/speak` is posted: the reply to read aloud. */
+const SpeechBody = z.object({ text: z.string() });
+
 export const voice = express.Router();
 
 /**
@@ -108,11 +115,12 @@ voice.post(
       return;
     }
 
-    const { audio, mime } = request.body as { audio?: string; mime?: string };
-    if (!audio) {
+    const body = RecordingBody.safeParse(request.body);
+    if (body.success === false) {
       response.status(HttpStatus.badRequest).json({ error: "no audio" });
       return;
     }
+    const { audio, mime } = body.data;
 
     try {
       const bytes = Buffer.from(audio, "base64");
@@ -151,8 +159,9 @@ voice.post("/speak", express.json({ limit: "1mb" }), async (request, response) =
     return;
   }
 
-  const { text } = request.body as { text?: string };
-  if (!text?.trim()) {
+  const body = SpeechBody.safeParse(request.body);
+  const text = body.success ? body.data.text : "";
+  if (!text.trim()) {
     response.status(HttpStatus.badRequest).json({ error: "no text" });
     return;
   }
