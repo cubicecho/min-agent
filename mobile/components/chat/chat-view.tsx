@@ -28,24 +28,24 @@ import {
   Text,
   View,
 } from "react-native";
-import { ActionButton } from "@/components/action-button";
+import { ActionButton } from "@/components/action-button.tsx";
 import { ArrowDown, BookOpen, MessageSquare, Mic, Send } from "@/components/app/app-icons";
 import { MessageView } from "@/components/chat/message-view.tsx";
 import { PromptPicker, useMcpPrompts } from "@/components/chat/prompt-picker.tsx";
 import { SessionsPanel, SessionsScreen } from "@/components/chat/session-list.tsx";
-import { DescriptionList, PropertyRow } from "@/components/description-list";
-import { DialogLayout } from "@/components/dialog-layout";
-import { HeaderContentFooter } from "@/components/header-content-footer";
-import { OptionSelect } from "@/components/option-select";
-import { EmptyState } from "@/components/page";
-import { PageHeader } from "@/components/page-header";
+import { DescriptionList, PropertyRow } from "@/components/description-list.tsx";
+import { DialogLayout } from "@/components/dialog-layout.tsx";
+import { HeaderContentFooter } from "@/components/header-content-footer.tsx";
+import { OptionSelect } from "@/components/option-select.tsx";
+import { EmptyState } from "@/components/page.tsx";
+import { PageHeader } from "@/components/page-header.tsx";
 import { SettingsLink } from "@/components/settings/link.tsx";
-import { SplitLayout } from "@/components/split-layout";
-import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { SplitLayout } from "@/components/split-layout.tsx";
+import { Alert } from "@/components/ui/alert.tsx";
+import { Button } from "@/components/ui/button.tsx";
 import { Square } from "@/components/ui/icons";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
+import { Separator } from "@/components/ui/separator.tsx";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { api, streamTurn } from "@/lib/client.ts";

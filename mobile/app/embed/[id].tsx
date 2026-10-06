@@ -2,21 +2,21 @@ import { type EmbedConfig, embedTitle } from "@shared/types.ts";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
 import { Linking, Platform, View } from "react-native";
-import { ActionButton } from "@/components/action-button";
+import { ActionButton } from "@/components/action-button.tsx";
 import { ExternalLink, LayoutGrid } from "@/components/app/app-icons";
-import { TITLE_ROW } from "@/components/app/title-row";
-import { EMBED_ICON } from "@/components/apps/embed-icon";
-import { HeaderContentFooter } from "@/components/header-content-footer";
-import { EmptyState } from "@/components/page";
-import { PageHeader } from "@/components/page-header";
-import { PageLayout } from "@/components/page-layout";
-import { QueryState } from "@/components/query-state";
+import { TITLE_ROW } from "@/components/app/title-row.ts";
+import { EMBED_ICON } from "@/components/apps/embed-icon.ts";
+import { HeaderContentFooter } from "@/components/header-content-footer.tsx";
+import { EmptyState } from "@/components/page.tsx";
+import { PageHeader } from "@/components/page-header.tsx";
+import { PageLayout } from "@/components/page-layout.tsx";
+import { QueryState } from "@/components/query-state.tsx";
 import { SettingsLink } from "@/components/settings/link.tsx";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/button.tsx";
 import { api } from "@/lib/client.ts";
 import { EMBEDS_STALE_TIME } from "@/lib/embeds.ts";
 import { queryKeys } from "@/lib/queries.ts";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils.ts";
 
 /**
  * One of the other apps, shown inside min-agent.

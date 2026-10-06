@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { ScrollView } from "react-native";
-import { PROSE_COLUMN } from "@/components/header-content-footer";
-import { cn } from "@/lib/utils";
+import { PROSE_COLUMN } from "@/components/header-content-footer.tsx";
+import { cn } from "@/lib/utils.ts";
 
 /**
  * A panel's frame: padded, scrollable, on the app background, in the same column the config

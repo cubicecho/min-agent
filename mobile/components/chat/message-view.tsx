@@ -6,11 +6,11 @@ import type { HookNote, LlmConfig, StoredMessage, TurnStats } from "@shared/type
 import { INJECT_EVENTS } from "@shared/types.ts";
 import { type ComponentType, memo, type ReactNode, useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
-import { ActionButton } from "@/components/action-button";
+import { ActionButton } from "@/components/action-button.tsx";
 import { Cpu, Volume2, Wrench, Zap } from "@/components/app/app-icons";
 import { MarkdownBody } from "@/components/chat/markdown.tsx";
-import { DisclosureRow } from "@/components/disclosure-row";
-import { Button } from "@/components/ui/button";
+import { DisclosureRow } from "@/components/disclosure-row.tsx";
+import { Button } from "@/components/ui/button.tsx";
 import { CopyButton } from "@/components/ui/copy-button";
 import { CircleAlert, Pencil, RefreshCw, Square } from "@/components/ui/icons";
 import { cn, type SlotNode } from "@/lib/utils.ts";

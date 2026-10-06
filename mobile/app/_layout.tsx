@@ -16,14 +16,14 @@ import { Linking, Platform, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import "../global.css";
-import { ActionButton } from "@/components/action-button";
+import { ActionButton } from "@/components/action-button.tsx";
 import { MessageSquare } from "@/components/app/app-icons";
 import { EMBED_ICON } from "@/components/apps/embed-icon.ts";
 import { useNewChat } from "@/components/chat/session-list.tsx";
-import { RouteError } from "@/components/route-error";
-import { BarNavItem, Sidebar, SidebarNavItem, SidebarSection } from "@/components/sidebar";
-import { SidebarLayout } from "@/components/split-layout";
-import { Button } from "@/components/ui/button";
+import { RouteError } from "@/components/route-error.tsx";
+import { BarNavItem, Sidebar, SidebarNavItem, SidebarSection } from "@/components/sidebar.tsx";
+import { SidebarLayout } from "@/components/split-layout.tsx";
+import { Button } from "@/components/ui/button.tsx";
 import { Plus, Settings } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
 import { EMBEDS_STALE_TIME, visibleEmbeds } from "@/lib/embeds.ts";
@@ -32,7 +32,7 @@ import { useBottomInset } from "@/lib/layout.ts";
 import { queryKeys } from "@/lib/queries.ts";
 import { loadServerUrl } from "@/lib/server-url.ts";
 import { colors, pinDarkAppearance } from "@/lib/theme.ts";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils.ts";
 import { loadVoiceSettings } from "@/lib/voice-settings.ts";
 
 /**

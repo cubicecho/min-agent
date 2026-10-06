@@ -2,10 +2,10 @@ import { messageOf } from "@shared/errors.ts";
 import { useStore } from "@tanstack/react-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useAppForm } from "@/components/app/app-form";
-import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
+import { useAppForm } from "@/components/app/app-form.tsx";
+import { Alert } from "@/components/ui/alert.tsx";
+import { Button } from "@/components/ui/button.tsx";
+import { Form } from "@/components/ui/form.tsx";
 import { Check, CircleCheck } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
 import {

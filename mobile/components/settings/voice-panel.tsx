@@ -1,7 +1,7 @@
 import { voiceBaseUrlFor } from "@shared/types.ts";
 import { View } from "react-native";
-import { SettingRow } from "@/components/setting-row";
-import { FieldRow } from "@/components/ui/form";
+import { SettingRow } from "@/components/setting-row.tsx";
+import { FieldRow } from "@/components/ui/form.tsx";
 import { ConfigForm } from "./config-form.tsx";
 import { TextField } from "./fields.tsx";
 import { SettingsLink } from "./link.tsx";
