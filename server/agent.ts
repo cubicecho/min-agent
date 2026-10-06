@@ -76,9 +76,16 @@ export async function listModels(): Promise<ModelInfo[]> {
   return listEndpointModels(endpoint());
 }
 
+/** The longest title shown whole, and how much of a longer one is kept ahead of its ellipsis. */
+const MAX_TITLE_CHARS = 60;
+const CUT_TITLE_CHARS = 57;
+
+const truncateTitle = (title: string) =>
+  title.length > MAX_TITLE_CHARS ? `${title.slice(0, CUT_TITLE_CHARS)}…` : title;
+
 function titleFrom(text: string) {
   const line = text.trim().split("\n")[0] ?? "";
-  return line.length > 60 ? `${line.slice(0, 57)}…` : line || "New chat";
+  return truncateTitle(line) || "New chat";
 }
 
 /**
@@ -200,8 +207,7 @@ async function generateTitle(
     prompt.slice(0, 2000),
     { signal, onNotice: notice },
   );
-  const title = clean(reply.split("\n").filter(Boolean).pop() ?? "");
-  return title.length > 60 ? `${title.slice(0, 57)}…` : title;
+  return truncateTitle(clean(reply.split("\n").filter(Boolean).pop() ?? ""));
 }
 
 /**
@@ -354,8 +360,8 @@ export interface SendOptions
  * What is left here is the overflow; see `withWindow`.
  *
  * Nothing in the server calls this since the turn's steps became agent-core's `runAgentLoop`
- * (#52), which makes the same round trip itself. It is kept for `tests/negotiate.test.ts`, which
- * pins the negotiation through it.
+ * (#52), which makes the same round trip itself. It is kept for `tests/negotiate.test.ts` and
+ * `tests/reasoning.test.ts`, which pin the negotiation through it.
  *
  * @param client The pooled client for this endpoint. `getClient` builds it with the SDK's own
  * retrying off, because a stream that has already produced tokens must never be replayed from
@@ -379,6 +385,122 @@ export async function sendTurn(
     throw withWindow(error, contextLimit);
   }
 }
+
+/**
+ * An assistant row as it is stored: what streamed, and the calls as the model wrote them.
+ *
+ * @param toolCalls The step's calls. None for a reply cut short by a stop, which asked for none.
+ */
+function assistantMessage(
+  text: string,
+  reasoning: string,
+  toolCalls: Turn["toolCalls"] = [],
+): StoredMessage {
+  return {
+    role: "assistant",
+    content: text || null,
+    ...(reasoning ? { reasoning_content: reasoning } : {}),
+    ...(toolCalls.length
+      ? {
+          tool_calls: toolCalls.map((call) => ({
+            id: call.id,
+            type: "function" as const,
+            function: {
+              name: call.function.name,
+              arguments: call.function.arguments || "{}",
+            },
+          })),
+        }
+      : {}),
+  };
+}
+
+/** What a finished turn measured, for `turnStats` to report. Times are epoch milliseconds. */
+interface TurnMeasurements {
+  /** Every round trip of the turn, summed. */
+  usage: TokenUsage;
+  /** The final round trip alone, which is what the next turn's context starts from. */
+  lastRoundTrip: TokenUsage;
+  model: string;
+  startedAt: number;
+  endedAt: number;
+  /** Zero when nothing streamed. */
+  firstTokenAt: number;
+  lastTokenAt: number;
+  iterations: number;
+  toolCalls: number;
+  /** The window the turn was built to. Zero when none is set. */
+  contextLimit: number;
+  breakdown?: TurnStats["breakdown"];
+  hooks: NonNullable<TurnStats["hooks"]>;
+}
+
+/**
+ * The stats stored with a turn's reply. A figure is left out rather than reported as zero when
+ * the turn has no reading for it: no token streamed, the server sent no usage, no window is set.
+ */
+function turnStats({
+  usage,
+  lastRoundTrip,
+  model,
+  startedAt,
+  endedAt,
+  firstTokenAt,
+  lastTokenAt,
+  iterations,
+  toolCalls,
+  contextLimit,
+  breakdown,
+  hooks,
+}: TurnMeasurements): TurnStats {
+  const generationMs = lastTokenAt - firstTokenAt;
+  const generated = firstTokenAt > 0 && generationMs > 0;
+  return {
+    ...usage,
+    model,
+    totalMs: endedAt - startedAt,
+    iterations,
+    toolCalls,
+    ...(firstTokenAt ? { ttftMs: firstTokenAt - startedAt } : {}),
+    ...(generated
+      ? {
+          generationMs,
+          ...(usage.completionTokens
+            ? { tokensPerSecond: usage.completionTokens / (generationMs / 1000) }
+            : {}),
+        }
+      : {}),
+    ...(lastRoundTrip.totalTokens
+      ? { contextTokens: lastRoundTrip.promptTokens + lastRoundTrip.completionTokens }
+      : {}),
+    ...(lastRoundTrip.promptTokens ? { lastPromptTokens: lastRoundTrip.promptTokens } : {}),
+    ...(contextLimit ? { contextLimit } : {}),
+    ...(breakdown ? { breakdown } : {}),
+    ...(hooks.length ? { hooks } : {}),
+  };
+}
+
+type ToolDiscovery = LlmConfig["toolDiscovery"];
+
+/** The catalogue section of the system prompt, which only an on-demand turn has. */
+const CATALOGUE_PROMPT: Record<
+  ToolDiscovery,
+  (catalog: Parameters<typeof catalogPrompt>[0]) => string
+> = {
+  eager: () => "",
+  ondemand: catalogPrompt,
+  proxy: proxyCatalogPrompt,
+};
+
+/**
+ * How agent-core's loop is run for each mode. Proxied, it runs eager over the two proxy tools
+ * and `dispatch` answers them; see where `runTurn` builds `tools`.
+ */
+const LOOP_DISCOVERY = {
+  eager: "eager",
+  ondemand: "ondemand",
+  proxy: "eager",
+} as const satisfies Record<ToolDiscovery, string>;
 
 export interface RunOptions {
   session: Session;
@@ -408,10 +530,14 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // In on-demand mode the model sees a name-only catalogue up front and pulls in the
   // definitions it needs as the turn runs.
   const catalog = mcp.catalog();
-  const onDemand = config.toolDiscovery !== "eager" && catalog.length > 0;
+  // The setting, except that with nothing to catalogue there is nothing to load on demand.
+  const discovery: ToolDiscovery = catalog.length > 0 ? config.toolDiscovery : "eager";
+  const onDemand = discovery !== "eager";
   // On demand, but with a tool array that never changes: definitions come back as `load_tools`
   // results and run through `call_tool`. See `server/tool-proxy.ts`.
-  const proxied = onDemand && config.toolDiscovery === "proxy";
+  const proxied = discovery === "proxy";
+  // Plain on demand, where loading is the loop's own. See `tools` below.
+  const native = discovery === "ondemand";
   // Whether `list_resources` and `read_resource` are worth declaring at all. Read once: a server
   // does not gain the capability mid-turn, and a turn that offers a tool on one step and not the
   // next is a turn the model cannot plan across.
@@ -439,7 +565,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // catalogue used to mark what was loaded, and every `load_tools` call re-prefilled the session.
   // What is loaded is said where it does not move the prefix instead — the tool array, and the
   // `load_tools` result.
-  const catalogue = proxied ? proxyCatalogPrompt(catalog) : onDemand ? catalogPrompt(catalog) : "";
+  const catalogue = CATALOGUE_PROMPT[discovery](catalog);
   const system = [config.systemPrompt, guidance, catalogue].filter(Boolean).join("\n\n").trim();
 
   // What the servers' hooks are told about this turn. The index is counted before the question
@@ -490,17 +616,22 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     session.compaction?.through !== foldedThrough,
   );
 
+  // Appends to the session and writes the row at the index it landed on, which is its id.
+  const store = async (message: StoredMessage) => {
+    session.messages.push(message);
+    return addMessage(session.id, session.messages.length - 1, message);
+  };
+
   session.model = chosenModel;
   const question: StoredMessage = {
     role: "user",
     content: prompt,
     ...(gathered.context ? { hook_context: gathered.context } : {}),
   };
-  session.messages.push(question);
+  await store(question);
   // Where this turn begins, so the request can be split into what was already there and what
   // this question added — the tool traffic it goes on to produce lands after it too.
   const turnStart = session.messages.length - 1;
-  await addMessage(session.id, session.messages.length - 1, question);
   // Proxied, a shortlist has nowhere to go but the history: the tool array is fixed, so it is
   // answered as though the model had loaded it, and the definitions sit after the question.
   if (proxied && preselected.length) {
@@ -523,8 +654,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       { role: "tool", tool_call_id: id, content },
     ];
     for (const message of exchange) {
-      session.messages.push(message);
-      await addMessage(session.id, session.messages.length - 1, message);
+      await store(message);
     }
   }
   for (const name of preselected) load(name);
@@ -595,11 +725,6 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // Calls `dispatch` answered with a failure. It answers rather than throws; see below.
   const failed = new Set<string>();
 
-  const store = async (message: StoredMessage) => {
-    session.messages.push(message);
-    return addMessage(session.id, session.messages.length - 1, message);
-  };
-
   // The transcript is the session's, not the loop's: `forApi` strips what is private, sends each
   // question with its hooks' context and the pruned results as stubs, and replaces a folded head
   // with its summary. So every step is handed it afresh, and the loop's own copy — which carries
@@ -618,7 +743,6 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // them, because its own proxied mode declares nothing else and min-agent declares the resource
   // tools beside them. `call_tool` is listed on demand so that it stays the host's: answered
   // here, it does not load or carry what it names.
-  const native = onDemand && !proxied;
   const always = offersResources ? [LIST_RESOURCES, READ_RESOURCE] : [];
   const tools: ToolDefinition[] = [
     ...(offersResources ? RESOURCE_TOOLS : []),
@@ -704,7 +828,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         temperature: config.temperature,
         reasoningEffort: config.reasoningEffort,
         maxToolIterations: config.maxToolIterations,
-        toolDiscovery: native ? "ondemand" : "eager",
+        toolDiscovery: LOOP_DISCOVERY[discovery],
         maxRetries: OPEN_RETRIES,
       },
       // On demand the loop appends the catalogue itself, to the same text `system` is.
@@ -815,23 +939,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         unanswered = turn.toolCalls.length;
         // Built from the turn rather than taken from `message`, which carries the arguments as
         // the loop repaired them: what is stored is what the model wrote.
-        const assistant: StoredMessage = {
-          role: "assistant",
-          content: text || null,
-          ...(reasoning ? { reasoning_content: reasoning } : {}),
-          ...(turn.toolCalls.length
-            ? {
-                tool_calls: turn.toolCalls.map((call) => ({
-                  id: call.id,
-                  type: "function" as const,
-                  function: {
-                    name: call.function.name,
-                    arguments: call.function.arguments || "{}",
-                  },
-                })),
-              }
-            : {}),
-        };
+        const assistant = assistantMessage(text, reasoning, turn.toolCalls);
         text = "";
         reasoning = "";
         session.usage = add(banked, turnUsage);
@@ -845,12 +953,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     // is only appended once the stream ends, so an abort left the reply on screen and nothing in
     // the transcript. Keep the part that streamed, then let the error through — the route stays
     // quiet about a turn its reader ended.
-    if (signal?.aborted && (text || reasoning))
-      await store({
-        role: "assistant",
-        content: text || null,
-        ...(reasoning ? { reasoning_content: reasoning } : {}),
-      });
+    if (signal?.aborted && (text || reasoning)) await store(assistantMessage(text, reasoning));
     if (error instanceof ToolIterationLimit) throw new Error(error.message);
     // The loop wraps what it caught to hang the run on it. Every message is stored already, so
     // the run is not needed and the error goes on as it was thrown.
@@ -860,31 +963,20 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // The loop returns on the step that asked for no tools, whose reply is the last row written.
   const assistant = session.messages[session.messages.length - 1];
   const breakdown = lastRequest ? splitContext(lastRequest, lastRoundTrip.promptTokens) : undefined;
-  const stats: TurnStats = {
-    ...turnUsage,
+  const stats = turnStats({
+    usage: turnUsage,
+    lastRoundTrip,
     model: chosenModel,
-    totalMs: Date.now() - startedAt,
+    startedAt,
+    endedAt: Date.now(),
+    firstTokenAt,
+    lastTokenAt,
     iterations,
     toolCalls,
-    ...(firstTokenAt ? { ttftMs: firstTokenAt - startedAt } : {}),
-    ...(firstTokenAt && lastTokenAt > firstTokenAt
-      ? {
-          generationMs: lastTokenAt - firstTokenAt,
-          ...(turnUsage.completionTokens
-            ? {
-                tokensPerSecond: turnUsage.completionTokens / ((lastTokenAt - firstTokenAt) / 1000),
-              }
-            : {}),
-        }
-      : {}),
-    ...(lastRoundTrip.totalTokens
-      ? { contextTokens: lastRoundTrip.promptTokens + lastRoundTrip.completionTokens }
-      : {}),
-    ...(lastRoundTrip.promptTokens ? { lastPromptTokens: lastRoundTrip.promptTokens } : {}),
-    ...(contextLimit ? { contextLimit } : {}),
-    ...(breakdown ? { breakdown } : {}),
-    ...(gathered.notes.length ? { hooks: gathered.notes } : {}),
-  };
+    contextLimit,
+    breakdown,
+    hooks: gathered.notes,
+  });
   assistant.stats = stats;
   // What was called, in the order it was loaded, and only what was loaded: a name the model
   // made up is called, and fails, but is nothing to declare next turn.
