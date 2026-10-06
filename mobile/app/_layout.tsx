@@ -102,11 +102,22 @@ function Shell() {
     queryFn: api.embeds,
     staleTime: EMBEDS_STALE_TIME,
   });
-  const apps = visibleEmbeds(embeds.data);
+  // Worked out once for the rail and the bar, which draw the same places with different rows.
+  const apps = visibleEmbeds(embeds.data).map((embed) => {
+    const Icon = EMBED_ICON[embed.icon];
+    const href = `/embed/${embed.id}` as const;
+    return {
+      embed,
+      label: embedTitle(embed),
+      iconSlot: <Icon />,
+      href,
+      active: pathname === href,
+      isExternal: embed.mode === "external",
+    };
+  });
 
   const onChats = pathname === "/" || pathname.startsWith("/chat/");
   const onSettings = pathname === "/settings";
-  const appHref = (embed: EmbedConfig) => `/embed/${embed.id}`;
 
   return (
     /*
@@ -151,25 +162,20 @@ function Shell() {
                 {apps.length > 0 ? (
                   <SidebarSection
                     title="Apps"
-                    contentSlot={apps.map((embed) => {
-                      const Icon = EMBED_ICON[embed.icon];
-                      return embed.mode === "external" ? (
+                    contentSlot={apps.map(({ embed, label, iconSlot, href, active, isExternal }) =>
+                      isExternal ? (
                         <SidebarNavItem
                           key={embed.id}
-                          label={embedTitle(embed)}
-                          iconSlot={<Icon />}
+                          label={label}
+                          iconSlot={iconSlot}
                           onPress={() => openExternally(embed)}
                         />
                       ) : (
-                        <Link key={embed.id} href={appHref(embed)} asChild>
-                          <SidebarNavItem
-                            label={embedTitle(embed)}
-                            iconSlot={<Icon />}
-                            active={pathname === appHref(embed)}
-                          />
+                        <Link key={embed.id} href={href} asChild>
+                          <SidebarNavItem label={label} iconSlot={iconSlot} active={active} />
                         </Link>
-                      );
-                    })}
+                      ),
+                    )}
                   />
                 ) : null}
               </View>
@@ -188,15 +194,14 @@ function Shell() {
             <Link href="/" asChild>
               <BarNavItem label="Chats" iconSlot={<MessageSquare />} active={onChats} />
             </Link>
-            {apps.map((embed) => {
-              const Icon = EMBED_ICON[embed.icon];
-              return embed.mode === "external" ? (
+            {apps.map(({ embed, label, iconSlot, href, active, isExternal }) =>
+              isExternal ? (
                 // Always a link in the bar, so the address is its `href` on the web; the
                 // press is what a device, which has no `href`, goes by.
                 <BarNavItem
                   key={embed.id}
-                  label={embedTitle(embed)}
-                  iconSlot={<Icon />}
+                  label={label}
+                  iconSlot={iconSlot}
                   href={embed.url}
                   onPress={(event) => {
                     event.preventDefault();
@@ -204,15 +209,11 @@ function Shell() {
                   }}
                 />
               ) : (
-                <Link key={embed.id} href={appHref(embed)} asChild>
-                  <BarNavItem
-                    label={embedTitle(embed)}
-                    iconSlot={<Icon />}
-                    active={pathname === appHref(embed)}
-                  />
+                <Link key={embed.id} href={href} asChild>
+                  <BarNavItem label={label} iconSlot={iconSlot} active={active} />
                 </Link>
-              );
-            })}
+              ),
+            )}
             <Link href="/settings" asChild>
               <BarNavItem label="Settings" iconSlot={<Settings />} active={onSettings} />
             </Link>
