@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { OptionSelect, type SelectEntry } from "@/components/option-select";
-import { FieldWrapper, useFieldContext } from "@/components/ui/form";
+import { OptionSelect, type SelectEntry } from "@/components/option-select.tsx";
+import { FieldWrapper, useFieldContext } from "@/components/ui/form.tsx";
 import { Input, type InputProps } from "@/components/ui/input";
 import { Textarea, type TextareaProps } from "@/components/ui/textarea";
 

@@ -1,5 +1,5 @@
 import { Appearance, Platform } from "react-native";
-import { dark } from "@/lib/cubeui-theme";
+import { dark } from "@/lib/cubeui-theme.ts";
 
 /**
  * cubeui's dark palette, for the React Native props that take a colour as a plain string —

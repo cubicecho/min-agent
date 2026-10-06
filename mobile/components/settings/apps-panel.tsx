@@ -1,23 +1,24 @@
+import { messageOf } from "@shared/errors.ts";
 import { type EmbedConfig, embedTitle } from "@shared/types.ts";
 import { useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Linking, Platform, View } from "react-native";
-import { ActionButton } from "@/components/action-button";
-import { useAppForm } from "@/components/app/app-form";
+import { ActionButton } from "@/components/action-button.tsx";
+import { useAppForm } from "@/components/app/app-form.tsx";
 import { ExternalLink, LayoutGrid } from "@/components/app/app-icons";
-import { EMBED_ICON } from "@/components/apps/embed-icon";
-import { EmbedIconField } from "@/components/apps/embed-icon-picker";
-import { ConfirmButton } from "@/components/confirm-button";
-import { DialogLayout } from "@/components/dialog-layout";
-import { ListItem } from "@/components/list-item";
-import { EmptyState } from "@/components/page";
-import { QueryState } from "@/components/query-state";
-import { Section } from "@/components/section";
-import { Alert } from "@/components/ui/alert";
+import { EMBED_ICON } from "@/components/apps/embed-icon.ts";
+import { EmbedIconField } from "@/components/apps/embed-icon-picker.tsx";
+import { ConfirmButton } from "@/components/confirm-button.tsx";
+import { DialogLayout } from "@/components/dialog-layout.tsx";
+import { ListItem } from "@/components/list-item.tsx";
+import { EmptyState } from "@/components/page.tsx";
+import { QueryState } from "@/components/query-state.tsx";
+import { Section } from "@/components/section.tsx";
+import { Alert } from "@/components/ui/alert.tsx";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
+import { Button } from "@/components/ui/button.tsx";
+import { Form } from "@/components/ui/form.tsx";
 import { ChevronRight, Plus, Trash2 } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
 import { EMBEDS_STALE_TIME } from "@/lib/embeds.ts";
@@ -55,8 +56,6 @@ const blank = (taken: EmbedConfig[]): EmbedConfig => {
 
 /** Which row the dialog is editing: an index into the list, or a new row at the end. */
 type Editing = { index: number | null; value: EmbedConfig };
-
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /** One line of the list: what it is, where it points, and whether it is on. */
 function Row({ embed, onOpen }: { embed: EmbedConfig; onOpen: () => void }) {

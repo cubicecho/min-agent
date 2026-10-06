@@ -1,4 +1,5 @@
 import { FRESHNESS_DEFAULTS } from "@shared/defaults.ts";
+import { messageOf } from "@shared/errors.ts";
 import {
   HOOK_EVENTS_FIRED,
   INJECT_EVENTS,
@@ -12,19 +13,19 @@ import { useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Text } from "react-native";
-import { ActionButton } from "@/components/action-button";
-import { useAppForm } from "@/components/app/app-form";
+import { ActionButton } from "@/components/action-button.tsx";
+import { useAppForm } from "@/components/app/app-form.tsx";
 import { Globe, Server, Terminal } from "@/components/app/app-icons";
-import { ConfirmButton } from "@/components/confirm-button";
-import { DialogLayout } from "@/components/dialog-layout";
-import { ListItem } from "@/components/list-item";
-import { EmptyState } from "@/components/page";
-import { QueryState } from "@/components/query-state";
-import { Section } from "@/components/section";
-import { Alert } from "@/components/ui/alert";
+import { ConfirmButton } from "@/components/confirm-button.tsx";
+import { DialogLayout } from "@/components/dialog-layout.tsx";
+import { ListItem } from "@/components/list-item.tsx";
+import { EmptyState } from "@/components/page.tsx";
+import { QueryState } from "@/components/query-state.tsx";
+import { Section } from "@/components/section.tsx";
+import { Alert } from "@/components/ui/alert.tsx";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
+import { Button } from "@/components/ui/button.tsx";
+import { Form } from "@/components/ui/form.tsx";
 import { ChevronRight, Plus, RefreshCw, Trash2, X } from "@/components/ui/icons";
 import { SwitchField as SwitchRow } from "@/components/ui/switch-field";
 import { api } from "@/lib/client.ts";
@@ -92,8 +93,6 @@ const EVENT_OPTIONS = HOOK_EVENTS_FIRED.map((event) => ({ label: event, value: e
 
 /** What a hook injects up to when nobody has said: the pool's own default. */
 const DEFAULT_MAX_TOKENS = 1000;
-
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 

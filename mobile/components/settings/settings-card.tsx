@@ -1,6 +1,6 @@
 import { Text } from "react-native";
-import { CardLayout, type CardLayoutProps } from "@/components/card-layout";
-import { cn } from "@/lib/utils";
+import { CardLayout, type CardLayoutProps } from "@/components/card-layout.tsx";
+import { cn } from "@/lib/utils.ts";
 
 /**
  * One group of settings on a card.

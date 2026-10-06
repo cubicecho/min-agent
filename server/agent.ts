@@ -2,14 +2,12 @@ import {
   type AgentLoopResult,
   applyCompaction,
   ask,
-  type Capabilities,
   ContextOverflow,
   carryOver,
   catalogPrompt,
   clean,
   compact as compactTokens,
   contextLimitFor,
-  errorMessage,
   expandNames,
   failedRun,
   inCatalog,
@@ -23,8 +21,6 @@ import {
   requestedNames,
   runAgentLoop,
   runCompaction,
-  runTurn as runRoundTrip,
-  type StreamTurnOptions,
   sanitizeTools,
   summariser,
   type ToolCallRequest,
@@ -36,6 +32,7 @@ import { McpPoolError, type ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { measureRequest, splitContext } from "../shared/client/usage.ts";
 import { FOLLOWUP_DEFAULTS, TITLE_DEFAULTS, TURN_DEFAULTS } from "../shared/defaults.ts";
+import { messageOf } from "../shared/errors.ts";
 import { CALL_TOOL, shownCall } from "../shared/tool-proxy.ts";
 import {
   type ContextBreakdown,
@@ -93,7 +90,7 @@ function titleFrom(text: string) {
  * silence.
  *
  * Worth passing everywhere, because most of what arrives here latches for the life of the
- * process and this line is the only announcement that it did: `sendTurn` for the chat model,
+ * process and this line is the only announcement that it did: the loop for the chat model,
  * and the side tasks, which have negotiated their own requests since agent-core 2.1.2. It also
  * carries `runTurn`'s retry notices, so a turn waiting out an endpoint says so while it waits.
  * Since 2.2.0 a notice opens with what refused — the model by name, or `server` — so the source
@@ -124,7 +121,7 @@ async function compact(
   contextLimit: number,
   signal?: AbortSignal,
 ): Promise<string> {
-  const used = latestContextTokens(session);
+  const used = latestCount(session, "contextTokens");
   // No plan when the window is not three quarters used, or no legal cut folds enough.
   const plan = planFold(session, contextLimit, used);
   if (!plan) {
@@ -173,23 +170,19 @@ async function prune(session: Session, contextLimit: number, compacted = false):
   return true;
 }
 
-/** The last turn's final prompt, which the next turn's first request should find cached. */
-function latestPromptTokens(session: Session): number {
+/**
+ * A count off the last turn that has one. A turn whose server reported no usage is stored with
+ * stats and without counts, and is walked past: an older number is a better estimate than none.
+ *
+ * @param count `lastPromptTokens` is the last turn's final prompt, which the next turn's first
+ * request should find cached. `contextTokens` is what the last turn actually cost, which is the
+ * best estimate of what the next one will.
+ */
+function latestCount(session: Session, count: "lastPromptTokens" | "contextTokens"): number {
   for (let i = session.messages.length - 1; i >= 0; i--) {
-    const { stats } = session.messages[i];
-    if (stats) {
-      return stats.lastPromptTokens ?? 0;
-    }
-  }
-  return 0;
-}
-
-/** What the last turn actually cost, which is the best estimate of what the next one will. */
-function latestContextTokens(session: Session): number {
-  for (let i = session.messages.length - 1; i >= 0; i--) {
-    const { stats } = session.messages[i];
-    if (stats?.contextTokens) {
-      return stats.contextTokens;
+    const counted = session.messages[i].stats?.[count];
+    if (counted) {
+      return counted;
     }
   }
   return 0;
@@ -316,7 +309,7 @@ export function instructionsPrompt(servers: { label: string; text: string }[]) {
  * @param contextLimit The window the turn was built to. Zero when none is set.
  */
 function withWindow(error: unknown, contextLimit: number): unknown {
-  const detail = errorMessage(error);
+  const detail = messageOf(error);
   const isOtherFailure = isOverflow(detail) === false;
   if (isOtherFailure) {
     return error;
@@ -328,59 +321,6 @@ function withWindow(error: unknown, contextLimit: number): unknown {
       : `${detail} — set Settings → Agent → Context window, and the turn will compact ` +
           "itself before it gets this far.",
   );
-}
-
-/** What one round trip needs beyond the body it sends. */
-export interface SendOptions
-  extends Pick<StreamTurnOptions, "signal" | "idleMs" | "onThinking" | "onOutput"> {
-  /** What this endpoint has already refused, latched further as it refuses more. */
-  supports: Capabilities;
-  /** The model the body names, so the refusals that are the model's are negotiated too. */
-  model: string;
-  /** The window this turn was built to, for the one refusal below. Zero when none is set. */
-  contextLimit: number;
-}
-
-/**
- * Sends one round trip — negotiated, retried, and read back as a `Turn` — and says what
- * min-agent knows about the one refusal none of that can answer.
- *
- * All three of those loops are agent-core's `runTurn`, which is the whole reason this function
- * is four lines: the memory of what an endpoint and a model have refused and the re-send that
- * answers a refusal (since 2.1.0), the attempt budget around a request that was lost rather
- * than refused, and the reading of a stream into a message. min-agent wrote its own of each
- * until it did, and the one worth naming is the retry — it wrapped only the call that resolves
- * before the first chunk, so an endpoint that accepted the request and then dropped it was a
- * dead turn rather than a second attempt.
- *
- * What is left here is the overflow; see `withWindow`.
- *
- * Nothing in the server calls this since the turn's steps became agent-core's `runAgentLoop`
- * (#52), which makes the same round trip itself. It is kept for
- * `tests/server/negotiate.test.ts` and `tests/server/reasoning.test.ts`, which pin the
- * negotiation through it.
- *
- * @param client The pooled client for this endpoint. `getClient` builds it with the SDK's own
- * retrying off, because a stream that has already produced tokens must never be replayed from
- * the top and the SDK cannot tell whether it has — so the budget below is the only one in play.
- * @param request Builds the body. Called again per downgrade and per attempt, since a downgrade
- * changes what it may send.
- */
-export async function sendTurn(
-  client: OpenAI,
-  request: (supports: Capabilities) => OpenAI.ChatCompletionCreateParamsStreaming,
-  { supports, model, contextLimit, ...stream }: SendOptions,
-): Promise<Turn> {
-  try {
-    return await runRoundTrip(client, supports, request, {
-      ...stream,
-      model,
-      maxRetries: TURN_DEFAULTS.openRetries,
-      onNotice: notice,
-    });
-  } catch (error) {
-    throw withWindow(error, contextLimit);
-  }
 }
 
 /**
@@ -699,7 +639,7 @@ function toolRunner({ catalog, onDemand, proxied, carried }: TurnPlan, signal?: 
       );
     } catch (error) {
       failed.add(id);
-      return errorMessage(error);
+      return messageOf(error);
     }
   };
 
@@ -988,7 +928,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // The last request's prompt, to tell whether this one found it in the cache. The first step
   // is held to the turn before's last, unless a compaction just rewrote the history under it,
   // or the pruning marker moved and turned results it had sent whole into stubs.
-  let previousPrompt = headMoved ? 0 : latestPromptTokens(session);
+  let previousPrompt = headMoved ? 0 : latestCount(session, "lastPromptTokens");
   // The marker's check between tool steps, which is where a long turn needs it: nothing compacts
   // mid-turn, and a turn of thirty tool calls is thirty results replayed whole on every step. Owed
   // from the moment a step's last result is stored, and paid before the next request or, where
@@ -1308,7 +1248,7 @@ export async function callOnce(
       throw error;
     }
     throw new Error(
-      `${errorMessage(error)}\n\n(Identical call already failed this turn; it will fail the same way again. Change the arguments or try something else.)`,
+      `${messageOf(error)}\n\n(Identical call already failed this turn; it will fail the same way again. Change the arguments or try something else.)`,
     );
   }
 }

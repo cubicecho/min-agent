@@ -1,7 +1,7 @@
 import { EMBED_ICONS, type EmbedIcon } from "@shared/types.ts";
-import { EMBED_ICON } from "@/components/apps/embed-icon";
-import { FieldWrapper, useFieldContext } from "@/components/ui/form";
-import { SegmentedButton, SegmentedGroup } from "@/components/ui/segmented";
+import { EMBED_ICON } from "@/components/apps/embed-icon.ts";
+import { FieldWrapper, useFieldContext } from "@/components/ui/form.tsx";
+import { SegmentedButton, SegmentedGroup } from "@/components/ui/segmented.tsx";
 
 type EmbedIconPickerProps = {
   value: EmbedIcon;

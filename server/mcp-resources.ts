@@ -1,5 +1,5 @@
-import { errorMessage } from "@cubicecho/agent-core";
 import type { ToolDefinition } from "@cubicecho/agent-mcp-pool";
+import { messageOf } from "../shared/errors.ts";
 import { client, resourceServers } from "./mcp.ts";
 
 /**
@@ -114,7 +114,7 @@ export async function list(): Promise<string> {
           ? `${label}:\n${resources.map(line).join("\n")}`
           : `${label}: no resources.`;
       } catch (error) {
-        return `${label}: could not be listed — ${errorMessage(error)}`;
+        return `${label}: could not be listed — ${messageOf(error)}`;
       }
     }),
   );
@@ -163,5 +163,5 @@ export async function read(uri: string): Promise<string> {
       last = error;
     }
   }
-  throw new Error(`no connected MCP server could read ${uri}: ${errorMessage(last)}`);
+  throw new Error(`no connected MCP server could read ${uri}: ${messageOf(last)}`);
 }

@@ -4,9 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
-import { TITLE_ROW } from "@/components/app/title-row";
-import { HeaderContentFooter, PROSE_COLUMN } from "@/components/header-content-footer";
-import { PageHeader } from "@/components/page-header";
+import { TITLE_ROW } from "@/components/app/title-row.ts";
+import { HeaderContentFooter, PROSE_COLUMN } from "@/components/header-content-footer.tsx";
+import { PageHeader } from "@/components/page-header.tsx";
 import { AgentPanel } from "@/components/settings/agent-panel.tsx";
 import { AppsPanel } from "@/components/settings/apps-panel.tsx";
 import { DevicePanel } from "@/components/settings/device-panel.tsx";
@@ -19,7 +19,7 @@ import { VoicePanel } from "@/components/settings/voice-panel.tsx";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/client.ts";
 import { queryKeys } from "@/lib/queries.ts";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils.ts";
 
 /**
  * Everything there is to set up, behind one nav row.

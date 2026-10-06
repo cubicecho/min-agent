@@ -1,12 +1,13 @@
+import { messageOf } from "@shared/errors.ts";
 import { useStore } from "@tanstack/react-form";
 import * as Updates from "expo-updates";
 import { useState } from "react";
 import { Platform, Text } from "react-native";
-import { useAppForm } from "@/components/app/app-form";
-import { DescriptionList, PropertyRow } from "@/components/description-list";
-import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
+import { useAppForm } from "@/components/app/app-form.tsx";
+import { DescriptionList, PropertyRow } from "@/components/description-list.tsx";
+import { Alert } from "@/components/ui/alert.tsx";
+import { Button } from "@/components/ui/button.tsx";
+import { Form } from "@/components/ui/form.tsx";
 import { CircleCheck, Download, RefreshCw } from "@/components/ui/icons";
 import { setVoiceSettings, useVoiceSettings } from "@/lib/voice-settings.ts";
 import { useReportDirty } from "./dirty.tsx";
@@ -135,7 +136,7 @@ export function DevicePanel() {
     } catch (error) {
       setProgress({
         kind: "failed",
-        detail: error instanceof Error ? error.message : String(error),
+        detail: messageOf(error),
       });
     }
   };

@@ -1,4 +1,9 @@
-import { type CatalogServer, resetAll } from "@cubicecho/agent-core";
+import {
+  type CatalogServer,
+  capabilitiesFor,
+  modelCapabilitiesFor,
+  resetAll,
+} from "@cubicecho/agent-core";
 import type { ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -72,7 +77,7 @@ vi.mock("../../server/config.ts", async (original) => ({
 
 const { runTurn } = await import("../../server/agent.ts");
 
-type Reply = { chunks: object[] } | { refusal: string };
+type Reply = { chunks: object[] } | { refusal: string } | { lost: string };
 
 let script: Reply[] = [];
 let requests: string[] = [];
@@ -117,12 +122,21 @@ const asks = (...calls: [id: string, name: string, args: string][]) =>
 /** A request refused outright, with the endpoint's reason as the `error.message` of a 400. */
 const refuses = (refusal: string): Reply => ({ refusal });
 
+/**
+ * @param lost What the socket said as it went.
+ * @returns A request that never landed: the one class of failure worth simply sending again.
+ */
+const loses = (lost: string): Reply => ({ lost });
+
 async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   requests.push(String(init?.body ?? url));
   log.push("request");
   const reply = String(url).endsWith("/chat/completions") ? script.shift() : undefined;
   if (!reply) {
     return new Response("{}", { status: 404 });
+  }
+  if ("lost" in reply) {
+    throw new TypeError(reply.lost);
   }
   if ("refusal" in reply) {
     return new Response(JSON.stringify({ error: { message: reply.refusal } }), {
@@ -613,6 +627,70 @@ describe("a reply that ran out of room", () => {
     expect(stats).toMatchObject({ iterations: 1 });
     expect(stored[1]).toMatchObject({ role: "assistant", content: "Half an ans" });
     expect(warn.mock.calls).toEqual([[LENGTH_NOTICE]]);
+  });
+});
+
+/**
+ * What one round trip does when the endpoint refuses something it can do without, or loses the
+ * request altogether.
+ *
+ * The loops are agent-core's, and tested there — that a server refusing two things is answered
+ * in one turn, that one endpoint's refusal is not held against another, that nothing is sent
+ * again once tokens have arrived. What is min-agent's, and so what is tested here, is the wiring
+ * into it — the model it names, the attempt budget it sets — and the one refusal none of it can
+ * answer: a request past the window, which has to reach the user saying which setting disagrees
+ * with the server. `run-turn.test.ts` pins that one where a window is configured.
+ */
+describe("a request refused or lost on the first step", () => {
+  it("names the model, so the refusals that are the model's are answered too", async () => {
+    configure({ baseUrl: "https://api.openai.com/v1", model: "gpt-4o", reasoningEffort: "low" });
+    script = [
+      refuses("Unsupported parameter: 'reasoning_effort' is not supported with this model."),
+      says("answered"),
+    ];
+
+    // Left unnamed, this is a refusal with nothing to negotiate and the turn fails on it.
+    const { error } = await run(sessionOf(), "hi");
+
+    expect(error).toBeUndefined();
+    expect(stored[1]).toMatchObject({ role: "assistant", content: "answered" });
+    const supports = capabilitiesFor("https://api.openai.com/v1");
+    expect(modelCapabilitiesFor(supports, "gpt-4o").reasoningEffort).toBe(false);
+  });
+
+  it("passes back a refusal there is nothing to negotiate about", async () => {
+    script = [refuses("model 'nope' not found"), says("never sent")];
+
+    const { error } = await run(sessionOf(), "hi");
+
+    expect(error?.message).toContain("not found");
+    expect(requests).toHaveLength(1);
+  });
+
+  it("sends a lost request again, and gives up after the turn's own budget", async () => {
+    script = [
+      loses("socket hang up"),
+      loses("socket hang up"),
+      loses("socket hang up"),
+      says("never sent"),
+    ];
+
+    const { error } = await run(sessionOf(), "hi");
+
+    expect(error?.constructor.name).toBe("APIConnectionError");
+    // Two retries on top of the attempt that was asked for. A refusal spends none of them, which
+    // is what the test above pins from the other side.
+    expect(requests).toHaveLength(3);
+  });
+
+  it("says what to set when the window was never configured", async () => {
+    configure({ contextLimit: 0 });
+    script = [refuses("This model's maximum context length is 8192 tokens."), says("never sent")];
+
+    const { error } = await run(sessionOf(), "hi");
+
+    expect(error?.name).toBe("ContextOverflow");
+    expect(error?.message).toMatch(/Context window/);
   });
 });
 

@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { type SettingsTab, settingsHref, settingsTabLabel } from "@/components/settings/tabs.ts";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/button.tsx";
 import { Settings } from "@/components/ui/icons";
 
 /**

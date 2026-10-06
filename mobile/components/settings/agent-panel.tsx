@@ -1,9 +1,9 @@
 import { REASONING_EFFORTS, type ReasoningEffort } from "@shared/types.ts";
 import { useMutation } from "@tanstack/react-query";
 import { Text, View } from "react-native";
-import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { FieldRow } from "@/components/ui/form";
+import { Alert } from "@/components/ui/alert.tsx";
+import { Button } from "@/components/ui/button.tsx";
+import { FieldRow } from "@/components/ui/form.tsx";
 import { Check, Copy } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
 import { useCopy } from "@/lib/copy.ts";

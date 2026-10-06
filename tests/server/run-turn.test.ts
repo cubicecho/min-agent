@@ -1214,6 +1214,24 @@ describe("what the loop decides beyond the common path", () => {
     ]);
   });
 
+  /** B1: the lookup stopped at the newest stats and read no count as a prompt of nothing. */
+  it("holds a step to the last turn that counted its prompt, past one that did not", async () => {
+    const earlier: StoredMessage[] = [
+      { role: "user", content: "earlier" },
+      { role: "assistant", content: "before", stats: turnStats({ lastPromptTokens: 1000 }) },
+      { role: "user", content: "later" },
+      // A turn whose server reported no usage: stats, and no prompt count among them.
+      { role: "assistant", content: "uncounted", stats: turnStats() },
+    ];
+    script = [{ chunks: [chunk({ content: "hello" }), chunk({}, "stop"), usage(1100, 100)] }];
+
+    await run(sessionOf({ messages: earlier }), "hi");
+
+    expect(vi.mocked(console.warn).mock.calls.map(([line]) => line)).toEqual([
+      "[agent] prompt cache missed: 100 of 1100 cached, after a 1000-token request",
+    ]);
+  });
+
   it("says nothing about the cache where the server reports none", async () => {
     const earlier: StoredMessage[] = [
       { role: "user", content: "earlier" },

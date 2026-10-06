@@ -1,12 +1,13 @@
+import { messageOf } from "@shared/errors.ts";
 import { MODEL_TASKS } from "@shared/model-tasks.ts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Text, View } from "react-native";
-import { QueryError } from "@/components/query-state";
-import { Section } from "@/components/section";
+import { QueryError } from "@/components/query-state.tsx";
+import { Section } from "@/components/section.tsx";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { FieldRow } from "@/components/ui/form";
+import { Button } from "@/components/ui/button.tsx";
+import { FieldRow } from "@/components/ui/form.tsx";
 import { Check } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
 import { queryKeys } from "@/lib/queries.ts";
@@ -36,8 +37,6 @@ const tidy = (draft: ModelDraft) => ({
 type Probe = { ok: boolean; detail: string; baseUrl: string; apiKey: string } | null;
 
 const endpointOf = ({ baseUrl, apiKey }: ModelDraft) => ({ baseUrl, apiKey });
-
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
  * Where the models come from and which ones are used.

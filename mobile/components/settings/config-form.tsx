@@ -1,14 +1,15 @@
+import { messageOf } from "@shared/errors.ts";
 import type { LlmConfigView, ReasoningEffort } from "@shared/types.ts";
 import { useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
-import { useAppForm } from "@/components/app/app-form";
+import { useAppForm } from "@/components/app/app-form.tsx";
 import { Save } from "@/components/app/app-icons";
-import { StickyHeaderContentFooter } from "@/components/header-content-footer";
-import { QueryState } from "@/components/query-state";
-import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { StickyHeaderContentFooter } from "@/components/header-content-footer.tsx";
+import { QueryState } from "@/components/query-state.tsx";
+import { Alert } from "@/components/ui/alert.tsx";
+import { Button } from "@/components/ui/button.tsx";
 import { api } from "@/lib/client.ts";
 import { queryKeys } from "@/lib/queries.ts";
 import type { SlotNode } from "@/lib/utils.ts";
@@ -49,8 +50,6 @@ export type Draft = {
 
 /** The panels that edit this row. The other settings tabs store their settings elsewhere. */
 export type ConfigTab = Extract<SettingsTab, "model" | "agent" | "voice">;
-
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
  * The form over one panel's fields.

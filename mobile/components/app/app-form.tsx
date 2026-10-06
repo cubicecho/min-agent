@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { OptionSelect, type SelectEntry } from "@/components/option-select";
-import { PasswordInput, type PasswordInputProps } from "@/components/password-input";
-import { createAppForm, FieldWrapper, splitProps, useFieldContext } from "@/components/ui/form";
+import { OptionSelect, type SelectEntry } from "@/components/option-select.tsx";
+import { PasswordInput, type PasswordInputProps } from "@/components/password-input.tsx";
+import { createAppForm, FieldWrapper, splitProps, useFieldContext } from "@/components/ui/form.tsx";
 import { Input, type InputProps } from "@/components/ui/input";
 
 type FieldText = {
