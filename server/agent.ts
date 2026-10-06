@@ -386,6 +386,100 @@ export async function sendTurn(
   }
 }
 
+/**
+ * An assistant row as it is stored: what streamed, and the calls as the model wrote them.
+ *
+ * @param toolCalls The step's calls. None for a reply cut short by a stop, which asked for none.
+ */
+function assistantMessage(
+  text: string,
+  reasoning: string,
+  toolCalls: Turn["toolCalls"] = [],
+): StoredMessage {
+  return {
+    role: "assistant",
+    content: text || null,
+    ...(reasoning ? { reasoning_content: reasoning } : {}),
+    ...(toolCalls.length
+      ? {
+          tool_calls: toolCalls.map((call) => ({
+            id: call.id,
+            type: "function" as const,
+            function: {
+              name: call.function.name,
+              arguments: call.function.arguments || "{}",
+            },
+          })),
+        }
+      : {}),
+  };
+}
+
+/** What a finished turn measured, for `turnStats` to report. Times are epoch milliseconds. */
+interface TurnMeasurements {
+  /** Every round trip of the turn, summed. */
+  usage: TokenUsage;
+  /** The final round trip alone, which is what the next turn's context starts from. */
+  lastRoundTrip: TokenUsage;
+  model: string;
+  startedAt: number;
+  endedAt: number;
+  /** Zero when nothing streamed. */
+  firstTokenAt: number;
+  lastTokenAt: number;
+  iterations: number;
+  toolCalls: number;
+  /** The window the turn was built to. Zero when none is set. */
+  contextLimit: number;
+  breakdown?: TurnStats["breakdown"];
+  hooks: NonNullable<TurnStats["hooks"]>;
+}
+
+/**
+ * The stats stored with a turn's reply. A figure is left out rather than reported as zero when
+ * the turn has no reading for it: no token streamed, the server sent no usage, no window is set.
+ */
+function turnStats({
+  usage,
+  lastRoundTrip,
+  model,
+  startedAt,
+  endedAt,
+  firstTokenAt,
+  lastTokenAt,
+  iterations,
+  toolCalls,
+  contextLimit,
+  breakdown,
+  hooks,
+}: TurnMeasurements): TurnStats {
+  const generationMs = lastTokenAt - firstTokenAt;
+  const generated = firstTokenAt > 0 && generationMs > 0;
+  return {
+    ...usage,
+    model,
+    totalMs: endedAt - startedAt,
+    iterations,
+    toolCalls,
+    ...(firstTokenAt ? { ttftMs: firstTokenAt - startedAt } : {}),
+    ...(generated
+      ? {
+          generationMs,
+          ...(usage.completionTokens
+            ? { tokensPerSecond: usage.completionTokens / (generationMs / 1000) }
+            : {}),
+        }
+      : {}),
+    ...(lastRoundTrip.totalTokens
+      ? { contextTokens: lastRoundTrip.promptTokens + lastRoundTrip.completionTokens }
+      : {}),
+    ...(lastRoundTrip.promptTokens ? { lastPromptTokens: lastRoundTrip.promptTokens } : {}),
+    ...(contextLimit ? { contextLimit } : {}),
+    ...(breakdown ? { breakdown } : {}),
+    ...(hooks.length ? { hooks } : {}),
+  };
+}
+
 export interface RunOptions {
   session: Session;
   prompt: string;
@@ -820,23 +914,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         unanswered = turn.toolCalls.length;
         // Built from the turn rather than taken from `message`, which carries the arguments as
         // the loop repaired them: what is stored is what the model wrote.
-        const assistant: StoredMessage = {
-          role: "assistant",
-          content: text || null,
-          ...(reasoning ? { reasoning_content: reasoning } : {}),
-          ...(turn.toolCalls.length
-            ? {
-                tool_calls: turn.toolCalls.map((call) => ({
-                  id: call.id,
-                  type: "function" as const,
-                  function: {
-                    name: call.function.name,
-                    arguments: call.function.arguments || "{}",
-                  },
-                })),
-              }
-            : {}),
-        };
+        const assistant = assistantMessage(text, reasoning, turn.toolCalls);
         text = "";
         reasoning = "";
         session.usage = add(banked, turnUsage);
@@ -850,12 +928,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     // is only appended once the stream ends, so an abort left the reply on screen and nothing in
     // the transcript. Keep the part that streamed, then let the error through — the route stays
     // quiet about a turn its reader ended.
-    if (signal?.aborted && (text || reasoning))
-      await store({
-        role: "assistant",
-        content: text || null,
-        ...(reasoning ? { reasoning_content: reasoning } : {}),
-      });
+    if (signal?.aborted && (text || reasoning)) await store(assistantMessage(text, reasoning));
     if (error instanceof ToolIterationLimit) throw new Error(error.message);
     // The loop wraps what it caught to hang the run on it. Every message is stored already, so
     // the run is not needed and the error goes on as it was thrown.
@@ -865,31 +938,20 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // The loop returns on the step that asked for no tools, whose reply is the last row written.
   const assistant = session.messages[session.messages.length - 1];
   const breakdown = lastRequest ? splitContext(lastRequest, lastRoundTrip.promptTokens) : undefined;
-  const stats: TurnStats = {
-    ...turnUsage,
+  const stats = turnStats({
+    usage: turnUsage,
+    lastRoundTrip,
     model: chosenModel,
-    totalMs: Date.now() - startedAt,
+    startedAt,
+    endedAt: Date.now(),
+    firstTokenAt,
+    lastTokenAt,
     iterations,
     toolCalls,
-    ...(firstTokenAt ? { ttftMs: firstTokenAt - startedAt } : {}),
-    ...(firstTokenAt && lastTokenAt > firstTokenAt
-      ? {
-          generationMs: lastTokenAt - firstTokenAt,
-          ...(turnUsage.completionTokens
-            ? {
-                tokensPerSecond: turnUsage.completionTokens / ((lastTokenAt - firstTokenAt) / 1000),
-              }
-            : {}),
-        }
-      : {}),
-    ...(lastRoundTrip.totalTokens
-      ? { contextTokens: lastRoundTrip.promptTokens + lastRoundTrip.completionTokens }
-      : {}),
-    ...(lastRoundTrip.promptTokens ? { lastPromptTokens: lastRoundTrip.promptTokens } : {}),
-    ...(contextLimit ? { contextLimit } : {}),
-    ...(breakdown ? { breakdown } : {}),
-    ...(gathered.notes.length ? { hooks: gathered.notes } : {}),
-  };
+    contextLimit,
+    breakdown,
+    hooks: gathered.notes,
+  });
   assistant.stats = stats;
   // What was called, in the order it was loaded, and only what was loaded: a name the model
   // made up is called, and fails, but is nothing to declare next turn.
