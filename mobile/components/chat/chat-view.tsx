@@ -47,6 +47,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { api, streamTurn } from "@/lib/client.ts";
 import { useWide } from "@/lib/layout.ts";
+import { invalidateSession, queryKeys } from "@/lib/queries.ts";
+import { useStableCallback } from "@/lib/stable-callback.ts";
 import { cn } from "@/lib/utils.ts";
 import { useDictation, useSpeech } from "@/lib/voice.ts";
 import { useVoiceSettings } from "@/lib/voice-settings.ts";
@@ -91,12 +93,12 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   const activeId = sessionId ?? created;
 
   const session = useQuery({
-    queryKey: ["session", activeId],
+    queryKey: queryKeys.session(activeId),
     queryFn: () => api.session(activeId as string),
     enabled: Boolean(activeId),
   });
-  const config = useQuery({ queryKey: ["config"], queryFn: api.config });
-  const models = useQuery({ queryKey: ["models"], queryFn: api.models });
+  const config = useQuery({ queryKey: queryKeys.config, queryFn: api.config });
+  const models = useQuery({ queryKey: queryKeys.models, queryFn: api.models });
 
   const [model, setModel] = useState("");
   const [draft, setDraft] = useState("");
@@ -245,8 +247,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
    * no-op, and a turn whose chat has since been left off screen only refreshes what it wrote.
    */
   async function settle(id: string, read = false) {
-    await queryClient.invalidateQueries({ queryKey: ["session", id] });
-    await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    await invalidateSession(queryClient, id);
     // Tidying up after a turn the reader has already walked away from would take the
     // composer and the transcript of whatever they walked to with it.
     if (showing.current !== id) return;
@@ -259,7 +260,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     // turn with tool calls in it has more messages than the answer alone.
     if (read) {
       const messages =
-        queryClient.getQueryData<{ messages: { role: string }[] }>(["session", id])?.messages ?? [];
+        queryClient.getQueryData<{ messages: { role: string }[] }>(queryKeys.session(id))
+          ?.messages ?? [];
       const last = messages.findLastIndex((message) => message.role === "assistant");
       if (last !== -1) setSpoken(last);
     }
@@ -274,7 +276,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
       const fresh = await api.createSession();
       id = fresh.id;
       setCreated(id);
-      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
     }
     // Narrowed once, for the callbacks below: `id` is a `let` and they outlive this line.
     const turnId = id;
@@ -286,7 +288,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     // Read out of the cache rather than off `session.data`: retrying reads the transcript back
     // shorter first, and this render may not have caught up with that yet.
     asked.current =
-      queryClient.getQueryData<{ messages: unknown[] }>(["session", turnId])?.messages.length ?? 0;
+      queryClient.getQueryData<{ messages: unknown[] }>(queryKeys.session(turnId))?.messages
+        .length ?? 0;
 
     // A chip sends its own text; anything half-typed in the box is left alone.
     if (!text) setDraft("");
@@ -330,11 +333,11 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
           // rather than growing a second path for the same data. This one holds whether or
           // not the chat is still on screen: it is the stored transcript being refreshed.
           if (event.type === "followups")
-            void queryClient.invalidateQueries({ queryKey: ["session", turnId] });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.session(turnId) });
           // The same goes for a hook that reports after the answer, once the turn has settled
           // and there is no live tail left to put it on: the stored turn has it.
           if (event.type === "hook" && settled) {
-            void queryClient.invalidateQueries({ queryKey: ["session", turnId] });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.session(turnId) });
             return;
           }
           if (event.type === "done") {
@@ -373,8 +376,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   async function rewind(index: number) {
     if (!activeId) return;
     await api.truncateSession(activeId, index);
-    await queryClient.invalidateQueries({ queryKey: ["session", activeId] });
-    await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    await invalidateSession(queryClient, activeId);
   }
 
   /**
@@ -401,29 +403,22 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   }
 
   // A chip must not change identity every render, or the memoised transcript re-renders on
-  // every token. The ref keeps the callback stable while still calling the current `send`.
-  const sendRef = useRef(send);
-  sendRef.current = send;
-  const followup = useCallback((text: string) => void sendRef.current(text), []);
+  // every token.
+  const followup = useStableCallback((text: string) => void send(text));
   // Same for the two transcript buttons, which hang off every stored message.
-  const retryRef = useRef(retry);
-  retryRef.current = retry;
-  const onRetry = useCallback((index: number) => void retryRef.current(index), []);
-  const editRef = useRef(edit);
-  editRef.current = edit;
-  const onEdit = useCallback((index: number) => void editRef.current(index), []);
+  const onRetry = useStableCallback((index: number) => void retry(index));
+  const onEdit = useStableCallback((index: number) => void edit(index));
 
   /** Pressing the button on whatever is already being read is how you stop it. */
-  function toggleSpeak(index: number, text: string) {
+  const onSpeak = useStableCallback((index: number, text: string) => {
     if (spoken === index && speech.speaking) {
       speech.stop();
       return;
     }
-    if (speech.speak(text)) setSpoken(index);
-  }
-  const speakRef = useRef(toggleSpeak);
-  speakRef.current = toggleSpeak;
-  const onSpeak = useCallback((index: number, text: string) => speakRef.current(index, text), []);
+    if (speech.speak(text)) {
+      setSpoken(index);
+    }
+  });
 
   /** What the conversation has cost so far, as the one line the header has room for. */
   const usageLine = shownUsage

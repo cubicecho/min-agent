@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/client.ts";
+import { queryKeys } from "@/lib/queries.ts";
 
 /**
  * The prompts a connected MCP server offers, as something you pick and edit before sending.
@@ -27,12 +28,12 @@ import { api } from "@/lib/client.ts";
 /**
  * Whether there is anything to pick, for the composer's button.
  *
- * Shares `["mcp-prompts"]` with the dialog below, so opening the picker draws from what this
+ * Shares `queryKeys.mcpPrompts` with the dialog below, so opening the picker draws from what this
  * already fetched instead of asking again. No poll: a prompt list changes when an operator edits
  * the MCP tab, and the tab already invalidates on save.
  */
 export const useMcpPrompts = () =>
-  useQuery({ queryKey: ["mcp-prompts"], queryFn: api.mcpPrompts, staleTime: 60_000 });
+  useQuery({ queryKey: queryKeys.mcpPrompts, queryFn: api.mcpPrompts, staleTime: 60_000 });
 
 /** A prompt's own name for itself, falling back to the id the server addresses it by. */
 const titleOf = (prompt: McpPrompt) => prompt.title?.trim() || prompt.name;
