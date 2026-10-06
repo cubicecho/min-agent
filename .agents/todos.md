@@ -6,7 +6,7 @@ Nothing here is implemented until approved.
 
 Survey of 2026-10-05 read `server/agent.ts`, `mobile/app/_layout.tsx`, `mobile/app/settings.tsx`,
 `mobile/app/embed/[id].tsx` and `mobile/components/chat/{chat-view,message-view,session-list}.tsx`.
-Sweep counts are pattern matches over all app-owned code and are approximate. R1–R4 and D1 are done.
+Sweep counts are pattern matches over all app-owned code and are approximate. R1–R8 and D1 are done.
 
 ## Conventions
 
@@ -15,29 +15,6 @@ Sweep counts are pattern matches over all app-owned code and are approximate. R1
 - Generated: `shared/gql/graphql.ts` → `npm run codegen`.
 
 ## Refactoring
-
-### R5 [simplify] — split `runTurn` into named phases
-
-**File:** `server/agent.ts`, `runTurn`. One function of about 500 lines over some 20 mutable
-locals. Target: prepare, run the loop, settle the stats, after-turn work, over one explicit turn
-state. Buys: the file changes more than any other (33 changes in 3 months). Safety net:
-`tests/run-turn.test.ts`, `tests/run-turn-edges.test.ts`. Its own PR.
-
-### R6 [reuse] — one `useStableCallback` hook
-
-**File:** `mobile/components/chat/chat-view.tsx`, the four ref-plus-`useCallback` pairs for
-`send`, `retry`, `edit` and `toggleSpeak`. Target: a hook in `mobile/lib/`.
-
-### R7 [reuse] — a `queryKeys` module and `invalidateSession(id)`
-
-**Hits:** 28 literal query keys across `mobile/`; the `["session", id]` + `["sessions"]`
-invalidation pair is written three times (`chat-view.tsx` twice, `session-list.tsx`). Buys: a
-mistyped key can no longer silently skip a refresh.
-
-### R8 [reuse] — build the shell's nav places once
-
-**File:** `mobile/app/_layout.tsx`, the rail's and the bar's app lists. Target: one derived list
-(label, icon, target, active) that both render. Buys: the file is the second most changed (16).
 
 ### R9 [sweep] — braces on every `if` (P15)
 
