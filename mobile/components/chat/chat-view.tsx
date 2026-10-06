@@ -661,13 +661,10 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
                   disabled={dictation.transcribing}
                   onPress={dictation.toggle}
                   iconSlot={
-                    dictation.transcribing ? (
-                      <Spinner label="Transcribing" />
-                    ) : dictation.listening ? (
-                      <Square aria-hidden className="size-4" />
-                    ) : (
-                      <Mic aria-hidden className="size-4" />
-                    )
+                    <DictationIcon
+                      transcribing={dictation.transcribing}
+                      listening={dictation.listening}
+                    />
                   }
                 />
               ) : null}
@@ -892,9 +889,30 @@ function TokensDialog({
   );
 }
 
+/** What the microphone button shows: working, recording, or ready. */
+function DictationIcon({ transcribing, listening }: { transcribing: boolean; listening: boolean }) {
+  if (transcribing) {
+    return <Spinner label="Transcribing" />;
+  }
+  if (listening) {
+    return <Square aria-hidden className="size-4" />;
+  }
+  return <Mic aria-hidden className="size-4" />;
+}
+
+/** The meter's colour, which warns as the window fills. */
+function meterTone(ratio: number) {
+  if (ratio > 0.9) {
+    return "bg-destructive";
+  }
+  if (ratio > 0.75) {
+    return "bg-amber-500";
+  }
+  return "bg-primary";
+}
+
 function ContextMeter({ fill }: { fill: NonNullable<ReturnType<typeof contextFill>> }) {
-  const tone =
-    fill.ratio > 0.9 ? "bg-destructive" : fill.ratio > 0.75 ? "bg-amber-500" : "bg-primary";
+  const tone = meterTone(fill.ratio);
   return (
     <View className="flex-row items-center gap-2">
       <View className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">

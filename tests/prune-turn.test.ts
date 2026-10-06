@@ -575,9 +575,12 @@ describe("a turn that compacts", () => {
     // the end: one result cleared, a fortieth of the window.
     expect(chat.compaction).toEqual({ summary: "the notes", through: 13, at: NOW });
     expect(markers()).toEqual([{ through: rows[1], at: NOW }]);
-    const order = updates.flatMap((patch) =>
-      "compaction" in patch ? ["compaction"] : "pruning" in patch ? ["pruning"] : [],
-    );
+    const order = updates.flatMap((patch) => {
+      if ("compaction" in patch) {
+        return ["compaction"];
+      }
+      return "pruning" in patch ? ["pruning"] : [];
+    });
     expect(order).toEqual(["compaction", "pruning"]);
 
     const [first] = chatted();

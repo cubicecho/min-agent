@@ -22,6 +22,17 @@ const STORED = {
   speakReplies: false,
 };
 
+/** What the server answers each of the three settings operations with. */
+function replyTo(operation: string) {
+  if (operation === "Config") {
+    return { setting: STORED, hasApiKey: false };
+  }
+  if (operation === "SaveConfig") {
+    return { updateSettingSingle: { id: "default" } };
+  }
+  return { setApiKey: true };
+}
+
 /**
  * A client whose fetch answers the three settings operations and records every set of
  * variables it was given, so a test can assert on what actually went over the wire.
@@ -36,12 +47,7 @@ function recording() {
       const operation = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "";
       sent.push({ operation, variables });
 
-      const data =
-        operation === "Config"
-          ? { setting: STORED, hasApiKey: false }
-          : operation === "SaveConfig"
-            ? { updateSettingSingle: { id: "default" } }
-            : { setApiKey: true };
+      const data = replyTo(operation);
 
       return new Response(JSON.stringify({ data }), { status: 200 });
     }) as unknown as typeof fetch,

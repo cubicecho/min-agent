@@ -47,6 +47,28 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
  * — and it is the question that has to be answered first, because nothing else on the settings
  * screen has anything to show until it is.
  */
+/** What the endpoint button says it will do. */
+function endpointButtonLabel(busy: boolean, pending: boolean) {
+  if (busy) {
+    return "Asking the provider…";
+  }
+  if (pending) {
+    return "Apply and load models";
+  }
+  return "Reload models";
+}
+
+/** Why the model picker is empty, or what to do with it. */
+function modelPlaceholder(pending: boolean, unreachable: boolean) {
+  if (pending) {
+    return "apply the endpoint first";
+  }
+  if (unreachable) {
+    return "server unreachable";
+  }
+  return "select a model";
+}
+
 export function ModelPanel() {
   const queryClient = useQueryClient();
   return (
@@ -171,13 +193,7 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
                 disabled={endpointBusy}
                 onPress={() => void applyEndpoint()}
                 iconSlot={<Check className="size-4" />}
-                content={
-                  endpointBusy
-                    ? "Asking the provider…"
-                    : endpointPending
-                      ? "Apply and load models"
-                      : "Reload models"
-                }
+                content={endpointButtonLabel(endpointBusy, endpointPending)}
               />
               {endpointPending ? (
                 <Text className="flex-1 text-muted-foreground text-sm">
@@ -215,13 +231,7 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
                   searchable
                   searchPlaceholder="Find a model…"
                   disabled={endpointPending}
-                  placeholder={
-                    endpointPending
-                      ? "apply the endpoint first"
-                      : models.error
-                        ? "server unreachable"
-                        : "select a model"
-                  }
+                  placeholder={modelPlaceholder(endpointPending, Boolean(models.error))}
                 />
               )}
             </form.AppField>

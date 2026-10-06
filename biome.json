@@ -45,6 +45,7 @@
       "style": {
         "useConst": "error",
         "useBlockStatements": "error",
+        "noNestedTernary": "error",
         "noNonNullAssertion": "error"
       },
       "suspicious": {

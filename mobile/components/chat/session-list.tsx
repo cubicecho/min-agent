@@ -37,15 +37,15 @@ import { cn } from "@/lib/utils.ts";
  * weekday is what you actually remember; older than that the time of day means nothing and
  * the date is the whole of it.
  */
+const TIME_FORMAT_BY_BUCKET: Record<Bucket, Intl.DateTimeFormatOptions> = {
+  today: { hour: "2-digit", minute: "2-digit" },
+  yesterday: { hour: "2-digit", minute: "2-digit" },
+  week: { weekday: "short", hour: "2-digit", minute: "2-digit" },
+  earlier: { month: "short", day: "numeric" },
+};
+
 const when = (iso: string, bucket: Bucket) =>
-  new Date(iso).toLocaleString(
-    undefined,
-    bucket === "earlier"
-      ? { month: "short", day: "numeric" }
-      : bucket === "week"
-        ? { weekday: "short", hour: "2-digit", minute: "2-digit" }
-        : { hour: "2-digit", minute: "2-digit" },
-  );
+  new Date(iso).toLocaleString(undefined, TIME_FORMAT_BY_BUCKET[bucket]);
 
 /**
  * Starting a chat and landing in it.
