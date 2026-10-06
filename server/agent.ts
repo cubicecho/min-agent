@@ -76,9 +76,16 @@ export async function listModels(): Promise<ModelInfo[]> {
   return listEndpointModels(endpoint());
 }
 
+/** The longest title shown whole, and how much of a longer one is kept ahead of its ellipsis. */
+const MAX_TITLE_CHARS = 60;
+const CUT_TITLE_CHARS = 57;
+
+const truncateTitle = (title: string) =>
+  title.length > MAX_TITLE_CHARS ? `${title.slice(0, CUT_TITLE_CHARS)}…` : title;
+
 function titleFrom(text: string) {
   const line = text.trim().split("\n")[0] ?? "";
-  return line.length > 60 ? `${line.slice(0, 57)}…` : line || "New chat";
+  return truncateTitle(line) || "New chat";
 }
 
 /**
@@ -200,8 +207,7 @@ async function generateTitle(
     prompt.slice(0, 2000),
     { signal, onNotice: notice },
   );
-  const title = clean(reply.split("\n").filter(Boolean).pop() ?? "");
-  return title.length > 60 ? `${title.slice(0, 57)}…` : title;
+  return truncateTitle(clean(reply.split("\n").filter(Boolean).pop() ?? ""));
 }
 
 /**
