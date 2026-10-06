@@ -2,7 +2,6 @@ import {
   type AgentLoopResult,
   applyCompaction,
   ask,
-  type Capabilities,
   ContextOverflow,
   carryOver,
   catalogPrompt,
@@ -22,8 +21,6 @@ import {
   requestedNames,
   runAgentLoop,
   runCompaction,
-  runTurn as runRoundTrip,
-  type StreamTurnOptions,
   sanitizeTools,
   summariser,
   type ToolCallRequest,
@@ -93,7 +90,7 @@ function titleFrom(text: string) {
  * silence.
  *
  * Worth passing everywhere, because most of what arrives here latches for the life of the
- * process and this line is the only announcement that it did: `sendTurn` for the chat model,
+ * process and this line is the only announcement that it did: the loop for the chat model,
  * and the side tasks, which have negotiated their own requests since agent-core 2.1.2. It also
  * carries `runTurn`'s retry notices, so a turn waiting out an endpoint says so while it waits.
  * Since 2.2.0 a notice opens with what refused — the model by name, or `server` — so the source
@@ -328,59 +325,6 @@ function withWindow(error: unknown, contextLimit: number): unknown {
       : `${detail} — set Settings → Agent → Context window, and the turn will compact ` +
           "itself before it gets this far.",
   );
-}
-
-/** What one round trip needs beyond the body it sends. */
-export interface SendOptions
-  extends Pick<StreamTurnOptions, "signal" | "idleMs" | "onThinking" | "onOutput"> {
-  /** What this endpoint has already refused, latched further as it refuses more. */
-  supports: Capabilities;
-  /** The model the body names, so the refusals that are the model's are negotiated too. */
-  model: string;
-  /** The window this turn was built to, for the one refusal below. Zero when none is set. */
-  contextLimit: number;
-}
-
-/**
- * Sends one round trip — negotiated, retried, and read back as a `Turn` — and says what
- * min-agent knows about the one refusal none of that can answer.
- *
- * All three of those loops are agent-core's `runTurn`, which is the whole reason this function
- * is four lines: the memory of what an endpoint and a model have refused and the re-send that
- * answers a refusal (since 2.1.0), the attempt budget around a request that was lost rather
- * than refused, and the reading of a stream into a message. min-agent wrote its own of each
- * until it did, and the one worth naming is the retry — it wrapped only the call that resolves
- * before the first chunk, so an endpoint that accepted the request and then dropped it was a
- * dead turn rather than a second attempt.
- *
- * What is left here is the overflow; see `withWindow`.
- *
- * Nothing in the server calls this since the turn's steps became agent-core's `runAgentLoop`
- * (#52), which makes the same round trip itself. It is kept for
- * `tests/server/negotiate.test.ts` and `tests/server/reasoning.test.ts`, which pin the
- * negotiation through it.
- *
- * @param client The pooled client for this endpoint. `getClient` builds it with the SDK's own
- * retrying off, because a stream that has already produced tokens must never be replayed from
- * the top and the SDK cannot tell whether it has — so the budget below is the only one in play.
- * @param request Builds the body. Called again per downgrade and per attempt, since a downgrade
- * changes what it may send.
- */
-export async function sendTurn(
-  client: OpenAI,
-  request: (supports: Capabilities) => OpenAI.ChatCompletionCreateParamsStreaming,
-  { supports, model, contextLimit, ...stream }: SendOptions,
-): Promise<Turn> {
-  try {
-    return await runRoundTrip(client, supports, request, {
-      ...stream,
-      model,
-      maxRetries: TURN_DEFAULTS.openRetries,
-      onNotice: notice,
-    });
-  } catch (error) {
-    throw withWindow(error, contextLimit);
-  }
 }
 
 /**
