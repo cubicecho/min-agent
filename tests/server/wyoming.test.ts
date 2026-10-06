@@ -107,6 +107,25 @@ describe("wyomingAddress", () => {
 });
 
 describe("transcribe", () => {
+  // Valid JSON is not yet an event. The socket is closed behind it so that a client which
+  // reads the line as one fails here on the close, not on the two-minute timeout.
+  it.each([
+    ["a number", "5"],
+    ["a list", "[]"],
+    ["an event with no type", "{}"],
+    ["an event whose length is not a number", '{"type":"transcript","data_length":"9"}'],
+  ])("reports %s for a header as unreadable", async (_what, header) => {
+    const address = await serve((socket, frame) => {
+      if (frame.type === "audio-stop") {
+        socket.end(`${header}\n`);
+      }
+    });
+
+    await expect(transcribe(address, Buffer.alloc(3200))).rejects.toThrow(
+      "sent something unreadable",
+    );
+  });
+
   it("says the whole conversation and answers with what came back", async () => {
     const said: Frame[] = [];
     const address = await serve((socket, frame) => {
@@ -129,7 +148,7 @@ describe("transcribe", () => {
     // Fifteen tenths of a second, and every sample of it, in order.
     const chunks = said.filter((frame) => frame.type === "audio-chunk");
     expect(chunks).toHaveLength(15);
-    expect(Buffer.concat(chunks.map((frame) => frame.payload as Buffer))).toEqual(pcm);
+    expect(Buffer.concat(chunks.map((frame) => frame.payload ?? Buffer.alloc(0)))).toEqual(pcm);
   });
 
   it("reassembles an answer that arrives a byte at a time", async () => {

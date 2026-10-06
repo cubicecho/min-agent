@@ -1202,7 +1202,10 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     }
     // The loop wraps what it caught to hang the run on it. Every message is stored already, so
     // the run is not needed and the error goes on as it was thrown.
-    throw withWindow(failedRun(error) ? (error as Error).cause : error, contextLimit);
+    throw withWindow(
+      failedRun(error) && error instanceof Error ? error.cause : error,
+      contextLimit,
+    );
   }
 
   // The loop returns on the step that asked for no tools, whose reply is the last row written.
@@ -1321,6 +1324,8 @@ function parseArgs(args: string): Record<string, unknown> {
     return {};
   }
   try {
+    // Named, not checked: the loop refuses arguments that parse to anything but an object
+    // before it dispatches the call, so only an object's text arrives here.
     return JSON.parse(args) as Record<string, unknown>;
   } catch {
     throw new Error(

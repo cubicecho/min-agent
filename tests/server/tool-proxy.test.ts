@@ -11,15 +11,16 @@ import {
 } from "../../server/tool-proxy.ts";
 import { CALL_TOOL, shownCall } from "../../shared/tool-proxy.ts";
 
-const catalog = [
+const catalog: CatalogServer[] = [
   {
+    id: "fs",
     label: "Files",
     tools: [
       { name: "fs__read", description: "Read a file." },
       { name: "fs__write", description: "Write a file." },
     ],
   },
-] as CatalogServer[];
+];
 
 const definition = (name: string): ToolDefinition => ({
   type: "function",

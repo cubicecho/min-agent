@@ -171,7 +171,7 @@ const argsProblem = (text: string) => {
     JSON.parse(text);
     return undefined;
   } catch (error) {
-    return (error as Error).message;
+    return messageOf(error);
   }
 };
 

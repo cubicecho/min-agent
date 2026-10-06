@@ -1,13 +1,10 @@
 import { graphql } from "graphql";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  assertLlmConfigPatch,
-  coerceLlmConfig,
-  endpoint,
-  refreshLlmConfig,
-} from "../../server/config.ts";
+import { assertLlmConfigPatch, coerceLlmConfig, endpoint } from "../../server/config.ts";
 import { schema } from "../../server/graphql/schema.ts";
 import { llmConfigSchema, modelForTask } from "../../shared/types.ts";
+import { isRecord } from "../helpers.ts";
+import { storedSettings } from "./helpers.ts";
 
 /**
  * The settings live in Postgres and GraphQL checks their shape, so what is left to test here
@@ -164,24 +161,14 @@ describe("hasApiKey", () => {
   const previous = process.env.OPENAI_API_KEY;
 
   /**
-   * Puts a row in the settings cache without a database behind it.
-   * @param row What the settings table would have held.
-   * @returns The settings as loaded.
-   */
-  const stored = (row: Record<string, unknown>) =>
-    refreshLlmConfig({
-      select: () => ({ from: () => ({ where: () => ({ limit: async () => [row] }) }) }),
-    } as unknown as Parameters<typeof refreshLlmConfig>[0]);
-
-  /**
    * Asks both fields in one query.
    * @returns The `hasApiKey` query's answer and `health`'s.
    */
   const asked = async () => {
     const result = await graphql({ schema, source: "{ hasApiKey health { hasApiKey } }" });
     expect(result.errors).toBeUndefined();
-    const data = result.data as { hasApiKey: boolean; health: { hasApiKey: boolean } };
-    return { query: data.hasApiKey, health: data.health.hasApiKey };
+    const { hasApiKey, health } = result.data ?? {};
+    return { query: hasApiKey, health: isRecord(health) ? health.hasApiKey : undefined };
   };
 
   beforeEach(() => {
@@ -197,21 +184,21 @@ describe("hasApiKey", () => {
   });
 
   afterAll(async () => {
-    await stored({});
+    await storedSettings({});
   });
 
   it("is false when neither the row nor the environment holds a key", async () => {
-    await stored({});
+    await storedSettings({});
     expect(await asked()).toEqual({ query: false, health: false });
   });
 
   it("is true for a key in the row", async () => {
-    await stored({ apiKey: "sk-test" });
+    await storedSettings({ apiKey: "sk-test" });
     expect(await asked()).toEqual({ query: true, health: true });
   });
 
   it("is true for a key that is only in the environment", async () => {
-    await stored({});
+    await storedSettings({});
     process.env.OPENAI_API_KEY = "sk-from-env";
     expect(await asked()).toEqual({ query: true, health: true });
   });

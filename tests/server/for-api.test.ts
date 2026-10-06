@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { forApi } from "../../server/agent.ts";
-import type { Session, StoredMessage } from "../../shared/types.ts";
+import type { StoredMessage } from "../../shared/types.ts";
+import { sessionOf, textOf, turnStats } from "../helpers.ts";
 
-const session = (messages: StoredMessage[]) => ({ id: "s1", messages }) as Session;
+const session = (messages: StoredMessage[]) => sessionOf({ messages });
 
 describe("forApi", () => {
   const transcript: StoredMessage[] = [
@@ -11,7 +12,7 @@ describe("forApi", () => {
       role: "assistant",
       content: "One.",
       reasoning_content: "thinking",
-      stats: { model: "m" } as never,
+      stats: turnStats(),
       followups: ["Why?"],
     },
     { role: "user", content: "second" },
@@ -22,7 +23,7 @@ describe("forApi", () => {
     const later = forApi(session(transcript))[0];
     expect(later).toEqual(onItsTurn);
     expect(later.content).toContain("<context>tea</context>");
-    expect((later.content as string).endsWith("first")).toBe(true);
+    expect(textOf(later).endsWith("first")).toBe(true);
   });
 
   it("sends the context under min-agent's preface, ahead of what the user typed", () => {

@@ -7,6 +7,7 @@ import {
 import OpenAI from "openai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sendTurn } from "../../server/agent.ts";
+import { errorOf } from "../helpers.ts";
 
 /**
  * What one round trip does when the endpoint refuses something it can do without, or loses the
@@ -33,10 +34,14 @@ const body = (): OpenAI.ChatCompletionCreateParamsStreaming => ({
 });
 
 /** One chunk, which is all these tests need the server to have said. */
-async function* answering() {
+async function* answering(): AsyncGenerator<OpenAI.ChatCompletionChunk> {
   yield {
+    id: "chunk",
+    object: "chat.completion.chunk",
+    created: 0,
+    model: "a-model",
     choices: [{ index: 0, delta: { content: "answered" }, finish_reason: null }],
-  } as unknown as OpenAI.ChatCompletionChunk;
+  };
 }
 
 /**
@@ -53,6 +58,8 @@ function serving(...failures: (string | Error)[]) {
     }
     return answering();
   });
+  // The one place a stand-in is named as the SDK's client: `sendTurn` calls `create` and
+  // nothing else, and the whole client cannot be built without an endpoint behind it.
   const client = { chat: { completions: { create } } } as unknown as OpenAI;
   return { client, create, request: body };
 }
@@ -114,8 +121,8 @@ describe("sendTurn", () => {
     expect(failure).toBeInstanceOf(ContextOverflow);
     // The server's own words, because the number in them is the true one, plus ours: the whole
     // difficulty of this failure is that the two disagree.
-    expect((failure as Error).message).toContain("maximum context length is 8192");
-    expect((failure as Error).message).toContain("262.1k");
+    expect(errorOf(failure).message).toContain("maximum context length is 8192");
+    expect(errorOf(failure).message).toContain("262.1k");
     expect(create).toHaveBeenCalledTimes(1);
   });
 

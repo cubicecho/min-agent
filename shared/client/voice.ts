@@ -126,8 +126,13 @@ export function createVoiceClient({ baseUrl, fetch: fetchImpl }: VoiceClientOpti
       if (requestFailed) {
         await complain(response, "transcription");
       }
-      const { text } = (await response.json()) as { text: string };
-      return text;
+      const answer: unknown = await response.json();
+      const isObject = typeof answer === "object" && answer !== null;
+      const text = isObject && "text" in answer ? answer.text : undefined;
+      if (typeof text === "string") {
+        return text;
+      }
+      throw new Error("transcription failed: the server answered without any text");
     },
 
     /**

@@ -8,6 +8,7 @@ import {
   type StoredMessage,
   type StreamEvent,
 } from "../../shared/types.ts";
+import { declaredTools, jsonBody, messagesOf, sessionOf, textOf, turnStats } from "../helpers.ts";
 
 /**
  * Pruning as a turn does it, read off the requests themselves: what the endpoint is posted on each
@@ -103,7 +104,7 @@ async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Res
   }
   const raw = String(init?.body);
   requests.push(raw);
-  const body = JSON.parse(raw) as Record<string, unknown>;
+  const body = jsonBody(raw);
 
   if (!body.stream) {
     return new Response(
@@ -141,12 +142,14 @@ async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Res
   return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
 }
 
-type Sent = { role: string; content: unknown; tool_call_id?: string };
-type Body = { messages: Sent[]; tools?: ToolDefinition[]; stream?: boolean; model: string };
+type Body = Record<string, unknown> & { messages: Record<string, unknown>[] };
 
 /** The chat model's requests, parsed, in the order they were posted. */
 const chatted = () =>
-  requests.map((raw) => JSON.parse(raw) as Body).filter((body) => body.stream === true);
+  requests
+    .map(jsonBody)
+    .filter((body) => body.stream === true)
+    .map((body): Body => ({ ...body, messages: messagesOf(body) }));
 
 /** Each message of a request as it was serialised, so two requests compare byte for byte. */
 const wire = (body: Body) => body.messages.map((message) => JSON.stringify(message));
@@ -220,15 +223,6 @@ const reads = (count: number, from = 0, name = "fs__read") => [
   says("Done."),
 ];
 
-const session = (patch: Partial<Session> = {}): Session => ({
-  id: "s1",
-  title: "A chat",
-  createdAt: NOW,
-  updatedAt: NOW,
-  messages: [],
-  ...patch,
-});
-
 async function run(chat: Session, prompt: string) {
   const events: StreamEvent[] = [];
   const stats = await runTurn({
@@ -240,8 +234,7 @@ async function run(chat: Session, prompt: string) {
 }
 
 /** Every marker the turn stored, in order. */
-const markers = () =>
-  updates.flatMap((patch) => ("pruning" in patch ? [patch.pruning as { through: number }] : []));
+const markers = () => updates.flatMap((patch) => ("pruning" in patch ? [patch.pruning] : []));
 
 /** Where the tool results are in a transcript. */
 const resultRows = (messages: StoredMessage[]) =>
@@ -300,7 +293,7 @@ afterEach(() => {
 describe("a long turn of tool steps", () => {
   it("sends each request as the last one extended, but for the two steps the marker moves on", async () => {
     script = reads(12);
-    const chat = session();
+    const chat = sessionOf();
 
     const { events, stats } = await run(chat, "read them all");
 
@@ -364,7 +357,7 @@ describe("a long turn of tool steps", () => {
     expect(Object.values(parts).reduce((sum, part) => sum + (part ?? 0), 0)).toBe(100);
     const last = sent[12];
     const requestChars =
-      (last.messages[0].content as string).length +
+      textOf(last.messages[0]).length +
       JSON.stringify(last.tools).length +
       last.messages.slice(1).reduce((sum, message) => sum + JSON.stringify(message).length, 0);
     const clearedChars = 6 * (JSON.stringify(file(0)).length - JSON.stringify(STUB).length);
@@ -374,7 +367,7 @@ describe("a long turn of tool steps", () => {
 
   it("gives the next turn the last request as its prefix, and holds the marker there", async () => {
     script = [...reads(12), ...reads(2, 12)];
-    const chat = session();
+    const chat = sessionOf();
     await run(chat, "read them all");
     const before = chatted();
     const marker = structuredClone(chat.pruning);
@@ -400,7 +393,7 @@ describe("a long turn of tool steps", () => {
   it("leaves the transcript whole in a window too large for the results to matter", async () => {
     configure({ contextLimit: 200_000 });
     script = reads(12);
-    const chat = session();
+    const chat = sessionOf();
 
     const { stats } = await run(chat, "read them all");
 
@@ -417,7 +410,7 @@ describe("a long turn of tool steps", () => {
   it("never moves the marker on its own when the window is unknown", async () => {
     configure({ contextLimit: 0 });
     script = reads(12);
-    const chat = session();
+    const chat = sessionOf();
 
     await run(chat, "read them all");
 
@@ -442,7 +435,7 @@ describe("a long turn of tool steps", () => {
       chunks: [...reply.chunks.slice(0, -1), { choices: [], usage: cached(at === 8 ? 100 : 990) }],
     }));
 
-    await run(session(), "read them all");
+    await run(sessionOf(), "read them all");
 
     expect(markers()).toHaveLength(1);
     expect(warn.mock.calls.flat().join("\n")).not.toContain("prompt cache missed");
@@ -459,7 +452,7 @@ describe("a long turn of tool steps", () => {
       chunks: [...reply.chunks.slice(0, -1), { choices: [], usage: cached(at === 3 ? 100 : 990) }],
     }));
 
-    await run(session(), "read them all");
+    await run(sessionOf(), "read them all");
 
     expect(markers()).toEqual([]);
     expect(warn.mock.calls.flat().join("\n")).toContain("prompt cache missed: 100 of 1000 cached");
@@ -469,9 +462,9 @@ describe("a long turn of tool steps", () => {
 describe("a session from before there were markers", () => {
   /** Two finished turns of four reads each, stored whole, with nothing said about pruning. */
   const legacy = (): StoredMessage[] =>
-    [0, 4].flatMap((from) => [
+    [0, 4].flatMap((from): StoredMessage[] => [
       { role: "user", content: `question ${from}` },
-      ...Array.from({ length: 4 }, (_, at) => [
+      ...Array.from({ length: 4 }, (_, at): StoredMessage[] => [
         {
           role: "assistant",
           content: null,
@@ -486,13 +479,13 @@ describe("a session from before there were markers", () => {
         { role: "tool", tool_call_id: `old-${from + at}`, content: file(from + at) },
       ]).flat(),
       { role: "assistant", content: "Done." },
-    ]) as StoredMessage[];
+    ]);
 
   it("is sent exactly as it is stored while the rule has not fired", async () => {
     configure({ contextLimit: 200_000 });
     script = [says("Fine.")];
     const messages = legacy();
-    const chat = session({ messages });
+    const chat = sessionOf({ messages });
     const before = structuredClone(messages);
 
     const { stats } = await run(chat, "and now?");
@@ -509,7 +502,7 @@ describe("a session from before there were markers", () => {
 
   it("gets its first marker at the start of the turn that finds it over the threshold", async () => {
     script = [says("Fine."), says("Still fine.")];
-    const chat = session({ messages: legacy() });
+    const chat = sessionOf({ messages: legacy() });
     const rows = resultRows(chat.messages);
     const before = structuredClone(chat.messages);
 
@@ -537,36 +530,38 @@ describe("a turn that compacts", () => {
    * A bulky first turn, then one of six short tool steps that fits the kept tail whole. The
    * results are 400 characters: long enough to be cleared, far too few to pass the threshold.
    */
-  const transcript = (): StoredMessage[] =>
-    [
-      { role: "user", content: long("q0") },
-      ...Array.from({ length: 12 }, (_, at) => ({
+  const transcript = (): StoredMessage[] => [
+    { role: "user", content: long("q0") },
+    ...Array.from(
+      { length: 12 },
+      (_, at): StoredMessage => ({
         role: "assistant",
         content: long(`a0-${at}`),
-      })),
-      { role: "user", content: long("q1") },
-      ...Array.from({ length: 6 }, (_, at) => [
-        {
-          role: "assistant",
-          content: null,
-          tool_calls: [
-            { id: `t${at}`, type: "function", function: { name: "fs__read", arguments: "{}" } },
-          ],
-        },
-        { role: "tool", tool_call_id: `t${at}`, content: long(`r${at}`) },
-      ]).flat(),
+      }),
+    ),
+    { role: "user", content: long("q1") },
+    ...Array.from({ length: 6 }, (_, at): StoredMessage[] => [
       {
         role: "assistant",
-        content: long("a1"),
-        stats: { model: "m", contextTokens: 3500, lastPromptTokens: 3400 },
+        content: null,
+        tool_calls: [
+          { id: `t${at}`, type: "function", function: { name: "fs__read", arguments: "{}" } },
+        ],
       },
-    ] as StoredMessage[];
+      { role: "tool", tool_call_id: `t${at}`, content: long(`r${at}`) },
+    ]).flat(),
+    {
+      role: "assistant",
+      content: long("a1"),
+      stats: turnStats({ contextTokens: 3500, lastPromptTokens: 3400 }),
+    },
+  ];
 
   it("moves the marker with the fold, for a saving that would not have moved it alone", async () => {
     configure({ taskModels: { compaction: "small" } });
     summaries = ["the notes"];
     script = [says("Fine."), says("Still fine.")];
-    const chat = session({ messages: transcript() });
+    const chat = sessionOf({ messages: transcript() });
     const rows = resultRows(chat.messages);
 
     await run(chat, "and now?");
@@ -600,7 +595,7 @@ describe("a turn that compacts", () => {
 
   it("leaves the marker where it is when the same transcript is not folded", async () => {
     script = [says("Fine.")];
-    const chat = session({ messages: transcript() });
+    const chat = sessionOf({ messages: transcript() });
 
     await run(chat, "and now?");
 
@@ -614,14 +609,14 @@ describe("a proxied turn", () => {
   it("keeps the loaded definitions whole behind the marker, and the tool callable", async () => {
     configure({ toolDiscovery: "proxy" });
     script = [asks("load", "load_tools", '{"names":["fs__read"]}'), ...reads(9, 0, "call_tool")];
-    const chat = session();
+    const chat = sessionOf();
 
     await run(chat, "read them all");
 
     const sent = chatted();
     expect(sent).toHaveLength(11);
     const rows = resultRows(chat.messages);
-    const definitions = chat.messages[rows[0]].content as string;
+    const definitions = textOf(chat.messages[rows[0]]);
     // The only copy of the schema the model has, and long enough to have been cleared.
     expect(definitions.startsWith("Loaded 1 tool(s). Run them with `call_tool`.")).toBe(true);
     expect(definitions).toContain(JSON.stringify(READ.function.parameters));
@@ -640,7 +635,7 @@ describe("a proxied turn", () => {
       ...[3, 4, 5, 6, 7].map(file),
     ]);
     // Still declared, and the call made after the move ran against the real tool.
-    expect(sent[9].tools?.map((tool) => tool.function.name)).toEqual(["load_tools", "call_tool"]);
+    expect(declaredTools(sent[9])).toEqual(["load_tools", "call_tool"]);
     expect(mcp.call.mock.calls).toHaveLength(9);
     expect(mcp.call.mock.calls[8].slice(0, 2)).toEqual(["fs__read", { path: "/8" }]);
     expect(chat.messages[rows[9]].content).toBe(file(8));

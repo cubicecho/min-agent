@@ -9,6 +9,7 @@ import OpenAI from "openai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { endpoint } from "../../server/config.ts";
 import { llmConfigSchema } from "../../shared/types.ts";
+import { messagesOf, textOf } from "../helpers.ts";
 
 /**
  * What the tool-select model is sent, and what is made of its answer.
@@ -118,8 +119,8 @@ describe("preselect", () => {
     const bodies = serving(() => completion('{"tools":[]}'));
     await choose();
 
-    const [system, user] = bodies[0].messages as { role: string; content: string }[];
-    expect(system.content.startsWith(PRESELECT_SYSTEM)).toBe(true);
+    const [system, user] = messagesOf(bodies[0]);
+    expect(textOf(system).startsWith(PRESELECT_SYSTEM)).toBe(true);
     expect(system.content).toContain(JSON.stringify(PRESELECT_SCHEMA));
     expect(user.content).toContain("files__read");
     expect(user.content).toContain("read notes.txt");

@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import { messageText, planFold, textTokens } from "../../server/compaction.ts";
 import type { Session, StoredMessage } from "../../shared/types.ts";
 
-const say = (role: StoredMessage["role"], text: string) =>
-  ({ role, content: text }) as StoredMessage;
+const say = (role: "user" | "assistant", text: string): StoredMessage => ({ role, content: text });
 
 /** A transcript of `pairs` user/assistant exchanges, each roughly `chars` long. */
 const conversation = (pairs: number, chars = 400): StoredMessage[] =>
@@ -22,24 +21,25 @@ const call = (id: string, name: string, args: string) => ({
  * A transcript of `turns` exchanges where every third is answered through two tool calls, with
  * the fields min-agent stores for itself on the messages that would carry them.
  */
+/** One step of two tool calls and their results, as turn `i` stored it. */
+const toolStep = (i: number): StoredMessage[] => [
+  {
+    role: "assistant",
+    content: null,
+    reasoning_content: "r".repeat(3000),
+    tool_calls: [
+      call(`c${i}a`, "fs__read", '{"path":"/a"}'),
+      call(`c${i}b`, "fs__ls", '{"path":"/"}'),
+    ],
+  },
+  { role: "tool", tool_call_id: `c${i}a`, content: "f".repeat(1200) },
+  { role: "tool", tool_call_id: `c${i}b`, content: "d".repeat(300) },
+];
+
 const working = (turns: number): StoredMessage[] =>
-  Array.from({ length: turns }, (_, i) => [
+  Array.from({ length: turns }, (_, i): StoredMessage[] => [
     say("user", `q${i} ${"x".repeat(200)}`),
-    ...(i % 3 === 1
-      ? ([
-          {
-            role: "assistant",
-            content: null,
-            reasoning_content: "r".repeat(3000),
-            tool_calls: [
-              call(`c${i}a`, "fs__read", '{"path":"/a"}'),
-              call(`c${i}b`, "fs__ls", '{"path":"/"}'),
-            ],
-          },
-          { role: "tool", tool_call_id: `c${i}a`, content: "f".repeat(1200) },
-          { role: "tool", tool_call_id: `c${i}b`, content: "d".repeat(300) },
-        ] as StoredMessage[])
-      : []),
+    ...(i % 3 === 1 ? toolStep(i) : []),
     { ...say("assistant", `a${i} ${"y".repeat(200)}`), followups: ["Why?"] },
   ]).flat();
 
@@ -89,14 +89,14 @@ describe("messageText", () => {
           { type: "text", text: "a" },
           { type: "text", text: "b" },
         ],
-      } as StoredMessage),
+      }),
     ).toBe("a b");
     expect(
       messageText({
         role: "assistant",
         content: null,
         tool_calls: [{ id: "1", type: "function", function: { name: "ls", arguments: "{}" } }],
-      } as StoredMessage),
+      }),
     ).toContain("ls({})");
   });
 });
@@ -110,7 +110,7 @@ describe("textTokens", () => {
         content: "x".repeat(400),
         reasoning_content: "r".repeat(4000),
         followups: ["Why?"],
-      } as StoredMessage),
+      }),
     ).toBe(100);
     // `fs__ls({})`, ten characters, and not the call's id or its envelope.
     expect(
@@ -118,7 +118,7 @@ describe("textTokens", () => {
         role: "assistant",
         content: null,
         tool_calls: [call("call-with-a-long-id", "fs__ls", "{}")],
-      } as StoredMessage),
+      }),
     ).toBe(3);
   });
 });
@@ -152,8 +152,8 @@ describe("planFold", () => {
         role: "assistant",
         content: null,
         tool_calls: [{ id: "1", type: "function", function: { name: "ls", arguments: "{}" } }],
-      } as StoredMessage,
-      { role: "tool", tool_call_id: "1", content: "files" } as StoredMessage,
+      },
+      { role: "tool", tool_call_id: "1", content: "files" },
       say("assistant", "done"),
       say("user", "next"),
       say("assistant", "ok"),

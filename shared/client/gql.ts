@@ -31,22 +31,28 @@ interface GraphQLResponse<T> {
   errors?: GraphQLError[];
 }
 
+/** The field of a server-sent event that carries its payload. */
+const DATA_FIELD = "data:";
+
 /**
  * A 200 that will not parse is almost always a dev server answering an unknown path with its
  * `index.html`, and `Unexpected token '<'` says nothing about why. Name the address.
  */
-/** The field of a server-sent event that carries its payload. */
-const DATA_FIELD = "data:";
-
 const wrongServer = (endpoint: string) =>
   new Error(`${endpoint} answered with HTML, not JSON — is that the min-agent server?`);
 
-/** GraphQL reports failure in the body, so an error list is the error even on a 200. */
-function unwrap<T>(payload: GraphQLResponse<T>): T {
-  if (payload.errors?.length) {
-    throw new Error(payload.errors.map((e) => e.message).join("; "));
+/**
+ * GraphQL reports failure in the body, so an error list is the error even on a 200.
+ *
+ * The body is whatever the address answered with, so it is read as one that may not be a
+ * response at all: `null` is valid JSON. What `data` holds is taken on the document's word.
+ */
+function unwrap<T>(payload: GraphQLResponse<T> | null): T {
+  const errors = payload?.errors;
+  if (Array.isArray(errors) && errors.length > 0) {
+    throw new Error(errors.map((e) => e.message).join("; "));
   }
-  if (payload.data == null) {
+  if (payload?.data == null) {
     throw new Error("no data");
   }
   return payload.data;
@@ -80,9 +86,9 @@ export function createGqlClient({ endpoint, fetch: fetchImpl }: GqlOptions) {
     );
     // A GraphQL error comes back as a body, not a status, so read the body either way — a 400
     // from yoga carries the reason and `response.statusText` does not.
-    let payload: GraphQLResponse<TResult>;
+    let payload: GraphQLResponse<TResult> | null;
     try {
-      payload = (await response.json()) as GraphQLResponse<TResult>;
+      payload = (await response.json()) as GraphQLResponse<TResult> | null;
     } catch {
       const requestFailed = response.ok === false;
       if (requestFailed) {
@@ -143,7 +149,7 @@ export function createGqlClient({ endpoint, fetch: fetchImpl }: GqlOptions) {
             .map((line) => line.slice(DATA_FIELD.length).trim())
             .join("");
           if (data) {
-            yield unwrap(JSON.parse(data) as GraphQLResponse<TResult>);
+            yield unwrap(JSON.parse(data) as GraphQLResponse<TResult> | null);
           }
         }
       }

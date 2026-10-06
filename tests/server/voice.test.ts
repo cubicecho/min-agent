@@ -1,11 +1,11 @@
 import { once } from "node:events";
 import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { createVoiceClient, speakableText, spokenChunk } from "@shared/client/voice.ts";
 import express from "express";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { refreshLlmConfig } from "../../server/config.ts";
 import { audioExtension, voice } from "../../server/voice.ts";
+import { jsonBody } from "../helpers.ts";
+import { storedSettings } from "./helpers.ts";
 
 /**
  * The two ends of voice that are worth pinning down: what a reply sounds like once the
@@ -56,13 +56,26 @@ describe("audioExtension", () => {
   });
 });
 
+/**
+ * Where a server started on port 0 ended up.
+ * @param server A listening server.
+ * @returns Its base URL on the loopback.
+ */
+function urlOf(server: Server) {
+  const address = server.address();
+  if (typeof address === "string" || !address) {
+    throw new Error("no port");
+  }
+  return `http://127.0.0.1:${address.port}`;
+}
+
 /** Answers whatever it is handed, and records the requests it was given. */
 function server(reply: () => Response) {
   const seen: { url: string; body: Record<string, unknown> }[] = [];
-  const fetch = (async (url: string, init: RequestInit) => {
-    seen.push({ url, body: JSON.parse(init.body as string) });
+  const fetch: typeof globalThis.fetch = async (url, init) => {
+    seen.push({ url: String(url), body: jsonBody(String(init?.body)) });
     return reply();
-  }) as unknown as typeof globalThis.fetch;
+  };
   return { seen, fetch };
 }
 
@@ -85,6 +98,15 @@ describe("createVoiceClient", () => {
 
     await expect(voice.transcribe({ audio: "AAAA", mime: "audio/webm" })).rejects.toThrow(
       "no transcription model is configured",
+    );
+  });
+
+  it("says so when the answer carries no transcript", async () => {
+    const { fetch } = server(() => json({}));
+    const voice = createVoiceClient({ baseUrl: "", fetch });
+
+    await expect(voice.transcribe({ audio: "AAAA", mime: "audio/webm" })).rejects.toThrow(
+      "transcription failed: the server answered without any text",
     );
   });
 
@@ -177,29 +199,12 @@ describe("the key the voice proxy sends", () => {
   let agent: Server;
 
   /**
-   * Where a server started on port 0 ended up.
-   * @param server A listening server.
-   * @returns Its base URL on the loopback.
-   */
-  const urlOf = (server: Server) => `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-
-  /**
-   * Puts a row in the settings cache without a database behind it.
-   * @param row What the settings table would have held.
-   * @returns The settings as loaded.
-   */
-  const stored = (row: Record<string, unknown>) =>
-    refreshLlmConfig({
-      select: () => ({ from: () => ({ where: () => ({ limit: async () => [row] }) }) }),
-    } as unknown as Parameters<typeof refreshLlmConfig>[0]);
-
-  /**
    * Has a reply read aloud, with the provider configured as the one here.
    * @param apiKey The key in the settings row; empty for none.
    * @returns The `Authorization` header the provider received.
    */
   const spoken = async (apiKey: string) => {
-    await stored({ baseUrl: urlOf(provider), ttsModel: "tts-1", apiKey });
+    await storedSettings({ baseUrl: urlOf(provider), ttsModel: "tts-1", apiKey });
     const response = await fetch(`${urlOf(agent)}/speak`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -221,7 +226,7 @@ describe("the key the voice proxy sends", () => {
   });
 
   afterAll(async () => {
-    await stored({});
+    await storedSettings({});
     provider.close();
     agent.close();
   });
@@ -251,5 +256,67 @@ describe("the key the voice proxy sends", () => {
   it("falls back to the environment when the row holds no key", async () => {
     process.env.OPENAI_API_KEY = "sk-from-env";
     expect(await spoken("")).toBe("Bearer sk-from-env");
+  });
+});
+
+/**
+ * The routes are reachable by anything that can post, so a body is whatever it was sent. One
+ * that is not the request is the sender's mistake and is answered as one, not as a failure of
+ * the server or of the provider behind it.
+ */
+describe("a voice request that is not one", () => {
+  let agent: Server;
+
+  /**
+   * Posts JSON to a voice route.
+   * @param path The route, from the router's root.
+   * @param body What to send; nothing at all when left out.
+   * @returns The status and the error the route answered with.
+   */
+  const posted = async (path: string, body?: unknown) => {
+    const response = await fetch(`${urlOf(agent)}${path}`, {
+      method: "POST",
+      headers: body === undefined ? {} : { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const answer: unknown = await response.json().catch(() => null);
+    return { status: response.status, answer };
+  };
+
+  beforeAll(async () => {
+    await storedSettings({
+      baseUrl: "http://127.0.0.1:1",
+      sttModel: "whisper-1",
+      ttsModel: "tts-1",
+    });
+    agent = express().use(voice).listen(0, "127.0.0.1");
+    await once(agent, "listening");
+  });
+
+  afterAll(async () => {
+    await storedSettings({});
+    agent.close();
+  });
+
+  it("refuses text that is not a string", async () => {
+    expect(await posted("/speak", { text: 5 })).toEqual({
+      status: 400,
+      answer: { error: "no text" },
+    });
+  });
+
+  it("refuses a request to speak that has no body", async () => {
+    expect(await posted("/speak")).toEqual({ status: 400, answer: { error: "no text" } });
+  });
+
+  it("refuses audio that is not a string", async () => {
+    expect(await posted("/transcribe", { audio: 5 })).toEqual({
+      status: 400,
+      answer: { error: "no audio" },
+    });
+  });
+
+  it("refuses a request to transcribe that has no body", async () => {
+    expect(await posted("/transcribe")).toEqual({ status: 400, answer: { error: "no audio" } });
   });
 });
