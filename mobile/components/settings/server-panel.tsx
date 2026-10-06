@@ -71,7 +71,7 @@ export function ServerPanel() {
   });
 
   // The panel keeps the typed address when you switch tabs, so the tab says it is holding one.
-  const dirty = useStore(form.store, (state) => !state.isDefaultValue);
+  const dirty = useStore(form.store, (state) => state.isDefaultValue === false);
   useReportDirty("server", dirty);
 
   return (

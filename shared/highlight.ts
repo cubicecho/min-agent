@@ -54,7 +54,8 @@ export const registered = (language: string) => lowlight.registered(language);
 
 const scopeOf = (node: Element): string | undefined => {
   const classes = node.properties?.className;
-  if (!Array.isArray(classes)) {
+  const hasNoClasses = Array.isArray(classes) === false;
+  if (hasNoClasses) {
     return undefined;
   }
   for (const value of classes) {

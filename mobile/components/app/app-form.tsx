@@ -79,7 +79,8 @@ function NumberField(props: NumberFieldProps) {
             // An empty box reads as 0; anything that is not a number yet — "1e", a lone "-" —
             // is left as typed and the form keeps the last value that was one.
             const parsed = next.trim() === "" ? 0 : Number(next);
-            if (!Number.isFinite(parsed)) {
+            const isUnparsable = Number.isFinite(parsed) === false;
+            if (isUnparsable) {
               return;
             }
             const rounded = integer ? Math.round(parsed) : parsed;

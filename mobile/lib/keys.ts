@@ -57,7 +57,9 @@ function onKeyDown(event: KeyboardEvent) {
   // A chord is unambiguous wherever the caret is — ⌘K while writing a message is exactly
   // when you want it — and Escape in a text box is the whole point of Escape. A bare key
   // is not: in a text box it is what the person is typing.
-  if (!combo.startsWith("mod+") && combo !== "escape" && typing(event.target)) {
+  const isTypedCharacter =
+    combo.startsWith("mod+") === false && combo !== "escape" && typing(event.target);
+  if (isTypedCharacter) {
     return;
   }
 
@@ -96,7 +98,8 @@ export function useShortcut(combo: string, handler: Handler | undefined | null) 
   const armed = Platform.OS === "web" && Boolean(handler);
 
   useEffect(() => {
-    if (!armed) {
+    const isUnbound = armed === false;
+    if (isUnbound) {
       return;
     }
     const run = () => latest.current?.();

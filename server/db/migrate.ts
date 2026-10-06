@@ -60,7 +60,8 @@ async function withoutRacing<T>(migration: () => Promise<T>): Promise<T> {
     try {
       return await migration();
     } catch (error) {
-      if (attempt >= ATTEMPTS || !codes(error).some((code) => RACED.has(code))) {
+      const isFatal = attempt >= ATTEMPTS || codes(error).some((code) => RACED.has(code)) === false;
+      if (isFatal) {
         throw error;
       }
       console.warn(`migrations: another migrator got there first; retrying [${attempt}]`);

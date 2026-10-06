@@ -12,7 +12,7 @@ const inElectron = typeof navigator !== "undefined" && /Electron\//.test(navigat
 
 const onWeb =
   Platform.OS === "web" &&
-  !inElectron &&
+  inElectron === false &&
   typeof location !== "undefined" &&
   location.protocol.startsWith("http");
 
@@ -61,7 +61,7 @@ export const serverUrl = () => current;
  * served by the agent and was not handed an address has one thing to say, and it is
  * "tell me where the server is", not a failed query against a host picked out of the air.
  */
-export const needsServerUrl = () => current === "" && !originIsAgent;
+export const needsServerUrl = () => current === "" && originIsAgent === false;
 
 /** Whether `defaultServerUrl` is something to go back to, or just an empty box. */
 export const hasDefaultServerUrl = () => fallback !== "" || originIsAgent;

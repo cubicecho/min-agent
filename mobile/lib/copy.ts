@@ -29,7 +29,8 @@ export function useCopy() {
 
   const copy = useCallback(async (text: string) => {
     const ok = await Clipboard.setStringAsync(text).catch(() => false);
-    if (!ok) {
+    const refused = ok === false;
+    if (refused) {
       return false;
     }
     setCopied(true);

@@ -150,7 +150,10 @@ function currentLocale(): string {
  * `no-speech` error from a model that is not installed for the language being spoken.
  */
 async function onDeviceLocales(): Promise<string[]> {
-  if (Platform.OS === "web" || !ExpoSpeechRecognitionModule.supportsOnDeviceRecognition()) {
+  if (
+    Platform.OS === "web" ||
+    ExpoSpeechRecognitionModule.supportsOnDeviceRecognition() === false
+  ) {
     return [];
   }
   const { installedLocales } = await ExpoSpeechRecognitionModule.getSupportedLocales({}).catch(
@@ -294,7 +297,8 @@ export function useDictation({
         session.onerror = null;
         session.onend = null;
       }
-      if (!recorder.isRecording) {
+      const isIdle = recorder.isRecording === false;
+      if (isIdle) {
         return;
       }
       void recorder.stop().catch(() => {});
@@ -337,7 +341,8 @@ export function useDictation({
 
   const record = useCallback(async () => {
     const permission = await requestRecordingPermissionsAsync();
-    if (!permission.granted) {
+    const isDenied = permission.granted === false;
+    if (isDenied) {
       throw new Error("the microphone was not allowed");
     }
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
@@ -358,7 +363,8 @@ export function useDictation({
     const session = new Recogniser();
 
     session.onresult = ({ results, resultIndex = 0 }) => {
-      if (!alive.current) {
+      const isUnmounted = alive.current === false;
+      if (isUnmounted) {
         return;
       }
       let phrase = "";
@@ -378,7 +384,8 @@ export function useDictation({
     };
     // `no-speech` and `aborted` are what a held-and-released button sounds like, not faults.
     session.onerror = ({ error: reason }) => {
-      if (!alive.current) {
+      const isUnmounted = alive.current === false;
+      if (isUnmounted) {
         return;
       }
       if (reason !== "no-speech" && reason !== "aborted") {
@@ -386,7 +393,8 @@ export function useDictation({
       }
     };
     session.onend = () => {
-      if (!alive.current || !open.current) {
+      const isOver = alive.current === false || open.current === false;
+      if (isOver) {
         return;
       }
       open.current = false;
@@ -409,7 +417,8 @@ export function useDictation({
     // A browser asks for the microphone itself, as part of starting. Android does not.
     if (Platform.OS !== "web") {
       const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-      if (!permission.granted) {
+      const isDenied = permission.granted === false;
+      if (isDenied) {
         throw new Error("the microphone was not allowed");
       }
     }
@@ -447,7 +456,8 @@ export function useDictation({
         }
       });
 
-    if (!viaModel) {
+    const onDevice = viaModel === false;
+    if (onDevice) {
       if (listening) {
         recognition.current?.stop();
       } else {
@@ -542,7 +552,8 @@ export function useSpeech({ model }: { model: string }): Speaker {
 
     const player = createAudioPlayer(file.uri);
     const subscription = player.addListener("playbackStatusUpdate", (status) => {
-      if (!status.didJustFinish) {
+      const isStillPlaying = status.didJustFinish === false;
+      if (isStillPlaying) {
         return;
       }
       subscription.remove();

@@ -101,7 +101,7 @@ function Details({
       }
       title={title}
       // Only while closed: once the row is open the whole of it is right underneath.
-      description={!open && summary ? summary : undefined}
+      description={open === false && summary ? summary : undefined}
       contentSlot={content}
       className={cn(
         "bg-card",
@@ -321,7 +321,7 @@ const StoredMessages = memo(function StoredMessages({
         // the answer, and one that reported after it stays under it.
         const hooks = item.stats?.hooks ?? [];
         const before = hooks.filter((hook) => INJECT_EVENTS.has(hook.event));
-        const after = hooks.filter((hook) => !INJECT_EVENTS.has(hook.event));
+        const after = hooks.filter((hook) => INJECT_EVENTS.has(hook.event) === false);
         return (
           <View key={key} className="gap-2">
             {before.map((hook) => (

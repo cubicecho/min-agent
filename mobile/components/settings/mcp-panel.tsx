@@ -272,7 +272,7 @@ function Editor({
     onSubmit: ({ value }) => onSave(fromDraft(value)).catch(() => {}),
   });
 
-  const dirty = useStore(form.store, (store) => !store.isDefaultValue);
+  const dirty = useStore(form.store, (store) => store.isDefaultValue === false);
   // Puts a dot on the tab while there is a server typed and not yet saved behind it.
   useReportDirty("mcp", dirty);
 
@@ -293,14 +293,15 @@ function Editor({
       <DialogLayout
         open={visible}
         onOpenChange={(open) => {
-          if (!open) {
+          const isClosing = open === false;
+          if (isClosing) {
             onCancel();
           }
         }}
         size="lg"
         title={existing ? name : "Add a server"}
         description="An MCP server, and what min-agent does with its tools."
-        hasUnsavedChanges={() => !form.state.isDefaultValue}
+        hasUnsavedChanges={() => form.state.isDefaultValue === false}
         footerSlot={
           existing ? (
             <ConfirmButton
@@ -362,7 +363,7 @@ function Editor({
                                 id={`mcp-tool-${tool.name}`}
                                 label={tool.name}
                                 labelClassName={hidden ? "line-through" : "text-card-foreground"}
-                                checked={!hidden}
+                                checked={hidden === false}
                                 onCheckedChange={(offered) =>
                                   field.handleChange(
                                     offered
@@ -387,7 +388,9 @@ function Editor({
             ) : null}
 
             <form.AppField name="label">
-              {() => <TextField label="Label" placeholder="Filesystem" autoFocus={!existing} />}
+              {() => (
+                <TextField label="Label" placeholder="Filesystem" autoFocus={existing === false} />
+              )}
             </form.AppField>
 
             <form.AppField name="transport">

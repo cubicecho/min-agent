@@ -217,7 +217,8 @@ export function planPrune(
   if (compacted) {
     return target;
   }
-  if (!(limit > 0)) {
+  const hasNoWindow = Number.isNaN(limit) || limit <= 0;
+  if (hasNoWindow) {
     return undefined;
   }
   return cleared >= limit * PRUNE_AT ? target : undefined;

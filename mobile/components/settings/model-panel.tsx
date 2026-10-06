@@ -225,7 +225,7 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
                 />
               )}
             </form.AppField>
-            {models.error && !endpointPending ? (
+            {models.error && endpointPending === false ? (
               <QueryError
                 compact
                 error={models.error}

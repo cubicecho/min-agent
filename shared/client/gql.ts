@@ -81,7 +81,8 @@ export function createGqlClient({ endpoint, fetch: fetchImpl }: GqlOptions) {
     try {
       payload = (await response.json()) as GraphQLResponse<TResult>;
     } catch {
-      if (!response.ok) {
+      const requestFailed = response.ok === false;
+      if (requestFailed) {
         throw new Error(`${response.status} ${response.statusText}`);
       }
       throw wrongServer(url());
@@ -105,7 +106,8 @@ export function createGqlClient({ endpoint, fetch: fetchImpl }: GqlOptions) {
       signal,
     );
 
-    if (!response.ok || !response.body) {
+    const hasNoStream = response.ok === false || !response.body;
+    if (hasNoStream) {
       const detail = (await response.json().catch(() => null)) as GraphQLResponse<never> | null;
       if (detail) {
         unwrap(detail);

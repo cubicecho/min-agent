@@ -52,7 +52,9 @@ describe("tokenizeLines", () => {
     const lines = tokenizeLines("/* one\n   two */", "typescript");
 
     expect(lines).toHaveLength(2);
-    expect(lines.every((line) => line.every((token) => !token.text.includes("\n")))).toBe(true);
+    expect(lines.every((line) => line.every((token) => token.text.includes("\n") === false))).toBe(
+      true,
+    );
     expect(lines.map(text)).toEqual(["/* one", "   two */"]);
   });
 

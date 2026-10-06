@@ -71,7 +71,8 @@ export async function get(
   name: string,
   args: Record<string, string>,
 ): Promise<string> {
-  if (!promptServers().some((offered) => offered.id === server)) {
+  const isUnknownServer = promptServers().some((offered) => offered.id === server) === false;
+  if (isUnknownServer) {
     throw new Error(`${server} is not a connected MCP server that offers prompts`);
   }
 

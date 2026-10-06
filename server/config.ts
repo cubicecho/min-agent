@@ -52,7 +52,8 @@ const reasons = (issues: { path: PropertyKey[]; message: string }[]) =>
  */
 export function assertLlmConfigPatch(patch: unknown): void {
   const result = llmConfigPatchSchema.safeParse(patch ?? {});
-  if (!result.success) {
+  const isInvalid = result.success === false;
+  if (isInvalid) {
     throw new UserError(reasons(result.error.issues));
   }
 }
@@ -224,7 +225,8 @@ export async function saveEmbeds(list: EmbedConfig[]): Promise<EmbedConfig[]> {
     // row is named because the screen saves the whole list at once and the message has to
     // say which of them the complaint is about.
     const result = embedSchema.safeParse(embed);
-    if (!result.success) {
+    const isInvalid = result.success === false;
+    if (isInvalid) {
       throw new UserError(`${embed.id || "app"} — ${reasons(result.error.issues)}`);
     }
     parsed.push(result.data);

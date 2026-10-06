@@ -56,7 +56,7 @@ export function proxyLoadResult(
   loaded: ReadonlySet<string>,
 ): string {
   const lines: string[] = [];
-  const fresh = definitions.filter((tool) => !loaded.has(tool.function.name));
+  const fresh = definitions.filter((tool) => loaded.has(tool.function.name) === false);
   const again = resolved.matched.filter((name) => loaded.has(name));
   if (fresh.length) {
     lines.push(`Loaded ${fresh.length} tool(s). Run them with \`call_tool\`.`);

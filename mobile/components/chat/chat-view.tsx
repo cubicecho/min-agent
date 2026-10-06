@@ -67,7 +67,8 @@ import { useVoiceSettings } from "@/lib/voice-settings.ts";
 export function ChatsView({ sessionId }: { sessionId?: string }) {
   const wide = useWide();
 
-  if (!wide) {
+  const isNarrow = wide === false;
+  if (isNarrow) {
     return sessionId ? <ChatPane sessionId={sessionId} /> : <SessionsScreen />;
   }
 
@@ -167,7 +168,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
 
   // Playback ends by itself, and the button on the message it belongs to has to notice.
   useEffect(() => {
-    if (!speech.speaking) {
+    const isSilent = speech.speaking === false;
+    if (isSilent) {
       setSpoken(null);
     }
   }, [speech.speaking]);
@@ -236,7 +238,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: these deps are the scroll triggers.
   useEffect(() => {
-    if (!pinned) {
+    const isScrolledAway = pinned === false;
+    if (isScrolledAway) {
       return;
     }
     // Animation cannot keep up with a stream, and trying looks like stutter; during a turn the
@@ -384,7 +387,8 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
         },
       });
     } catch (error) {
-      if (!controller.signal.aborted && showing.current === turnId) {
+      const isStillShown = controller.signal.aborted === false && showing.current === turnId;
+      if (isStillShown) {
         setFailure((error as Error).message);
       }
     } finally {
@@ -877,7 +881,8 @@ function TokensDialog({
     <DialogLayout
       open={visible}
       onOpenChange={(open) => {
-        if (!open) {
+        const isClosing = open === false;
+        if (isClosing) {
           onClose();
         }
       }}

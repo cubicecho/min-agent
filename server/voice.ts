@@ -104,7 +104,8 @@ export const voice = express.Router();
  */
 voice.post("/transcribe", express.json({ limit: MAX_AUDIO }), async (request, response) => {
   const config = loadLlmConfig();
-  if (!requireModel(config.sttModel, "transcription", response)) {
+  const hasNoModel = requireModel(config.sttModel, "transcription", response) === false;
+  if (hasNoModel) {
     return;
   }
 
@@ -145,7 +146,8 @@ voice.post("/transcribe", express.json({ limit: MAX_AUDIO }), async (request, re
  */
 voice.post("/speak", express.json({ limit: "1mb" }), async (request, response) => {
   const config = loadLlmConfig();
-  if (!requireModel(config.ttsModel, "speech", response)) {
+  const hasNoModel = requireModel(config.ttsModel, "speech", response) === false;
+  if (hasNoModel) {
     return;
   }
 

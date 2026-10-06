@@ -120,7 +120,8 @@ export function createVoiceClient({ baseUrl, fetch: fetchImpl }: VoiceClientOpti
         headers: { "content-type": "application/json" },
         body: JSON.stringify(recording),
       });
-      if (!response.ok) {
+      const requestFailed = response.ok === false;
+      if (requestFailed) {
         await complain(response, "transcription");
       }
       const { text } = (await response.json()) as { text: string };
@@ -137,7 +138,8 @@ export function createVoiceClient({ baseUrl, fetch: fetchImpl }: VoiceClientOpti
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ text: speakableText(text) }),
       });
-      if (!response.ok) {
+      const requestFailed = response.ok === false;
+      if (requestFailed) {
         await complain(response, "speech");
       }
       return {

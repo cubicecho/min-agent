@@ -82,7 +82,7 @@ async function generate(reason: string) {
       // A schema that cannot be printed is a broken server, which the dev server is about to
       // report anyway. Exiting here would just bury it under a second error.
       console.error(`[codegen] failed: ${(error as Error).message}`);
-      if (!watching) {
+      if (watching === false) {
         process.exitCode = 1;
       }
     } finally {
@@ -96,7 +96,7 @@ const watching = process.argv.includes("--watch");
 
 if (stale()) {
   await generate("schema changed");
-} else if (!watching) {
+} else if (watching === false) {
   console.log("[codegen] up to date");
 }
 
@@ -115,7 +115,8 @@ if (watching) {
 
   for (const { dir, ext } of INPUTS) {
     const full = path.join(ROOT, dir);
-    if (!fs.existsSync(full)) {
+    const isMissing = fs.existsSync(full) === false;
+    if (isMissing) {
       continue;
     }
     fs.watch(full, { recursive: true }, (_event, name) => {

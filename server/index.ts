@@ -66,7 +66,7 @@ app.use(
   "/graphql",
   compression({
     filter: (_request, response) =>
-      !String(response.getHeader("Content-Type") ?? "").includes("text/event-stream"),
+      String(response.getHeader("Content-Type") ?? "").includes("text/event-stream") === false,
   }),
 );
 

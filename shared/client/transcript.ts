@@ -16,7 +16,8 @@ export function messageText(message: Pick<StoredMessage, "content"> | undefined)
   if (typeof content === "string") {
     return content;
   }
-  if (!Array.isArray(content)) {
+  const hasNoParts = Array.isArray(content) === false;
+  if (hasNoParts) {
     return "";
   }
   return content

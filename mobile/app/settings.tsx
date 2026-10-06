@@ -114,7 +114,8 @@ export default function SettingsScreen() {
   }
 
   const open = (key: string) => {
-    if (!isTab(key)) {
+    const isUnknownTab = isTab(key) === false;
+    if (isUnknownTab) {
       return;
     }
     setActive(key);

@@ -258,7 +258,8 @@ export default function RootLayout() {
     Promise.all([loadServerUrl(), loadVoiceSettings()]).finally(() => setReady(true));
   }, []);
 
-  if (!ready) {
+  const isLoading = ready === false;
+  if (isLoading) {
     return null;
   }
 

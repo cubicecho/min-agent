@@ -337,7 +337,8 @@ export function instructionsPrompt(servers: { label: string; text: string }[]) {
  */
 function withWindow(error: unknown, contextLimit: number): unknown {
   const detail = errorMessage(error);
-  if (!isOverflow(detail)) {
+  const isOtherFailure = isOverflow(detail) === false;
+  if (isOtherFailure) {
     return error;
   }
   return new ContextOverflow(
@@ -640,7 +641,8 @@ function toolRunner({ catalog, onDemand, proxied, carried }: TurnPlan, signal?: 
   // it and loses the cache for the whole history behind them.
   const loaded: string[] = [...carried];
   const load = (name: string) => {
-    if (!loaded.includes(name)) {
+    const isNew = loaded.includes(name) === false;
+    if (isNew) {
       loaded.push(name);
     }
   };
@@ -1014,7 +1016,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // not held to the last one's prompt.
   let pruneOwed = false;
   const pruneBetweenSteps = async () => {
-    if (!pruneOwed) {
+    if (pruneOwed === false) {
       return;
     }
     pruneOwed = false;
@@ -1077,7 +1079,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       loaded: [...always, ...carried],
       toolOrder:
         native && always.length > 0
-          ? (a, b) => Number(!always.includes(a)) - Number(!always.includes(b))
+          ? (a, b) => Number(always.includes(a) === false) - Number(always.includes(b) === false)
           : false,
       // The same head on every step, the first included: the shortlist is loaded like anything
       // else, at the end, rather than given a first step of its own that no later step matches.
@@ -1139,7 +1141,12 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       },
       onToolCall: ({ id, name, raw }) => emit({ type: "tool_use", id, ...shownCall(name, raw) }),
       onToolResult: ({ id, ok, content }) =>
-        emit({ type: "tool_result", toolUseId: id, content, isError: !ok || failed.has(id) }),
+        emit({
+          type: "tool_result",
+          toolUseId: id,
+          content,
+          isError: ok === false || failed.has(id),
+        }),
       // Each message is written as it is produced, so a crash mid-run still leaves readable
       // history: the reply before its tools run, every result before the next request.
       onMessage: async (message, _step, turn) => {
@@ -1297,7 +1304,8 @@ export async function callOnce(
     const inFlight = run();
     answered.set(key, inFlight);
     inFlight.catch((error: unknown) => {
-      if (!isToolError(error)) {
+      const isTransient = isToolError(error) === false;
+      if (isTransient) {
         answered.delete(key);
       }
     });
@@ -1308,7 +1316,8 @@ export async function callOnce(
   } catch (error) {
     // Only a tool's own rejection is certain to repeat. Anything else reached this caller because
     // it was sharing a call still in flight, and is forgotten already.
-    if (!isToolError(error)) {
+    const isTransient = isToolError(error) === false;
+    if (isTransient) {
       throw error;
     }
     throw new Error(

@@ -161,7 +161,8 @@ function RenameForm({ list, id, title }: { list: List; id: string; title: string
     <FormDialog
       open
       onOpenChange={(open) => {
-        if (!open) {
+        const isClosing = open === false;
+        if (isClosing) {
           close();
         }
       }}
@@ -191,7 +192,8 @@ function Search({ list }: { list: List }) {
   // was never taken, because the browser's own ⌘K would have done something.
   useShortcut("mod+k", searchable(list) ? () => box.current?.focus() : undefined);
 
-  if (!searchable(list)) {
+  const isShortList = searchable(list) === false;
+  if (isShortList) {
     return null;
   }
   return (

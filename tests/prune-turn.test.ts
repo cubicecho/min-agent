@@ -97,7 +97,8 @@ const asks = (id: string, name: string, args: string, usage: object = USAGE): Re
  * is a 404, and is not kept.
  */
 async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  if (!String(url).endsWith("/chat/completions")) {
+  const isOtherRequest = String(url).endsWith("/chat/completions") === false;
+  if (isOtherRequest) {
     return new Response("{}", { status: 404 });
   }
   const raw = String(init?.body);

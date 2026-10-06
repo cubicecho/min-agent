@@ -118,7 +118,7 @@ function Editor({
     onSubmit: ({ value }) => onSave(value).catch(() => {}),
   });
 
-  const dirty = useStore(form.store, (state) => !state.isDefaultValue);
+  const dirty = useStore(form.store, (state) => state.isDefaultValue === false);
   // Puts a dot on the tab while there is a row typed and not yet saved behind it.
   useReportDirty("apps", dirty);
 
@@ -129,13 +129,14 @@ function Editor({
       <DialogLayout
         open={visible}
         onOpenChange={(open) => {
-          if (!open) {
+          const isClosing = open === false;
+          if (isClosing) {
             onCancel();
           }
         }}
         title={existing ? name : "Add an app"}
         description="A web app given a row in the sidebar."
-        hasUnsavedChanges={() => !form.state.isDefaultValue}
+        hasUnsavedChanges={() => form.state.isDefaultValue === false}
         footerSlot={
           <View className="flex-row items-center gap-1">
             {existing ? (
@@ -173,7 +174,9 @@ function Editor({
         contentSlot={
           <Form className="gap-4">
             <form.AppField name="label">
-              {() => <TextField label="Label" placeholder="Kanban" autoFocus={!existing} />}
+              {() => (
+                <TextField label="Label" placeholder="Kanban" autoFocus={existing === false} />
+              )}
             </form.AppField>
 
             <form.AppField

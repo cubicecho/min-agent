@@ -86,7 +86,8 @@ export function PromptPicker({
     <DialogLayout
       open={visible}
       onOpenChange={(open) => {
-        if (!open) {
+        const isClosing = open === false;
+        if (isClosing) {
           close();
         }
       }}
