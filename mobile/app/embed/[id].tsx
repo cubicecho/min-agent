@@ -15,6 +15,7 @@ import { SettingsLink } from "@/components/settings/link.tsx";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/client.ts";
 import { EMBEDS_STALE_TIME } from "@/lib/embeds.ts";
+import { queryKeys } from "@/lib/queries.ts";
 import { cn } from "@/lib/utils";
 
 /**
@@ -37,7 +38,7 @@ const open = (embed: EmbedConfig) => Linking.openURL(embed.url);
 export default function EmbedScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const embeds = useQuery({
-    queryKey: ["embeds"],
+    queryKey: queryKeys.embeds,
     queryFn: api.embeds,
     staleTime: EMBEDS_STALE_TIME,
   });

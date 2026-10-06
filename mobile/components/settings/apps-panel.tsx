@@ -21,6 +21,7 @@ import { Form } from "@/components/ui/form";
 import { ChevronRight, Plus, Trash2 } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
 import { EMBEDS_STALE_TIME } from "@/lib/embeds.ts";
+import { queryKeys } from "@/lib/queries.ts";
 import { useReportDirty } from "./dirty.tsx";
 import { TextField } from "./fields.tsx";
 import { PanelBody } from "./panel-body.tsx";
@@ -239,7 +240,7 @@ function Editor({
 export function AppsPanel({ active = true }: { active?: boolean }) {
   const queryClient = useQueryClient();
   const embeds = useQuery({
-    queryKey: ["embeds"],
+    queryKey: queryKeys.embeds,
     queryFn: api.embeds,
     staleTime: EMBEDS_STALE_TIME,
   });
@@ -250,7 +251,7 @@ export function AppsPanel({ active = true }: { active?: boolean }) {
     // Seeded from what the save read back rather than invalidated: the sidebar reads this same
     // query, and a refetch it has to wait for is a nav that lags a rename by a round trip.
     onSuccess: (fresh) => {
-      queryClient.setQueryData(["embeds"], fresh);
+      queryClient.setQueryData(queryKeys.embeds, fresh);
       setEditing(null);
     },
   });

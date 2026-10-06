@@ -29,6 +29,7 @@ import { api } from "@/lib/client.ts";
 import { EMBEDS_STALE_TIME, visibleEmbeds } from "@/lib/embeds.ts";
 import { useShortcut } from "@/lib/keys.ts";
 import { useBottomInset } from "@/lib/layout.ts";
+import { queryKeys } from "@/lib/queries.ts";
 import { loadServerUrl } from "@/lib/server-url.ts";
 import { colors, pinDarkAppearance } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils";
@@ -60,8 +61,8 @@ const queryClient = new QueryClient({
 });
 
 // Sessions have to stay fresh — the list is redrawn after every turn — but these two do not.
-queryClient.setQueryDefaults(["config"], { staleTime: SETTINGS_STALE_TIME });
-queryClient.setQueryDefaults(["models"], { staleTime: SETTINGS_STALE_TIME });
+queryClient.setQueryDefaults(queryKeys.config, { staleTime: SETTINGS_STALE_TIME });
+queryClient.setQueryDefaults(queryKeys.models, { staleTime: SETTINGS_STALE_TIME });
 
 const MAIN = cn("min-h-0 min-w-0", Platform.select({ web: "h-full", default: "flex-1" }));
 
@@ -97,7 +98,7 @@ function Shell() {
   useShortcut("mod+,", () => router.navigate("/settings"));
 
   const embeds = useQuery({
-    queryKey: ["embeds"],
+    queryKey: queryKeys.embeds,
     queryFn: api.embeds,
     staleTime: EMBEDS_STALE_TIME,
   });

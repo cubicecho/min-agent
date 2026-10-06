@@ -10,6 +10,7 @@ import { QueryState } from "@/components/query-state";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/client.ts";
+import { queryKeys } from "@/lib/queries.ts";
 import type { SlotNode } from "@/lib/utils.ts";
 import { useReportDirty } from "./dirty.tsx";
 import type { SettingsTab } from "./tabs.ts";
@@ -123,7 +124,7 @@ type ConfigFormProps<T extends Partial<Draft>> = {
  * are written against a row that is known to have arrived.
  */
 export function ConfigForm<T extends Partial<Draft>>(props: ConfigFormProps<T>) {
-  const config = useQuery({ queryKey: ["config"], queryFn: api.config });
+  const config = useQuery({ queryKey: queryKeys.config, queryFn: api.config });
   if (config.data) return <Loaded {...props} view={config.data} />;
   return (
     <StickyHeaderContentFooter
@@ -151,7 +152,7 @@ function Loaded<T extends Partial<Draft>>({
     mutationFn: (value: T) => api.saveConfig(value),
     onSuccess: (fresh) => {
       setSaved(true);
-      queryClient.setQueryData(["config"], fresh);
+      queryClient.setQueryData(queryKeys.config, fresh);
       onSaved?.();
     },
   });

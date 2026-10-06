@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { FieldRow } from "@/components/ui/form";
 import { Check } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
+import { queryKeys } from "@/lib/queries.ts";
 import { ConfigForm, type ConfigSlice, type Draft } from "./config-form.tsx";
 import { OptionalSelectField, TextField } from "./fields.tsx";
 import { SettingsCard } from "./settings-card.tsx";
@@ -61,7 +62,7 @@ export function ModelPanel() {
       })}
       tidy={tidy}
       // The model list belongs to the provider, so a new base URL or key means a new list.
-      onSaved={() => void queryClient.invalidateQueries({ queryKey: ["models"] })}
+      onSaved={() => void queryClient.invalidateQueries({ queryKey: queryKeys.models })}
       content={(slice) => <ModelFields {...slice} />}
     />
   );
@@ -73,7 +74,7 @@ export function ModelPanel() {
  */
 function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
   const queryClient = useQueryClient();
-  const models = useQuery({ queryKey: ["models"], queryFn: api.models });
+  const models = useQuery({ queryKey: queryKeys.models, queryFn: api.models });
   const [endpointBusy, setEndpointBusy] = useState(false);
   const [held, setProbe] = useState<Probe>(null);
 
@@ -110,7 +111,7 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
     try {
       const { baseUrl, apiKey } = form.state.values;
       const fresh = await api.saveConfig({ baseUrl, apiKey });
-      queryClient.setQueryData(["config"], fresh);
+      queryClient.setQueryData(queryKeys.config, fresh);
       form.setFieldValue("baseUrl", fresh.baseUrl);
       form.setFieldValue("apiKey", "");
       const result = await models.refetch();
