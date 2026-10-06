@@ -1,4 +1,5 @@
 import { FRESHNESS_DEFAULTS } from "@shared/defaults.ts";
+import { messageOf } from "@shared/errors.ts";
 import {
   HOOK_EVENTS_FIRED,
   INJECT_EVENTS,
@@ -92,8 +93,6 @@ const EVENT_OPTIONS = HOOK_EVENTS_FIRED.map((event) => ({ label: event, value: e
 
 /** What a hook injects up to when nobody has said: the pool's own default. */
 const DEFAULT_MAX_TOKENS = 1000;
-
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 

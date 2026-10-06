@@ -1,3 +1,4 @@
+import { messageOf } from "@shared/errors.ts";
 import { useStore } from "@tanstack/react-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -65,7 +66,7 @@ export function ServerPanel() {
         // Everything fetched from the old address is now wrong.
         await queryClient.invalidateQueries();
       } catch (error) {
-        setProbe({ ok: false, detail: error instanceof Error ? error.message : String(error) });
+        setProbe({ ok: false, detail: messageOf(error) });
       }
     },
   });

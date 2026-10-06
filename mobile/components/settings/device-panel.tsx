@@ -1,3 +1,4 @@
+import { messageOf } from "@shared/errors.ts";
 import { useStore } from "@tanstack/react-form";
 import * as Updates from "expo-updates";
 import { useState } from "react";
@@ -135,7 +136,7 @@ export function DevicePanel() {
     } catch (error) {
       setProgress({
         kind: "failed",
-        detail: error instanceof Error ? error.message : String(error),
+        detail: messageOf(error),
       });
     }
   };

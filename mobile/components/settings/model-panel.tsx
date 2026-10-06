@@ -1,3 +1,4 @@
+import { messageOf } from "@shared/errors.ts";
 import { MODEL_TASKS } from "@shared/model-tasks.ts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -36,8 +37,6 @@ const tidy = (draft: ModelDraft) => ({
 type Probe = { ok: boolean; detail: string; baseUrl: string; apiKey: string } | null;
 
 const endpointOf = ({ baseUrl, apiKey }: ModelDraft) => ({ baseUrl, apiKey });
-
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
  * Where the models come from and which ones are used.

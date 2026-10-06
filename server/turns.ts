@@ -1,4 +1,4 @@
-import { errorMessage } from "@cubicecho/agent-core";
+import { messageOf } from "../shared/errors.ts";
 import type { HookNote, StreamEvent, TurnStats } from "../shared/types.ts";
 import { runTurn } from "./agent.ts";
 import { getSession } from "./store.ts";
@@ -80,7 +80,7 @@ export async function* runTurnEvents(args: TurnArgs): AsyncGenerator<TurnEvent> 
       if (controller.signal.aborted) {
         return;
       }
-      push({ type: "error", message: errorMessage(error) });
+      push({ type: "error", message: messageOf(error) });
     })
     .finally(() => {
       done = true;

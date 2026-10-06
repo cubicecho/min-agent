@@ -1,3 +1,4 @@
+import { messageOf } from "@shared/errors.ts";
 import { type EmbedConfig, embedTitle } from "@shared/types.ts";
 import { useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -55,8 +56,6 @@ const blank = (taken: EmbedConfig[]): EmbedConfig => {
 
 /** Which row the dialog is editing: an index into the list, or a new row at the end. */
 type Editing = { index: number | null; value: EmbedConfig };
-
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /** One line of the list: what it is, where it points, and whether it is on. */
 function Row({ embed, onOpen }: { embed: EmbedConfig; onOpen: () => void }) {

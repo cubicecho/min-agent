@@ -1,3 +1,4 @@
+import { messageOf } from "@shared/errors.ts";
 import type { LlmConfigView, ReasoningEffort } from "@shared/types.ts";
 import { useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -49,8 +50,6 @@ export type Draft = {
 
 /** The panels that edit this row. The other settings tabs store their settings elsewhere. */
 export type ConfigTab = Extract<SettingsTab, "model" | "agent" | "voice">;
-
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
  * The form over one panel's fields.

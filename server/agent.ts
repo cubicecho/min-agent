@@ -9,7 +9,6 @@ import {
   clean,
   compact as compactTokens,
   contextLimitFor,
-  errorMessage,
   expandNames,
   failedRun,
   inCatalog,
@@ -36,6 +35,7 @@ import { McpPoolError, type ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { measureRequest, splitContext } from "../shared/client/usage.ts";
 import { FOLLOWUP_DEFAULTS, TITLE_DEFAULTS, TURN_DEFAULTS } from "../shared/defaults.ts";
+import { messageOf } from "../shared/errors.ts";
 import { CALL_TOOL, shownCall } from "../shared/tool-proxy.ts";
 import {
   type ContextBreakdown,
@@ -316,7 +316,7 @@ export function instructionsPrompt(servers: { label: string; text: string }[]) {
  * @param contextLimit The window the turn was built to. Zero when none is set.
  */
 function withWindow(error: unknown, contextLimit: number): unknown {
-  const detail = errorMessage(error);
+  const detail = messageOf(error);
   const isOtherFailure = isOverflow(detail) === false;
   if (isOtherFailure) {
     return error;
@@ -699,7 +699,7 @@ function toolRunner({ catalog, onDemand, proxied, carried }: TurnPlan, signal?: 
       );
     } catch (error) {
       failed.add(id);
-      return errorMessage(error);
+      return messageOf(error);
     }
   };
 
@@ -1308,7 +1308,7 @@ export async function callOnce(
       throw error;
     }
     throw new Error(
-      `${errorMessage(error)}\n\n(Identical call already failed this turn; it will fail the same way again. Change the arguments or try something else.)`,
+      `${messageOf(error)}\n\n(Identical call already failed this turn; it will fail the same way again. Change the arguments or try something else.)`,
     );
   }
 }
