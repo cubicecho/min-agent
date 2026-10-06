@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { registered, tokenize, tokenizeLines } from "../shared/highlight.ts";
+import { registered, tokenize, tokenizeLines } from "../../shared/highlight.ts";
 
 /**
  * The highlighter is hand-rolled over lowlight rather than a rehype plugin, to keep the

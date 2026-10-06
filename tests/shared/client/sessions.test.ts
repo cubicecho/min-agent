@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bucketOf, groupSessions, matchSessions } from "../shared/client/sessions.ts";
+import { bucketOf, groupSessions, matchSessions } from "../../../shared/client/sessions.ts";
 
 const list = [
   { title: "CI for the Docker image" },

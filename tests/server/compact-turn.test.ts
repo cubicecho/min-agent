@@ -6,7 +6,7 @@ import {
   llmConfigSchema,
   type Session,
   type StoredMessage,
-} from "../shared/types.ts";
+} from "../../shared/types.ts";
 
 /**
  * Compaction as a turn does it, pinned from outside: when the summary is asked for, what the
@@ -46,20 +46,20 @@ const mcp = {
 /** Every `updateSession` patch, in order. */
 let updates: Record<string, unknown>[] = [];
 
-vi.mock("../server/mcp.ts", () => mcp);
-vi.mock("../server/store.ts", () => ({
+vi.mock("../../server/mcp.ts", () => mcp);
+vi.mock("../../server/store.ts", () => ({
   addMessage: async (_session: string, idx: number) => `row-${idx}`,
   patchMessage: async () => {},
   updateSession: async (_session: string, patch: Record<string, unknown>) => {
     updates.push(structuredClone(patch));
   },
 }));
-vi.mock("../server/config.ts", async (original) => ({
-  ...(await original<typeof import("../server/config.ts")>()),
+vi.mock("../../server/config.ts", async (original) => ({
+  ...(await original<typeof import("../../server/config.ts")>()),
   loadLlmConfig: () => settings,
 }));
 
-const { runTurn } = await import("../server/agent.ts");
+const { runTurn } = await import("../../server/agent.ts");
 
 /** What the summariser will answer, in order: its text, or a refusal with the endpoint's reason. */
 let summaries: (string | { refusal: string })[] = [];

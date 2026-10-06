@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { embedSchema, embedTitle } from "../shared/types.ts";
+import { embedSchema, embedTitle } from "../../shared/types.ts";
 
 /**
  * The embed rows go into the database through `saveEmbeds`, which parses them with this

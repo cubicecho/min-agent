@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { forApi } from "../server/agent.ts";
-import type { Session, StoredMessage } from "../shared/types.ts";
+import { forApi } from "../../server/agent.ts";
+import type { Session, StoredMessage } from "../../shared/types.ts";
 
 const session = (messages: StoredMessage[]) => ({ id: "s1", messages }) as Session;
 

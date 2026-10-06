@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchTerms } from "../shared/client/search.ts";
+import { matchTerms } from "../../../shared/client/search.ts";
 
 const list = ["qwen2.5-coder:7b", "llama3.2:3b", "qwen2.5:14b-instruct"];
 const match = (query: string) => matchTerms(list, query, (item) => item);

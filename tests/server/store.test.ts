@@ -12,15 +12,15 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
  */
 const url = process.env.TEST_DATABASE_URL;
 
-let db: typeof import("../server/db/client.ts")["db"];
-let store: typeof import("../server/store.ts");
+let db: typeof import("../../server/db/client.ts")["db"];
+let store: typeof import("../../server/store.ts");
 
 describe.skipIf(!url)("session store", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = url;
-    db = (await import("../server/db/client.ts")).db;
-    await (await import("../server/db/migrate.ts")).runMigrations();
-    store = await import("../server/store.ts");
+    db = (await import("../../server/db/client.ts")).db;
+    await (await import("../../server/db/migrate.ts")).runMigrations();
+    store = await import("../../server/store.ts");
   });
 
   beforeEach(async () => {

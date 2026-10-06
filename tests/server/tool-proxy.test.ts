@@ -8,8 +8,8 @@ import {
   proxiedCall,
   proxyCatalogPrompt,
   proxyLoadResult,
-} from "../server/tool-proxy.ts";
-import { CALL_TOOL, shownCall } from "../shared/tool-proxy.ts";
+} from "../../server/tool-proxy.ts";
+import { CALL_TOOL, shownCall } from "../../shared/tool-proxy.ts";
 
 const catalog = [
   {

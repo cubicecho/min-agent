@@ -3,9 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const resourceServers = vi.fn<() => { id: string; label: string }[]>();
 const client = vi.fn<(id: string) => Promise<unknown>>();
 
-vi.mock("../server/mcp.ts", () => ({ resourceServers: () => resourceServers(), client }));
+vi.mock("../../server/mcp.ts", () => ({ resourceServers: () => resourceServers(), client }));
 
-const { list, read } = await import("../server/mcp-resources.ts");
+const { list, read } = await import("../../server/mcp-resources.ts");
 
 /**
  * `list_resources` and `read_resource`, the two tools MCP resources reach the model through.

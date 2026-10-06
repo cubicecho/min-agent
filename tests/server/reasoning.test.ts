@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { coerceLlmConfig } from "../server/config.ts";
-import { llmConfigSchema, REASONING_EFFORTS } from "../shared/types.ts";
+import { coerceLlmConfig } from "../../server/config.ts";
+import { llmConfigSchema, REASONING_EFFORTS } from "../../shared/types.ts";
 
 /**
  * The reasoning-effort setting: the ladder it offers, and what it falls back to.
@@ -8,7 +8,7 @@ import { llmConfigSchema, REASONING_EFFORTS } from "../shared/types.ts";
  * The thing that makes the setting safe to have — a request refused because of it being sent
  * again without it, remembered against the model that refused rather than the endpoint it sits
  * on — is agent-core's `negotiate` since 2.1.0, and is tested there. `sendTurn` in
- * tests/negotiate.test.ts covers min-agent naming the model, which is what reaches that level.
+ * tests/server/negotiate.test.ts covers min-agent naming the model, which is what reaches that level.
  */
 
 describe("reasoningEffort", () => {

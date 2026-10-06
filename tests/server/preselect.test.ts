@@ -7,8 +7,8 @@ import {
 } from "@cubicecho/agent-core";
 import OpenAI from "openai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { endpoint } from "../server/config.ts";
-import { llmConfigSchema } from "../shared/types.ts";
+import { endpoint } from "../../server/config.ts";
+import { llmConfigSchema } from "../../shared/types.ts";
 
 /**
  * What the tool-select model is sent, and what is made of its answer.

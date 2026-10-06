@@ -5,9 +5,9 @@ import {
   coerceLlmConfig,
   endpoint,
   refreshLlmConfig,
-} from "../server/config.ts";
-import { schema } from "../server/graphql/schema.ts";
-import { llmConfigSchema, modelForTask } from "../shared/types.ts";
+} from "../../server/config.ts";
+import { schema } from "../../server/graphql/schema.ts";
+import { llmConfigSchema, modelForTask } from "../../shared/types.ts";
 
 /**
  * The settings live in Postgres and GraphQL checks their shape, so what is left to test here

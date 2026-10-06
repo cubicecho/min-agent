@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { messageText, planFold, textTokens } from "../server/compaction.ts";
-import type { Session, StoredMessage } from "../shared/types.ts";
+import { messageText, planFold, textTokens } from "../../server/compaction.ts";
+import type { Session, StoredMessage } from "../../shared/types.ts";
 
 const say = (role: StoredMessage["role"], text: string) =>
   ({ role, content: text }) as StoredMessage;

@@ -14,7 +14,7 @@ import {
   type StoredMessage,
   type StreamEvent,
   type TurnStats,
-} from "../shared/types.ts";
+} from "../../shared/types.ts";
 
 /**
  * `runTurn` as it behaves today, pinned from outside: what it posts to the endpoint, what it
@@ -54,8 +54,8 @@ let patches: { row: string; patch: Pick<StoredMessage, "stats" | "followups"> }[
 /** Every `updateSession` patch, in order. */
 let updates: Record<string, unknown>[] = [];
 
-vi.mock("../server/mcp.ts", () => mcp);
-vi.mock("../server/store.ts", () => ({
+vi.mock("../../server/mcp.ts", () => mcp);
+vi.mock("../../server/store.ts", () => ({
   addMessage: async (_session: string, idx: number, message: StoredMessage) => {
     stored[idx] = structuredClone(message);
     return `row-${idx}`;
@@ -67,14 +67,14 @@ vi.mock("../server/store.ts", () => ({
     updates.push(structuredClone(patch));
   },
 }));
-vi.mock("../server/config.ts", async (original) => ({
-  ...(await original<typeof import("../server/config.ts")>()),
+vi.mock("../../server/config.ts", async (original) => ({
+  ...(await original<typeof import("../../server/config.ts")>()),
   loadLlmConfig: () => settings,
 }));
 
-const { instructionsPrompt, runTurn } = await import("../server/agent.ts");
-const { RESOURCE_TOOLS } = await import("../server/mcp-resources.ts");
-const { PROXY_TOOLS, proxyCatalogPrompt } = await import("../server/tool-proxy.ts");
+const { instructionsPrompt, runTurn } = await import("../../server/agent.ts");
+const { RESOURCE_TOOLS } = await import("../../server/mcp-resources.ts");
+const { PROXY_TOOLS, proxyCatalogPrompt } = await import("../../server/tool-proxy.ts");
 
 /** One scripted answer: a stream of chunks, or a 400 with the endpoint's reason. */
 type Reply = { chunks: object[]; hangs?: boolean } | { refusal: string };

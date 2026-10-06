@@ -1,8 +1,8 @@
 import { createServer, type Server, type Socket } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { wav } from "../server/audio.ts";
-import { synthesize, transcribe } from "../server/wyoming.ts";
-import { wyomingAddress } from "../shared/types.ts";
+import { wav } from "../../server/audio.ts";
+import { synthesize, transcribe } from "../../server/wyoming.ts";
+import { wyomingAddress } from "../../shared/types.ts";
 
 /**
  * The wire, tested against a socket rather than a mock.

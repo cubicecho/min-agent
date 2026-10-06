@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { messageText, turnStart, usageOf } from "../shared/client/transcript.ts";
-import type { StoredMessage, TurnStats } from "../shared/types.ts";
+import { messageText, turnStart, usageOf } from "../../../shared/client/transcript.ts";
+import type { StoredMessage, TurnStats } from "../../../shared/types.ts";
 
 const stats = (total: number): TurnStats => ({
   model: "m",

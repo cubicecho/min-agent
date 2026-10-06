@@ -7,7 +7,7 @@ import {
   type Session,
   type StoredMessage,
   type StreamEvent,
-} from "../shared/types.ts";
+} from "../../shared/types.ts";
 
 /**
  * Pruning as a turn does it, read off the requests themselves: what the endpoint is posted on each
@@ -39,8 +39,8 @@ let stored: StoredMessage[] = [];
 /** Every `updateSession` patch, in order. */
 let updates: Record<string, unknown>[] = [];
 
-vi.mock("../server/mcp.ts", () => mcp);
-vi.mock("../server/store.ts", () => ({
+vi.mock("../../server/mcp.ts", () => mcp);
+vi.mock("../../server/store.ts", () => ({
   addMessage: async (_session: string, idx: number, message: StoredMessage) => {
     stored[idx] = structuredClone(message);
     return `row-${idx}`;
@@ -50,12 +50,12 @@ vi.mock("../server/store.ts", () => ({
     updates.push(structuredClone(patch));
   },
 }));
-vi.mock("../server/config.ts", async (original) => ({
-  ...(await original<typeof import("../server/config.ts")>()),
+vi.mock("../../server/config.ts", async (original) => ({
+  ...(await original<typeof import("../../server/config.ts")>()),
   loadLlmConfig: () => settings,
 }));
 
-const { runTurn } = await import("../server/agent.ts");
+const { runTurn } = await import("../../server/agent.ts");
 
 type Usage = { prompt_tokens: number; completion_tokens: number; total_tokens: number };
 type Reply = { chunks: object[] };

@@ -1,8 +1,8 @@
 import { GraphQLError, isScalarType, isSchema, printSchema, validateSchema } from "graphql";
 import { GraphQLJSON } from "graphql-scalars";
 import { describe, expect, it } from "vitest";
-import { surfaced, UserError, userErrorIn } from "../server/errors.ts";
-import { schema } from "../server/graphql/schema.ts";
+import { surfaced, UserError, userErrorIn } from "../../../server/errors.ts";
+import { schema } from "../../../server/graphql/schema.ts";
 
 /**
  * The schema itself, with no database behind it — `buildSchema` reads the table definitions,

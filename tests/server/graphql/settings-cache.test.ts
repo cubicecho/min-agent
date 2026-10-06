@@ -19,8 +19,8 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 const url = process.env.TEST_DATABASE_URL;
 
 let schema: GraphQLSchema;
-let loadLlmConfig: typeof import("../server/config.ts")["loadLlmConfig"];
-let refreshLlmConfig: typeof import("../server/config.ts")["refreshLlmConfig"];
+let loadLlmConfig: typeof import("../../../server/config.ts")["loadLlmConfig"];
+let refreshLlmConfig: typeof import("../../../server/config.ts")["refreshLlmConfig"];
 
 /** Patches the settings row through the generated mutation, exactly as the Config screen does. */
 const save = (set: Record<string, unknown>) =>
@@ -37,9 +37,9 @@ const save = (set: Record<string, unknown>) =>
 describe.skipIf(!url)("the settings cache", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = url;
-    await (await import("../server/db/migrate.ts")).runMigrations();
-    ({ loadLlmConfig, refreshLlmConfig } = await import("../server/config.ts"));
-    schema = (await import("../server/graphql/schema.ts")).schema;
+    await (await import("../../../server/db/migrate.ts")).runMigrations();
+    ({ loadLlmConfig, refreshLlmConfig } = await import("../../../server/config.ts"));
+    schema = (await import("../../../server/graphql/schema.ts")).schema;
   });
 
   beforeEach(async () => {

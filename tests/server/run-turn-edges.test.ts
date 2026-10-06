@@ -8,7 +8,7 @@ import {
   type StoredMessage,
   type StreamEvent,
   type TurnStats,
-} from "../shared/types.ts";
+} from "../../shared/types.ts";
 
 /**
  * The edges of `runTurn`'s loop that `run-turn.test.ts` leaves alone: what a stop does at each
@@ -49,8 +49,8 @@ let log: string[] = [];
 /** Called as each row is written, before the write resolves. */
 let onStore: (message: StoredMessage) => void = () => {};
 
-vi.mock("../server/mcp.ts", () => mcp);
-vi.mock("../server/store.ts", () => ({
+vi.mock("../../server/mcp.ts", () => mcp);
+vi.mock("../../server/store.ts", () => ({
   addMessage: async (_session: string, idx: number, message: StoredMessage) => {
     stored[idx] = structuredClone(message);
     log.push(`store ${message.role}${message.role === "tool" ? ` ${message.tool_call_id}` : ""}`);
@@ -64,12 +64,12 @@ vi.mock("../server/store.ts", () => ({
     updates.push(structuredClone(patch));
   },
 }));
-vi.mock("../server/config.ts", async (original) => ({
-  ...(await original<typeof import("../server/config.ts")>()),
+vi.mock("../../server/config.ts", async (original) => ({
+  ...(await original<typeof import("../../server/config.ts")>()),
   loadLlmConfig: () => settings,
 }));
 
-const { runTurn } = await import("../server/agent.ts");
+const { runTurn } = await import("../../server/agent.ts");
 
 type Reply = { chunks: object[] } | { refusal: string };
 

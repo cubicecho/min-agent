@@ -6,7 +6,7 @@ import {
 } from "@cubicecho/agent-core";
 import OpenAI from "openai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { sendTurn } from "../server/agent.ts";
+import { sendTurn } from "../../server/agent.ts";
 
 /**
  * What one round trip does when the endpoint refuses something it can do without, or loses the

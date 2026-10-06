@@ -4,8 +4,8 @@ import type { AddressInfo } from "node:net";
 import { createVoiceClient, speakableText, spokenChunk } from "@shared/client/voice.ts";
 import express from "express";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { refreshLlmConfig } from "../server/config.ts";
-import { audioExtension, voice } from "../server/voice.ts";
+import { refreshLlmConfig } from "../../server/config.ts";
+import { audioExtension, voice } from "../../server/voice.ts";
 
 /**
  * The two ends of voice that are worth pinning down: what a reply sounds like once the

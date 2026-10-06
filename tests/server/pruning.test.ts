@@ -1,12 +1,12 @@
 import { expandNames, loadResult } from "@cubicecho/agent-core";
 import type OpenAI from "openai";
 import { describe, expect, it } from "vitest";
-import { forApi } from "../server/agent.ts";
-import { textTokens } from "../server/compaction.ts";
-import { clampPruning, clearedChars, planPrune, sentWithStubs } from "../server/pruning.ts";
-import { proxyLoadResult } from "../server/tool-proxy.ts";
-import { PRUNING_DEFAULTS } from "../shared/defaults.ts";
-import type { Session, StoredMessage } from "../shared/types.ts";
+import { forApi } from "../../server/agent.ts";
+import { textTokens } from "../../server/compaction.ts";
+import { clampPruning, clearedChars, planPrune, sentWithStubs } from "../../server/pruning.ts";
+import { proxyLoadResult } from "../../server/tool-proxy.ts";
+import { PRUNING_DEFAULTS } from "../../shared/defaults.ts";
+import type { Session, StoredMessage } from "../../shared/types.ts";
 
 /**
  * Pruning as far as it is pure: what a marker does to what is sent, when the rule moves it, and

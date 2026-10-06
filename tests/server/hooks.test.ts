@@ -2,16 +2,16 @@ import { createHash } from "node:crypto";
 import { contextBlocks, type HookOutcome } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { McpServerConfig, Session, StoredMessage } from "../shared/types.ts";
+import type { McpServerConfig, Session, StoredMessage } from "../../shared/types.ts";
 
 const runHooks = vi.fn();
 
-vi.mock("../server/mcp.ts", () => ({ runHooks }));
+vi.mock("../../server/mcp.ts", () => ({ runHooks }));
 
 const { gather, HOST, notify, sessionDeleted, turnIndex, turnMessages, withContext } = await import(
-  "../server/hooks.ts"
+  "../../server/hooks.ts"
 );
-const { assertMcpServers } = await import("../server/config.ts");
+const { assertMcpServers } = await import("../../server/config.ts");
 
 /**
  * The half of hooks that is min-agent's own: the pool runs them, and this decides what a

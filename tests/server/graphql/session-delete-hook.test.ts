@@ -16,13 +16,13 @@ const url = process.env.TEST_DATABASE_URL;
 
 const sessionDeleted = vi.fn();
 
-vi.mock("../server/hooks.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../server/hooks.ts")>()),
+vi.mock("../../../server/hooks.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../server/hooks.ts")>()),
   sessionDeleted,
 }));
 
 let schema: GraphQLSchema;
-let store: typeof import("../server/store.ts");
+let store: typeof import("../../../server/store.ts");
 
 const remove = (id: string) =>
   graphql({
@@ -38,9 +38,9 @@ const remove = (id: string) =>
 describe.skipIf(!url)("deleting a session", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = url;
-    await (await import("../server/db/migrate.ts")).runMigrations();
-    store = await import("../server/store.ts");
-    schema = (await import("../server/graphql/schema.ts")).schema;
+    await (await import("../../../server/db/migrate.ts")).runMigrations();
+    store = await import("../../../server/store.ts");
+    schema = (await import("../../../server/graphql/schema.ts")).schema;
   });
 
   beforeEach(() => sessionDeleted.mockReset());

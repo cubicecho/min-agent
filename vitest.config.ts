@@ -20,7 +20,7 @@ export default defineConfig({
        * "Cannot use GraphQLNonNull from another module or realm". Aliasing to `index.js`
        * points the tests at the build Node would have chosen, so the suite exercises the
        * server's own resolution rather than a second one that only exists under vitest.
-       * `tests/schema.test.ts` fails if this comes apart again.
+       * `tests/server/graphql/schema.test.ts` fails if this comes apart again.
        */
       graphql: fileURLToPath(new URL("./node_modules/graphql/index.js", import.meta.url)),
     },
