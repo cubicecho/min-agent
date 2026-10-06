@@ -52,6 +52,7 @@ import { planFold } from "./compaction.ts";
 import { endpoint, loadLlmConfig } from "./config.ts";
 import {
   compactionHooks,
+  type Gathered,
   gather,
   HOST,
   notify,
@@ -510,17 +511,31 @@ export interface RunOptions {
   signal?: AbortSignal;
 }
 
+type Emit = (event: StreamEvent) => void;
+
+/** What the servers' hooks are told about a turn, before it and after it. */
+interface TurnHookContext {
+  session: { id: string };
+  host: string;
+  prompt: string;
+  turn: { index: number };
+}
+
+/** Appends to the session and writes the row at the index it landed on, which is its id. */
+async function store(session: Session, message: StoredMessage) {
+  session.messages.push(message);
+  return addMessage(session.id, session.messages.length - 1, message);
+}
+
 /**
- * Runs one user turn to completion: streams the reply, executes any MCP tool
- * calls, and loops until the model stops asking for tools. Each message is written as it is
- * produced, so a crash mid-run still leaves readable history.
+ * What is settled about a turn before anything is asked or stored: the model, the window, how
+ * tools are discovered and the system prompt. Each is read once and holds for the whole turn.
  */
-export async function runTurn({ session, prompt, model, onEvent, signal }: RunOptions) {
+async function planTurn(session: Session, model: string | undefined) {
   const config = loadLlmConfig();
   const chosenModel = model || session.model || config.model;
   if (!chosenModel) throw new Error("No model selected — pick one in Config.");
 
-  const emit = onEvent ?? (() => {});
   const server = endpoint(config);
   const contextLimit = await contextLimitFor(
     { ...server, model: chosenModel },
@@ -545,19 +560,6 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // Nothing is carried when proxied: a definition loaded last turn is already in the history, and
   // one a compaction folded away has to be loadable again rather than answered "already loaded".
   const carried = proxied ? [] : (session.loadedTools ?? []);
-  // What a `load_tools` answered here has loaded, for its "already loaded". On demand the loop
-  // answers them and keeps its own, in the order each was loaded, which is the order they are
-  // declared in: a load that lands in the middle of the tool array moves every definition after
-  // it and loses the cache for the whole history behind them.
-  const loaded: string[] = [...carried];
-  const load = (name: string) => {
-    if (!loaded.includes(name)) loaded.push(name);
-  };
-  // Only tools the model actually *called* carry over to the next turn. Everything else it
-  // pulled in was a guess, and keeping the guesses would grow the tool array turn over turn
-  // until it is larger than eager mode's — which is the situation on-demand loading exists to
-  // avoid, and which sends the model wandering into unrelated tools.
-  const used = new Set<string>();
   // Read once for the turn: a server's instructions are fixed for the life of its connection.
   const guidance = instructionsPrompt(mcp.instructions());
   // One text for every step of the turn and every turn after it. The system prompt is the head of
@@ -567,182 +569,33 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // `load_tools` result.
   const catalogue = CATALOGUE_PROMPT[discovery](catalog);
   const system = [config.systemPrompt, guidance, catalogue].filter(Boolean).join("\n\n").trim();
-
-  // What the servers' hooks are told about this turn. The index is counted before the question
-  // is appended, so it is this turn's own.
-  const hookContext = {
-    session: { id: session.id },
-    host: HOST,
-    prompt,
-    turn: { index: turnIndex(session.messages) },
-  };
-
-  // Two small-model calls and the hooks have to land before the first token is asked for, and
-  // none depends on another, so they overlap. Compaction goes before the user's message is
-  // appended, so the summary covers settled history and the question that prompted it stays
-  // verbatim. A session's first turn is also its start.
-  // Read before a compaction can move it: a fold rewrites the history, and the miss after one is
-  // expected rather than worth a warning.
-  const foldedThrough = session.compaction?.through;
-  const compactionModel = contextLimit ? modelForTask(config, "compaction") : "";
-  const preselectModel = onDemand ? modelForTask(config, "toolSelect") : "";
-  const [, preselected = [], gathered] = await Promise.all([
-    compactionModel
-      ? tryAsk(
-          "compaction",
-          () => compact(session, config, compactionModel, contextLimit, signal),
-          { onNotice: notice },
-        )
-      : undefined,
-    // A guess at the tools this request needs, so the chat model opens with them in hand rather
-    // than spending a round trip on `load_tools`. agent-core's, which holds the reply to a schema
-    // and gives up to an empty list on its own — a stop excepted, which still ends the turn.
-    preselectModel
-      ? preselect(endpoint(config), preselectModel, catalog, prompt, { signal, onNotice: notice })
-      : undefined,
-    gather(
-      session.messages.length === 0 ? ["sessionStart", "beforeTurn"] : ["beforeTurn"],
-      hookContext,
-      { signal, emit },
-    ),
-  ]);
-  if (preselected.length) console.log(`[agent] preselected: ${preselected.join(", ")}`);
-  // After the fold rather than beside it, because a fold makes this free: the head of the request
-  // has just been rewritten, so the miss a move costs is already being paid. And before the
-  // question, for compaction's reason — what is cleared is settled history.
-  const prunedAtStart = await prune(
-    session,
+  return {
+    config,
+    model: chosenModel,
+    server,
     contextLimit,
-    session.compaction?.through !== foldedThrough,
-  );
-
-  // Appends to the session and writes the row at the index it landed on, which is its id.
-  const store = async (message: StoredMessage) => {
-    session.messages.push(message);
-    return addMessage(session.id, session.messages.length - 1, message);
+    catalog,
+    discovery,
+    onDemand,
+    proxied,
+    native,
+    offersResources,
+    carried,
+    guidance,
+    system,
   };
+}
 
-  session.model = chosenModel;
-  const question: StoredMessage = {
-    role: "user",
-    content: prompt,
-    ...(gathered.context ? { hook_context: gathered.context } : {}),
-  };
-  await store(question);
-  // Where this turn begins, so the request can be split into what was already there and what
-  // this question added — the tool traffic it goes on to produce lands after it too.
-  const turnStart = session.messages.length - 1;
-  // Proxied, a shortlist has nowhere to go but the history: the tool array is fixed, so it is
-  // answered as though the model had loaded it, and the definitions sit after the question.
-  if (proxied && preselected.length) {
-    const id = `preselect-${turnStart}`;
-    const args = JSON.stringify({ names: preselected });
-    const content = proxyLoadResult(
-      expandNames(preselected, catalog),
-      catalog,
-      mcp.tools(preselected),
-      new Set(),
-    );
-    emit({ type: "tool_use", id, name: LOAD_TOOLS, input: args });
-    emit({ type: "tool_result", toolUseId: id, content, isError: false });
-    const exchange: StoredMessage[] = [
-      {
-        role: "assistant",
-        content: null,
-        tool_calls: [{ id, type: "function", function: { name: LOAD_TOOLS, arguments: args } }],
-      },
-      { role: "tool", tool_call_id: id, content },
-    ];
-    for (const message of exchange) {
-      await store(message);
-    }
-  }
-  for (const name of preselected) load(name);
+type TurnPlan = Awaited<ReturnType<typeof planTurn>>;
 
-  // The truncated first line goes up immediately so the sidebar is never blank, and a model
-  // titles it properly in the background if one is configured for the job.
-  let titling: Promise<void> | undefined;
-  if (session.title === "New chat") {
-    session.title = titleFrom(prompt);
-    emit({ type: "title", title: session.title });
-
-    const titleModel = modelForTask(config, "title");
-    if (titleModel) {
-      titling = tryAsk("title", () => generateTitle(config, titleModel, prompt, signal), {
-        onNotice: notice,
-      }).then(async (title) => {
-        if (!title) return;
-        session.title = title;
-        await updateSession(session.id, { title });
-        emit({ type: "title", title });
-      });
-    }
-  }
-  await updateSession(session.id, { title: session.title, model: chosenModel });
-
-  const turnUsage = emptyUsage();
-  const banked = session.usage ?? emptyUsage();
-  const startedAt = Date.now();
-  let firstTokenAt = 0;
-  let lastTokenAt = 0;
-  let toolCalls = 0;
-  let iterations = 0;
-  let lastRoundTrip = emptyUsage();
-  // Measured on the way out, in characters, because nothing on the way back reports it: a
-  // completion says how many prompt tokens it read and nothing about where they came from.
-  let lastRequest = null as ContextBreakdown | null;
-  // Identical call -> identical result, for the turn. See `callOnce`.
-  const answered = new Map<string, Promise<string>>();
-  // The last request's prompt, to tell whether this one found it in the cache. The first step
-  // is held to the turn before's last, unless a compaction just rewrote the history under it,
-  // or the pruning marker moved and turned results it had sent whole into stubs.
-  let previousPrompt =
-    session.compaction?.through === foldedThrough && !prunedAtStart
-      ? latestPromptTokens(session)
-      : 0;
-  // The marker's check between tool steps, which is where a long turn needs it: nothing compacts
-  // mid-turn, and a turn of thirty tool calls is thirty results replayed whole on every step. Owed
-  // from the moment a step's last result is stored, and paid before the next request or, where
-  // the turn ends there instead — the iteration cap, a stop — on the way out: `beforeStep` is not
-  // called after the last step. A move is a miss the next request is expected to make, so it is
-  // not held to the last one's prompt.
-  let pruneOwed = false;
-  const pruneBetweenSteps = async () => {
-    if (!pruneOwed) return;
-    pruneOwed = false;
-    if (await prune(session, contextLimit)) previousPrompt = 0;
-  };
-
-  // What has streamed since the last message was stored. Kept here because an abort never hands a
-  // turn back: the loop throws, and what streamed before the stop is only in these. `reasoning` is
-  // not on a `Turn` at all.
-  let text = "";
-  let reasoning = "";
-  // The last assistant row written, which the turn's stats are patched onto.
-  let assistantRow = "";
-  // How many of the step's calls have no result stored yet.
-  let unanswered = 0;
-  // Calls `dispatch` answered with a failure. It answers rather than throws; see below.
-  const failed = new Set<string>();
-
-  // The transcript is the session's, not the loop's: `forApi` strips what is private, sends each
-  // question with its hooks' context and the pruned results as stubs, and replaces a folded head
-  // with its summary. So every step is handed it afresh, and the loop's own copy — which carries
-  // repaired arguments where the stored row has the model's own — is never what is sent.
-  //
-  // The split measured in `onRequest` has to be of the history that was sent, so it is kept. An
-  // empty system prompt is still sent as a message, as it always was; the loop leaves one out.
-  let history: OpenAI.ChatCompletionMessageParam[] = [];
-  const transcript = (): OpenAI.ChatCompletionMessageParam[] => {
-    history = forApi(session);
-    return system ? history : [{ role: "system", content: "" }, ...history];
-  };
-
-  // Everything the turn may declare, read once. Loading on demand is the loop's when it is plain
-  // on-demand; proxied, the loop is run eager over the two proxy tools and `dispatch` answers
-  // them, because its own proxied mode declares nothing else and min-agent declares the resource
-  // tools beside them. `call_tool` is listed on demand so that it stays the host's: answered
-  // here, it does not load or carry what it names.
+/**
+ * Everything the turn may declare, read once. Loading on demand is the loop's when it is plain
+ * on-demand; proxied, the loop is run eager over the two proxy tools and `dispatch` answers
+ * them, because its own proxied mode declares nothing else and min-agent declares the resource
+ * tools beside them. `call_tool` is listed on demand so that it stays the host's: answered
+ * here, it does not load or carry what it names.
+ */
+function declaredTools({ offersResources, proxied, native }: TurnPlan) {
   const always = offersResources ? [LIST_RESOURCES, READ_RESOURCE] : [];
   const tools: ToolDefinition[] = [
     ...(offersResources ? RESOURCE_TOOLS : []),
@@ -757,6 +610,31 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       tool.type === "function" ? [[tool.function.name, tool] as const] : [],
     ),
   );
+  return { always, tools, definitions };
+}
+
+/**
+ * The turn's tool calls and what they leave behind: what was loaded, what was called, and which
+ * calls failed.
+ */
+function toolRunner({ catalog, onDemand, proxied, carried }: TurnPlan, signal?: AbortSignal) {
+  // What a `load_tools` answered here has loaded, for its "already loaded". On demand the loop
+  // answers them and keeps its own, in the order each was loaded, which is the order they are
+  // declared in: a load that lands in the middle of the tool array moves every definition after
+  // it and loses the cache for the whole history behind them.
+  const loaded: string[] = [...carried];
+  const load = (name: string) => {
+    if (!loaded.includes(name)) loaded.push(name);
+  };
+  // Only tools the model actually *called* carry over to the next turn. Everything else it
+  // pulled in was a guess, and keeping the guesses would grow the tool array turn over turn
+  // until it is larger than eager mode's — which is the situation on-demand loading exists to
+  // avoid, and which sends the model wandering into unrelated tools.
+  const used = new Set<string>();
+  // Identical call -> identical result, for the turn. See `callOnce`.
+  const answered = new Map<string, Promise<string>>();
+  // Calls `dispatch` answered with a failure. It answers rather than throws; see below.
+  const failed = new Set<string>();
 
   /**
    * Runs one call and answers with what the model reads — a failure included, which is noted in
@@ -814,6 +692,320 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     }
   };
 
+  return { dispatch, load, used, failed };
+}
+
+/**
+ * What has to land before the question is stored: the fold, the shortlist of tools, the hooks'
+ * context and the pruning marker.
+ *
+ * @returns The shortlist, what the hooks gathered, and whether the head of the request moved,
+ * in which case the first request is not expected to find the last turn's prompt cached.
+ */
+async function settleHistory(
+  { config, contextLimit, onDemand, catalog }: TurnPlan,
+  session: Session,
+  prompt: string,
+  hookContext: TurnHookContext,
+  emit: Emit,
+  signal?: AbortSignal,
+) {
+  // Two small-model calls and the hooks have to land before the first token is asked for, and
+  // none depends on another, so they overlap. Compaction goes before the user's message is
+  // appended, so the summary covers settled history and the question that prompted it stays
+  // verbatim. A session's first turn is also its start.
+  // Read before a compaction can move it: a fold rewrites the history, and the miss after one is
+  // expected rather than worth a warning.
+  const foldedThrough = session.compaction?.through;
+  const compactionModel = contextLimit ? modelForTask(config, "compaction") : "";
+  const preselectModel = onDemand ? modelForTask(config, "toolSelect") : "";
+  const [, preselected = [], gathered] = await Promise.all([
+    compactionModel
+      ? tryAsk(
+          "compaction",
+          () => compact(session, config, compactionModel, contextLimit, signal),
+          { onNotice: notice },
+        )
+      : undefined,
+    // A guess at the tools this request needs, so the chat model opens with them in hand rather
+    // than spending a round trip on `load_tools`. agent-core's, which holds the reply to a schema
+    // and gives up to an empty list on its own — a stop excepted, which still ends the turn.
+    preselectModel
+      ? preselect(endpoint(config), preselectModel, catalog, prompt, { signal, onNotice: notice })
+      : undefined,
+    gather(
+      session.messages.length === 0 ? ["sessionStart", "beforeTurn"] : ["beforeTurn"],
+      hookContext,
+      { signal, emit },
+    ),
+  ]);
+  if (preselected.length) console.log(`[agent] preselected: ${preselected.join(", ")}`);
+  // After the fold rather than beside it, because a fold makes this free: the head of the request
+  // has just been rewritten, so the miss a move costs is already being paid. And before the
+  // question, for compaction's reason — what is cleared is settled history.
+  const prunedAtStart = await prune(
+    session,
+    contextLimit,
+    session.compaction?.through !== foldedThrough,
+  );
+  const folded = session.compaction?.through !== foldedThrough;
+  return { preselected, gathered, headMoved: folded || prunedAtStart };
+}
+
+/**
+ * Stores the question, and after it the shortlist where the turn is proxied.
+ *
+ * @returns The index of the question, which is where this turn begins.
+ */
+async function askQuestion(
+  { proxied, catalog }: TurnPlan,
+  session: Session,
+  prompt: string,
+  context: Gathered["context"],
+  preselected: string[],
+  emit: Emit,
+) {
+  const question: StoredMessage = {
+    role: "user",
+    content: prompt,
+    ...(context ? { hook_context: context } : {}),
+  };
+  await store(session, question);
+  // Where this turn begins, so the request can be split into what was already there and what
+  // this question added — the tool traffic it goes on to produce lands after it too.
+  const turnStart = session.messages.length - 1;
+  // Proxied, a shortlist has nowhere to go but the history: the tool array is fixed, so it is
+  // answered as though the model had loaded it, and the definitions sit after the question.
+  if (proxied && preselected.length) {
+    const id = `preselect-${turnStart}`;
+    const args = JSON.stringify({ names: preselected });
+    const content = proxyLoadResult(
+      expandNames(preselected, catalog),
+      catalog,
+      mcp.tools(preselected),
+      new Set(),
+    );
+    emit({ type: "tool_use", id, name: LOAD_TOOLS, input: args });
+    emit({ type: "tool_result", toolUseId: id, content, isError: false });
+    const exchange: StoredMessage[] = [
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [{ id, type: "function", function: { name: LOAD_TOOLS, arguments: args } }],
+      },
+      { role: "tool", tool_call_id: id, content },
+    ];
+    for (const message of exchange) {
+      await store(session, message);
+    }
+  }
+  return turnStart;
+}
+
+/**
+ * Names a chat that has no name yet. The truncated first line goes up immediately so the sidebar
+ * is never blank, and a model titles it properly in the background if one is configured for the
+ * job.
+ *
+ * @returns The background titling, where there is any to wait for.
+ */
+function startTitle(
+  config: LlmConfig,
+  session: Session,
+  prompt: string,
+  emit: Emit,
+  signal?: AbortSignal,
+): Promise<void> | undefined {
+  if (session.title !== "New chat") {
+    return undefined;
+  }
+  session.title = titleFrom(prompt);
+  emit({ type: "title", title: session.title });
+
+  const titleModel = modelForTask(config, "title");
+  if (!titleModel) {
+    return undefined;
+  }
+  return tryAsk("title", () => generateTitle(config, titleModel, prompt, signal), {
+    onNotice: notice,
+  }).then(async (title) => {
+    if (!title) return;
+    session.title = title;
+    await updateSession(session.id, { title });
+    emit({ type: "title", title });
+  });
+}
+
+/** What the work after a turn needs of the turn it follows. */
+interface AnsweredTurn {
+  config: LlmConfig;
+  session: Session;
+  prompt: string;
+  /** The reply, and the id of the row it was stored in. */
+  assistant: StoredMessage;
+  assistantRow: string;
+  stats: TurnStats;
+  hookContext: TurnHookContext;
+  turnStart: number;
+  emit: Emit;
+  signal?: AbortSignal;
+}
+
+/**
+ * What follows an answered turn, while the reply is already being read: the servers' `afterTurn`
+ * hooks and the follow-up suggestions.
+ */
+async function afterTurn({
+  config,
+  session,
+  prompt,
+  assistant,
+  assistantRow,
+  stats,
+  hookContext,
+  turnStart,
+  emit,
+  signal,
+}: AnsweredTurn) {
+  // Both of these land after the answer and write to the same row. Each write carries everything
+  // known at the moment it runs, and they are chained, so the one that finishes second cannot put
+  // back a row without the first one's change.
+  let writing = Promise.resolve();
+  const persist = () => {
+    writing = writing.then(() =>
+      patchMessage(assistantRow, {
+        stats,
+        ...(assistant.followups ? { followups: assistant.followups } : {}),
+      }),
+    );
+    return writing;
+  };
+
+  const body = typeof assistant.content === "string" ? assistant.content : "";
+  // The turn is answered, so the servers are told about it. Only a failure is noted, and it is
+  // stored with the turn's stats so the line is still there after a reload. Said once it is
+  // stored, as the chips are: the turn has settled on the client by now, and what it does with
+  // the event is read the stored message back.
+  const remembered = notify("afterTurn", {
+    ...hookContext,
+    reply: body,
+    turn: { ...hookContext.turn, messages: turnMessages(session, turnStart) },
+  }).then(async (notes) => {
+    if (!notes.length) return;
+    stats.hooks = [...(stats.hooks ?? []), ...notes];
+    await persist();
+    for (const hook of notes) emit({ type: "hook", hook });
+  });
+
+  // After the answer, not before: it is on screen and being read by the time this runs, so the
+  // second it costs is spent where nobody is waiting on it. The chips are read back off the
+  // stored message too, so they survive a reload without a second delivery path.
+  const followupModel = modelForTask(config, "followups");
+  if (followupModel && body) {
+    const followups = await tryAsk(
+      "followups",
+      () => suggestFollowups(config, followupModel, prompt, body, signal),
+      { onNotice: notice },
+    );
+    if (followups?.length) {
+      assistant.followups = followups;
+      await persist();
+      emit({ type: "followups", items: followups });
+    }
+  }
+  await remembered;
+}
+
+/**
+ * Runs one user turn to completion: streams the reply, executes any MCP tool
+ * calls, and loops until the model stops asking for tools. Each message is written as it is
+ * produced, so a crash mid-run still leaves readable history.
+ */
+export async function runTurn({ session, prompt, model, onEvent, signal }: RunOptions) {
+  const plan = await planTurn(session, model);
+  const { config, contextLimit, catalog, discovery, native, carried, guidance, system } = plan;
+  const chosenModel = plan.model;
+  const emit = onEvent ?? (() => {});
+
+  // What the servers' hooks are told about this turn. The index is counted before the question
+  // is appended, so it is this turn's own.
+  const hookContext = {
+    session: { id: session.id },
+    host: HOST,
+    prompt,
+    turn: { index: turnIndex(session.messages) },
+  };
+
+  const { preselected, gathered, headMoved } = await settleHistory(
+    plan,
+    session,
+    prompt,
+    hookContext,
+    emit,
+    signal,
+  );
+
+  session.model = chosenModel;
+  const turnStart = await askQuestion(plan, session, prompt, gathered.context, preselected, emit);
+  const { dispatch, load, used, failed } = toolRunner(plan, signal);
+  for (const name of preselected) load(name);
+
+  const titling = startTitle(config, session, prompt, emit, signal);
+  await updateSession(session.id, { title: session.title, model: chosenModel });
+
+  const turnUsage = emptyUsage();
+  const banked = session.usage ?? emptyUsage();
+  const startedAt = Date.now();
+  let firstTokenAt = 0;
+  let lastTokenAt = 0;
+  let toolCalls = 0;
+  let iterations = 0;
+  let lastRoundTrip = emptyUsage();
+  // Measured on the way out, in characters, because nothing on the way back reports it: a
+  // completion says how many prompt tokens it read and nothing about where they came from.
+  let lastRequest = null as ContextBreakdown | null;
+  // The last request's prompt, to tell whether this one found it in the cache. The first step
+  // is held to the turn before's last, unless a compaction just rewrote the history under it,
+  // or the pruning marker moved and turned results it had sent whole into stubs.
+  let previousPrompt = headMoved ? 0 : latestPromptTokens(session);
+  // The marker's check between tool steps, which is where a long turn needs it: nothing compacts
+  // mid-turn, and a turn of thirty tool calls is thirty results replayed whole on every step. Owed
+  // from the moment a step's last result is stored, and paid before the next request or, where
+  // the turn ends there instead — the iteration cap, a stop — on the way out: `beforeStep` is not
+  // called after the last step. A move is a miss the next request is expected to make, so it is
+  // not held to the last one's prompt.
+  let pruneOwed = false;
+  const pruneBetweenSteps = async () => {
+    if (!pruneOwed) return;
+    pruneOwed = false;
+    if (await prune(session, contextLimit)) previousPrompt = 0;
+  };
+
+  // What has streamed since the last message was stored. Kept here because an abort never hands a
+  // turn back: the loop throws, and what streamed before the stop is only in these. `reasoning` is
+  // not on a `Turn` at all.
+  let text = "";
+  let reasoning = "";
+  // The last assistant row written, which the turn's stats are patched onto.
+  let assistantRow = "";
+  // How many of the step's calls have no result stored yet.
+  let unanswered = 0;
+
+  // The transcript is the session's, not the loop's: `forApi` strips what is private, sends each
+  // question with its hooks' context and the pruned results as stubs, and replaces a folded head
+  // with its summary. So every step is handed it afresh, and the loop's own copy — which carries
+  // repaired arguments where the stored row has the model's own — is never what is sent.
+  //
+  // The split measured in `onRequest` has to be of the history that was sent, so it is kept. An
+  // empty system prompt is still sent as a message, as it always was; the loop leaves one out.
+  let history: OpenAI.ChatCompletionMessageParam[] = [];
+  const transcript = (): OpenAI.ChatCompletionMessageParam[] => {
+    history = forApi(session);
+    return system ? history : [{ role: "system", content: "" }, ...history];
+  };
+
+  const { always, tools, definitions } = declaredTools(plan);
+
   let result: AgentLoopResult;
   try {
     result = await runAgentLoop({
@@ -822,7 +1014,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       // which `withWindow` exists to say may be larger than what the server serves. A guard read
       // off the number under suspicion would refuse turns for the wrong reason.
       config: {
-        ...server,
+        ...plan.server,
         model: chosenModel,
         maxTokens: config.maxTokens,
         temperature: config.temperature,
@@ -899,7 +1091,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       // history: the reply before its tools run, every result before the next request.
       onMessage: async (message, _step, turn) => {
         if (message.role === "tool") {
-          await store({
+          await store(session, {
             role: "tool",
             tool_call_id: message.tool_call_id,
             content: message.content as string,
@@ -943,7 +1135,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         text = "";
         reasoning = "";
         session.usage = add(banked, turnUsage);
-        assistantRow = await store(assistant);
+        assistantRow = await store(session, assistant);
         await updateSession(session.id, { usage: session.usage });
       },
     });
@@ -953,7 +1145,8 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     // is only appended once the stream ends, so an abort left the reply on screen and nothing in
     // the transcript. Keep the part that streamed, then let the error through — the route stays
     // quiet about a turn its reader ended.
-    if (signal?.aborted && (text || reasoning)) await store(assistantMessage(text, reasoning));
+    if (signal?.aborted && (text || reasoning))
+      await store(session, assistantMessage(text, reasoning));
     if (error instanceof ToolIterationLimit) throw new Error(error.message);
     // The loop wraps what it caught to hang the run on it. Every message is stored already, so
     // the run is not needed and the error goes on as it was thrown.
@@ -994,53 +1187,18 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // The stream stays open a moment longer only so late chips have a way home.
   emit({ type: "done" });
 
-  // Both of these land after the answer and write to the same row. Each write carries everything
-  // known at the moment it runs, and they are chained, so the one that finishes second cannot put
-  // back a row without the first one's change.
-  let writing = Promise.resolve();
-  const persist = () => {
-    writing = writing.then(() =>
-      patchMessage(assistantRow, {
-        stats,
-        ...(assistant.followups ? { followups: assistant.followups } : {}),
-      }),
-    );
-    return writing;
-  };
-
-  const body = typeof assistant.content === "string" ? assistant.content : "";
-  // The turn is answered, so the servers are told about it. Only a failure is noted, and it is
-  // stored with the turn's stats so the line is still there after a reload. Said once it is
-  // stored, as the chips are: the turn has settled on the client by now, and what it does with
-  // the event is read the stored message back.
-  const remembered = notify("afterTurn", {
-    ...hookContext,
-    reply: body,
-    turn: { ...hookContext.turn, messages: turnMessages(session, turnStart) },
-  }).then(async (notes) => {
-    if (!notes.length) return;
-    stats.hooks = [...(stats.hooks ?? []), ...notes];
-    await persist();
-    for (const hook of notes) emit({ type: "hook", hook });
+  await afterTurn({
+    config,
+    session,
+    prompt,
+    assistant,
+    assistantRow,
+    stats,
+    hookContext,
+    turnStart,
+    emit,
+    signal,
   });
-
-  // After the answer, not before: it is on screen and being read by the time this runs, so the
-  // second it costs is spent where nobody is waiting on it. The chips are read back off the
-  // stored message too, so they survive a reload without a second delivery path.
-  const followupModel = modelForTask(config, "followups");
-  if (followupModel && body) {
-    const followups = await tryAsk(
-      "followups",
-      () => suggestFollowups(config, followupModel, prompt, body, signal),
-      { onNotice: notice },
-    );
-    if (followups?.length) {
-      assistant.followups = followups;
-      await persist();
-      emit({ type: "followups", items: followups });
-    }
-  }
-  await remembered;
   return stats;
 }
 
