@@ -2,7 +2,6 @@ import { once } from "node:events";
 import { createServer, type Server } from "node:http";
 import { createVoiceClient, speakableText, spokenChunk } from "@shared/client/voice.ts";
 import express from "express";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { audioExtension, voice } from "../../server/voice.ts";
 import { jsonBody } from "../helpers.ts";
 import { storedSettings } from "./helpers.ts";

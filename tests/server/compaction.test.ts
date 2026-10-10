@@ -1,4 +1,3 @@
-import { describe, expect, it } from "vitest";
 import { messageText, planFold, textTokens } from "../../server/compaction.ts";
 import type { Session, StoredMessage } from "../../shared/types.ts";
 

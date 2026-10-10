@@ -6,7 +6,6 @@ import {
   sanitizeTools,
 } from "@cubicecho/agent-core";
 import type { HookOutcome, ToolDefinition } from "@cubicecho/agent-mcp-pool";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type LlmConfig,
   llmConfigSchema,

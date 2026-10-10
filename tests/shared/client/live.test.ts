@@ -1,5 +1,4 @@
 import { applyEvent, type LivePart } from "@shared/client/live.ts";
-import { describe, expect, it } from "vitest";
 
 const fold = (events: Parameters<typeof applyEvent>[1][]) =>
   events.reduce<LivePart[]>((parts, event) => applyEvent(parts, event), []);

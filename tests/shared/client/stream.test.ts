@@ -1,6 +1,5 @@
 import { createClient } from "@shared/client/api.ts";
 import type { StreamEvent } from "@shared/types.ts";
-import { describe, expect, it } from "vitest";
 
 /** A fetch that answers with the given chunks as one server-sent-events body. */
 function serving(chunks: string[]) {

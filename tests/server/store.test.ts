@@ -1,31 +1,17 @@
 import { sql } from "drizzle-orm";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { db } from "../../server/db/client.ts";
+import * as store from "../../server/store.ts";
+import { closeTestDb, resetTestDb } from "./db.ts";
 
 /**
- * The store is Postgres now, so testing it means talking to one.
- *
- * `TEST_DATABASE_URL` has to be set on purpose, and the suite truncates every table it finds
- * there before each test — pointing it at a database you care about would be a mistake, and
- * defaulting to `DATABASE_URL` would make that mistake for you. `docker compose up postgres`
- * plus `TEST_DATABASE_URL=postgres://min_agent:min_agent@localhost:5432/min_agent_test`
- * is the intended way in; without it these tests skip and the rest of the suite still runs.
+ * The store is Postgres, so testing it means talking to one: PGlite, in this process.
  */
-const url = process.env.TEST_DATABASE_URL;
+vi.mock("../../server/db/client.ts", () => import("./db-client.ts"));
 
-let db: typeof import("../../server/db/client.ts")["db"];
-let store: typeof import("../../server/store.ts");
+describe("session store", () => {
+  beforeEach(() => resetTestDb(db));
 
-describe.skipIf(!url)("session store", () => {
-  beforeAll(async () => {
-    process.env.DATABASE_URL = url;
-    db = (await import("../../server/db/client.ts")).db;
-    await (await import("../../server/db/migrate.ts")).runMigrations();
-    store = await import("../../server/store.ts");
-  });
-
-  beforeEach(async () => {
-    await db.execute(sql`truncate sessions, messages restart identity cascade`);
-  });
+  afterAll(() => closeTestDb(db));
 
   it("appends messages and reads them back in order", async () => {
     const session = await store.createSession({ title: "hello" });

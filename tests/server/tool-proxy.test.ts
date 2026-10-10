@@ -1,7 +1,6 @@
 import type { CatalogServer } from "@cubicecho/agent-core";
 import { expandNames, loadResult } from "@cubicecho/agent-core";
 import type { ToolDefinition } from "@cubicecho/agent-mcp-pool";
-import { describe, expect, it } from "vitest";
 import {
   holdsDefinitions,
   PROXY_TOOLS,

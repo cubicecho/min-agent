@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { get, list } from "../../server/mcp-prompts.ts";
 
-const promptServers = vi.fn<() => { id: string; label: string }[]>();
-const client = vi.fn<(id: string) => Promise<unknown>>();
+const { promptServers, client } = vi.hoisted(() => ({
+  promptServers: vi.fn<() => { id: string; label: string }[]>(),
+  client: vi.fn<(id: string) => Promise<unknown>>(),
+}));
 
 vi.mock("../../server/mcp.ts", () => ({ promptServers: () => promptServers(), client }));
-
-const { list, get } = await import("../../server/mcp-prompts.ts");
 
 /**
  * The prompts a server offers, as the composer's picker reads them.

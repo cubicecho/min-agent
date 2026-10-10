@@ -1,6 +1,5 @@
 import { expandNames, loadResult } from "@cubicecho/agent-core";
 import type OpenAI from "openai";
-import { describe, expect, it } from "vitest";
 import { forApi } from "../../server/agent.ts";
 import { textTokens } from "../../server/compaction.ts";
 import { clampPruning, clearedChars, planPrune, sentWithStubs } from "../../server/pruning.ts";

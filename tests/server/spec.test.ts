@@ -5,7 +5,6 @@ import {
   resolveAgentSpec,
 } from "@cubicecho/agent-core/spec";
 import { graphql } from "graphql";
-import { afterEach, describe, expect, it, vi } from "vitest";
 import { coerceLlmConfig } from "../../server/config.ts";
 import { schema } from "../../server/graphql/schema.ts";
 import { SPEC_EXTENSION, settingsSpec } from "../../server/spec.ts";

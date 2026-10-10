@@ -1,4 +1,3 @@
-import { describe, expect, it } from "vitest";
 import { registered, tokenize, tokenizeLines } from "../../shared/highlight.ts";
 
 /**
