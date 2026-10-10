@@ -29,6 +29,8 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    // Diffs the tables once per run, so no test file has to load drizzle-kit.
+    globalSetup: ["./tests/global-setup.ts"],
     // A test that reaches the module-level `db` without a throwaway one behind it fails
     // loudly instead of writing to the developer's Postgres.
     env: { DATABASE_URL: "" },

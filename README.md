@@ -116,8 +116,11 @@ the app has its own lockfile and its own `node_modules`: Metro pins resolution t
 `.github/workflows/ci.yml` lints, tests and builds on every push and pull request, typechecks
 the Expo app in a job of its own, and builds the image and boots it against a throwaway Postgres
 far enough to answer the `health` query — so a broken Dockerfile, or a schema that no longer
-applies to an empty database, is caught before there is a version number riding on it. The test
-job gets a Postgres service too, since the store tests skip themselves without one.
+applies to an empty database, is caught before there is a version number riding on it. The
+database tests run against PGlite, a Postgres inside the test process, so `npm test` needs
+nothing running and skips nothing. They build their tables from `server/db/schema.ts`, not from
+`drizzle/`, so a `postgres` job applies the migrations to a real one and fails when the tables
+have changed without a migration being generated.
 
 `.github/workflows/release.yml` runs after a green CI on `main`. semantic-release reads the
 commit messages, and if they amount to a release it tags one and pushes the image to both

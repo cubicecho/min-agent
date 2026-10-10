@@ -10,24 +10,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    # The store tests skip themselves without TEST_DATABASE_URL, and a store that is now
-    # entirely Postgres is not a thing to leave untested. The runner reaches a service
-    # container on localhost, so no networking beyond the port mapping is needed.
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: min_agent
-          POSTGRES_PASSWORD: min_agent
-          POSTGRES_DB: min_agent_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U min_agent"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
       - uses: actions/checkout@v4
 
@@ -41,10 +23,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # The database tests bring their own Postgres, in-process, so there is no service here.
       - name: Test
         run: npm test
-        env:
-          TEST_DATABASE_URL: postgres://min_agent:min_agent@localhost:5432/min_agent_test
 
       # `npm run build` also exports the Expo bundle, which needs the mobile install and is
       # covered by the docker job below. What is worth checking here is that the generated
@@ -56,6 +37,52 @@ jobs:
       # fail here rather than reach a front end typed against the schema before it.
       - name: Check the generated files are current
         run: git diff --exit-code -- schema.graphql shared/gql/
+
+  # The tests build their tables from the table definitions, not from `drizzle/`, so they
+  # cannot tell that a migration fails to apply or was never generated. This can.
+  postgres:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: min_agent
+          POSTGRES_PASSWORD: min_agent
+          POSTGRES_DB: min_agent_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U min_agent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://min_agent:min_agent@localhost:5432/min_agent_ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Migrations apply
+        run: npm run db:migrate
+
+      # drizzle-kit writes nothing when the tables and the migrations agree.
+      - name: Migrations match the tables
+        run: |
+          npm run db:generate
+          if [ -n "$(git status --porcelain drizzle)" ]; then
+            git status --porcelain drizzle
+            echo "::error::The tables changed without a migration. Run npm run db:generate and commit drizzle/."
+            exit 1
+          fi
 
   # The Expo app has its own node_modules and its own tsconfig, so it is checked in a job
   # of its own rather than made a condition of the server's.

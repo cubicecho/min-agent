@@ -1,5 +1,8 @@
-import type { GraphQLSchema } from "graphql";
 import { graphql } from "graphql";
+import { loadLlmConfig, refreshLlmConfig } from "../../../server/config.ts";
+import { db } from "../../../server/db/client.ts";
+import { schema } from "../../../server/graphql/schema.ts";
+import { closeTestDb, resetTestDb } from "../db.ts";
 
 /**
  * The settings cache, exercised the way it is actually written to: through the generated
@@ -12,14 +15,10 @@ import { graphql } from "graphql";
  * row as it was *before* the save and the cache ran exactly one write behind: change the
  * reasoning effort, and the next turn ran on the previous one.
  *
- * `TEST_DATABASE_URL` has to be set on purpose, the same as `store.test.ts`: this migrates the
- * database it names and rewrites the settings row before every test.
+ * PGlite is one connection, not a pool, so here that mistake does not read a stale row: the
+ * read waits on the transaction it is inside and the test times out. It fails either way.
  */
-const url = process.env.TEST_DATABASE_URL;
-
-let schema: GraphQLSchema;
-let loadLlmConfig: typeof import("../../../server/config.ts")["loadLlmConfig"];
-let refreshLlmConfig: typeof import("../../../server/config.ts")["refreshLlmConfig"];
+vi.mock("../../../server/db/client.ts", () => import("../db-client.ts"));
 
 /** Patches the settings row through the generated mutation, exactly as the Config screen does. */
 const save = (set: Record<string, unknown>) =>
@@ -33,15 +32,11 @@ const save = (set: Record<string, unknown>) =>
     variableValues: { set },
   });
 
-describe.skipIf(!url)("the settings cache", () => {
-  beforeAll(async () => {
-    process.env.DATABASE_URL = url;
-    await (await import("../../../server/db/migrate.ts")).runMigrations();
-    ({ loadLlmConfig, refreshLlmConfig } = await import("../../../server/config.ts"));
-    schema = (await import("../../../server/graphql/schema.ts")).schema;
-  });
+describe("the settings cache", () => {
+  afterAll(() => closeTestDb(db));
 
   beforeEach(async () => {
+    await resetTestDb(db);
     await save({ reasoningEffort: "off", model: "", maxToolIterations: 20 });
     await refreshLlmConfig();
   });
