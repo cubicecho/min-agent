@@ -1,4 +1,4 @@
-import { DAYS_PER_WEEK, MS_PER_DAY } from "../units.ts";
+import { DAYS_PER_WEEK, MS_PER_DAY } from "../consts.ts";
 import { matchTerms } from "./search.ts";
 
 /** Filters the session list by title, on the rule in `matchTerms`. */

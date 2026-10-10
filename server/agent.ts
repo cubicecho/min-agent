@@ -31,6 +31,7 @@ import {
 import { McpPoolError, type ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { measureRequest, splitContext } from "../shared/client/usage.ts";
+import { MS_PER_SECOND } from "../shared/consts.ts";
 import { FOLLOWUP_DEFAULTS, TITLE_DEFAULTS, TURN_DEFAULTS } from "../shared/defaults.ts";
 import { messageOf } from "../shared/errors.ts";
 import { CALL_TOOL, shownCall } from "../shared/tool-proxy.ts";
@@ -46,7 +47,6 @@ import {
   type TokenUsage,
   type TurnStats,
 } from "../shared/types.ts";
-import { MS_PER_SECOND } from "../shared/units.ts";
 import { planFold } from "./compaction.ts";
 import { endpoint, loadLlmConfig } from "./config.ts";
 import {

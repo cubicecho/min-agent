@@ -1,5 +1,5 @@
+import { MS_PER_MINUTE } from "../consts.ts";
 import { FRESHNESS_DEFAULTS } from "../defaults.ts";
-import { MS_PER_MINUTE } from "../units.ts";
 /**
  * How long the connection settings and the model list stay fresh.
  *

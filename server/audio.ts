@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { MS_PER_SECOND } from "../shared/consts.ts";
 import { VOICE_DEFAULTS } from "../shared/defaults.ts";
-import { MS_PER_SECOND } from "../shared/units.ts";
 import { PCM_CHANNELS, PCM_RATE, PCM_WIDTH } from "./wyoming.ts";
 
 /**

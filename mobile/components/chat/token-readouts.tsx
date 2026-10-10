@@ -8,9 +8,9 @@ import {
   formatRate,
   formatTokens,
 } from "@shared/client/usage.ts";
+import { MS_PER_SECOND, PERCENT } from "@shared/consts.ts";
 import { CHAT_DEFAULTS } from "@shared/defaults.ts";
 import type { LlmConfig, TokenUsage, TurnStats } from "@shared/types.ts";
-import { MS_PER_SECOND, PERCENT } from "@shared/units.ts";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { DescriptionList, PropertyRow } from "@/components/description-list.tsx";

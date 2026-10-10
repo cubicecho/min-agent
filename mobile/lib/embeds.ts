@@ -1,6 +1,6 @@
+import { MS_PER_MINUTE } from "@shared/consts.ts";
 import { FRESHNESS_DEFAULTS } from "@shared/defaults.ts";
 import type { EmbedConfig } from "@shared/types.ts";
-import { MS_PER_MINUTE } from "@shared/units.ts";
 
 /**
  * How long the embed list stays fresh.
