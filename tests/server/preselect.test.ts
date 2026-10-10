@@ -6,7 +6,6 @@ import {
   resetAll,
 } from "@cubicecho/agent-core";
 import OpenAI from "openai";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { endpoint } from "../../server/config.ts";
 import { llmConfigSchema } from "../../shared/types.ts";
 import { messagesOf, textOf } from "../helpers.ts";

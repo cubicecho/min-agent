@@ -1,5 +1,4 @@
 import { messageOf } from "@shared/errors.ts";
-import { describe, expect, it } from "vitest";
 
 /**
  * `catch` hands over whatever was thrown, and nothing makes that an `Error`: a library can

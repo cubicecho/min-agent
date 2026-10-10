@@ -1,6 +1,5 @@
 import { createGqlClient } from "@shared/client/gql.ts";
 import { TypedDocumentString } from "@shared/gql/graphql.ts";
-import { describe, expect, it } from "vitest";
 
 const PING = new TypedDocumentString<{ ok: boolean }, Record<string, never>>("query Ping { ok }");
 

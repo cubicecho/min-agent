@@ -1,6 +1,5 @@
 import type { GraphQLSchema } from "graphql";
 import { graphql } from "graphql";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 /**
  * The settings cache, exercised the way it is actually written to: through the generated

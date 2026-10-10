@@ -1,4 +1,3 @@
-import { describe, expect, it } from "vitest";
 import { messageText, turnStart, usageOf } from "../../../shared/client/transcript.ts";
 import type { StoredMessage, TurnStats } from "../../../shared/types.ts";
 

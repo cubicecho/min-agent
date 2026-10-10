@@ -1,5 +1,4 @@
 import { McpPoolError } from "@cubicecho/agent-mcp-pool";
-import { describe, expect, it, vi } from "vitest";
 import { callOnce } from "../../server/agent.ts";
 
 describe("callOnce", () => {

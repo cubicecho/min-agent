@@ -1,6 +1,5 @@
 import type { GraphQLSchema } from "graphql";
 import { graphql } from "graphql";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Deleting a chat tells the MCP servers' `sessionDelete` hooks, so a memory server can forget it.

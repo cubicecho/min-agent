@@ -1,6 +1,5 @@
 import { createClient } from "@shared/client/api.ts";
 import type { LlmConfigView } from "@shared/types.ts";
-import { describe, expect, it } from "vitest";
 import { isRecord, jsonBody } from "../../helpers.ts";
 
 /** What the `Config` query answers with — the row the mutation is expected to patch. */

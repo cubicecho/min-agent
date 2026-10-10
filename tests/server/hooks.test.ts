@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { contextBlocks, type HookOutcome } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { McpServerConfig, StoredMessage } from "../../shared/types.ts";
 import { sessionOf, textOf } from "../helpers.ts";
 
