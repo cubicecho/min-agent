@@ -1,6 +1,7 @@
 import { EMBED_ICONS, type EmbedIcon } from "@shared/types.ts";
+import { HintedFieldWrapper } from "@/components/app/description-hint.tsx";
 import { EMBED_ICON } from "@/components/apps/embed-icon.ts";
-import { FieldWrapper, useFieldContext } from "@/components/ui/form.tsx";
+import { useFieldContext } from "@/components/ui/form.tsx";
 import { SegmentedButton, SegmentedGroup } from "@/components/ui/segmented.tsx";
 
 type EmbedIconPickerProps = {
@@ -45,7 +46,7 @@ export function EmbedIconField({
 }) {
   const field = useFieldContext<EmbedIcon>();
   return (
-    <FieldWrapper
+    <HintedFieldWrapper
       asGroup
       label={label}
       description={description}

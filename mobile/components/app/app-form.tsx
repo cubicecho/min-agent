@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { OptionSelect, type SelectEntry } from "@/components/option-select.tsx";
 import { PasswordInput, type PasswordInputProps } from "@/components/password-input.tsx";
-import { createAppForm, FieldWrapper, splitProps, useFieldContext } from "@/components/ui/form.tsx";
+import { createAppForm, splitProps, useFieldContext } from "@/components/ui/form.tsx";
 import { Input, type InputProps } from "@/components/ui/input";
+import { HintedFieldWrapper } from "./description-hint.tsx";
 
 type FieldText = {
   label: string;
@@ -20,8 +21,9 @@ function PasswordField(props: PasswordFieldProps) {
   const [fieldProps, control] = splitProps(props);
   const field = useFieldContext<string>();
   return (
-    <FieldWrapper
+    <HintedFieldWrapper
       {...fieldProps}
+      label={props.label}
       controlSlot={
         <PasswordInput
           // "Show API key", not "Show password": none of these is a password.
@@ -67,8 +69,9 @@ function NumberField(props: NumberFieldProps) {
   }
 
   return (
-    <FieldWrapper
+    <HintedFieldWrapper
       {...fieldProps}
+      label={props.label}
       controlSlot={
         <Input
           inputMode={integer ? "numeric" : "decimal"}
@@ -117,8 +120,9 @@ function OptionSelectField(props: OptionSelectFieldProps) {
   const [fieldProps, control] = splitProps(props);
   const field = useFieldContext<string>();
   return (
-    <FieldWrapper
+    <HintedFieldWrapper
       {...fieldProps}
+      label={props.label}
       controlSlot={
         <OptionSelect
           {...control}

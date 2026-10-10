@@ -21,7 +21,6 @@ import { DialogLayout } from "@/components/dialog-layout.tsx";
 import { ListItem } from "@/components/list-item.tsx";
 import { EmptyState } from "@/components/page.tsx";
 import { QueryState } from "@/components/query-state.tsx";
-import { Section } from "@/components/section.tsx";
 import { Alert } from "@/components/ui/alert.tsx";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button.tsx";
@@ -33,6 +32,7 @@ import { queryKeys } from "@/lib/queries.ts";
 import { useReportDirty } from "./dirty.tsx";
 import { LongTextField, TextField } from "./fields.tsx";
 import { PanelBody } from "./panel-body.tsx";
+import { SettingsSection as Section } from "./settings-section.tsx";
 
 /**
  * The MCP servers the agent can call tools on.

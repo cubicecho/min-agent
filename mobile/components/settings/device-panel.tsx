@@ -1,7 +1,7 @@
 import { messageOf } from "@shared/errors.ts";
 import { useStore } from "@tanstack/react-form";
 import * as Updates from "expo-updates";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Platform, Text } from "react-native";
 import { useAppForm } from "@/components/app/app-form.tsx";
 import { DescriptionList, PropertyRow } from "@/components/description-list.tsx";
@@ -9,6 +9,7 @@ import { Alert } from "@/components/ui/alert.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Form } from "@/components/ui/form.tsx";
 import { CircleCheck, Download, RefreshCw } from "@/components/ui/icons";
+import { setDisplaySettings, useDisplaySettings } from "@/lib/display-settings.ts";
 import { setVoiceSettings, useVoiceSettings } from "@/lib/voice-settings.ts";
 import { useReportDirty } from "./dirty.tsx";
 import { PanelBody } from "./panel-body.tsx";
@@ -18,10 +19,16 @@ import { SettingsCard } from "./settings-card.tsx";
  * The settings that belong to this install rather than to the agent.
  *
  * Everything on the other panels is stored on the server and is the same for every client
- * that talks to it. These two are not: whether dictation sends for you is about how you are
- * holding the thing, and which JavaScript this binary is running is about this binary. They
- * live in the device's own storage, and this is where they are set.
+ * that talks to it. These are not: whether dictation sends for you is about how you are
+ * holding the thing, how much the forms explain themselves is about how much room it has, and
+ * which JavaScript this binary is running is about this binary. They live in the device's own
+ * storage, and this is where they are set.
  */
+
+/** A card that is a form of its own, and tells the panel whether it is holding a change. */
+type DraftCardProps = {
+  onDirtyChange: (dirty: boolean) => void;
+};
 
 /** What the update button is doing, and what it last found out. */
 type Progress =
@@ -69,7 +76,7 @@ function Running() {
  * What the microphone does when it finishes, as a form with a Save like every other setting:
  * the switch is a draft until it is saved.
  */
-function Dictation() {
+function Dictation({ onDirtyChange }: DraftCardProps) {
   const voice = useVoiceSettings();
   const form = useAppForm({
     defaultValues: { autoSend: voice.autoSend },
@@ -80,7 +87,7 @@ function Dictation() {
   });
 
   const dirty = useStore(form.store, (state) => state.isDefaultValue === false);
-  useReportDirty("device", dirty);
+  useEffect(() => onDirtyChange(dirty), [onDirtyChange, dirty]);
 
   return (
     <form.AppForm>
@@ -112,8 +119,46 @@ function Dictation() {
   );
 }
 
+/**
+ * Whether the forms explain themselves in place, as a form with a Save like the card above it.
+ */
+function Descriptions({ onDirtyChange }: DraftCardProps) {
+  const display = useDisplaySettings();
+  const form = useAppForm({
+    defaultValues: { showDescriptions: display.showDescriptions },
+    onSubmit: async ({ value, formApi }) => {
+      await setDisplaySettings({ showDescriptions: value.showDescriptions });
+      formApi.reset(value);
+    },
+  });
+
+  const dirty = useStore(form.store, (state) => state.isDefaultValue === false);
+  useEffect(() => onDirtyChange(dirty), [onDirtyChange, dirty]);
+
+  return (
+    <form.AppForm>
+      <SettingsCard
+        title="Descriptions"
+        description="The line under a setting that says what it is for, and the one under a card's title. With this off each is behind an info button beside the name instead, and the panels are a good deal shorter. Stored on this device."
+        contentSlot={
+          <Form className="gap-3">
+            <form.AppField name="showDescriptions">
+              {(field) => <field.SwitchField label="Show descriptions" />}
+            </form.AppField>
+          </Form>
+        }
+        footerActionsSlot={<form.SubmitButton createLabel="Save" disabled={dirty === false} />}
+      />
+    </form.AppForm>
+  );
+}
+
 export function DevicePanel() {
   const [progress, setProgress] = useState<Progress>({ kind: "idle" });
+  // One dot on the tab for two forms: either holding a change is the panel holding one.
+  const [dictationDirty, setDictationDirty] = useState(false);
+  const [descriptionsDirty, setDescriptionsDirty] = useState(false);
+  useReportDirty("device", dictationDirty || descriptionsDirty);
 
   /**
    * Check, and download what there is to download — one press rather than two, because an
@@ -147,7 +192,8 @@ export function DevicePanel() {
     <PanelBody
       content={
         <>
-          <Dictation />
+          <Dictation onDirtyChange={setDictationDirty} />
+          <Descriptions onDirtyChange={setDescriptionsDirty} />
 
           <SettingsCard
             title="Updates"

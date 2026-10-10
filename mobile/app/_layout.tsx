@@ -26,6 +26,7 @@ import { SidebarLayout } from "@/components/split-layout.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Plus, Settings } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
+import { loadDisplaySettings } from "@/lib/display-settings.ts";
 import { EMBEDS_STALE_TIME, visibleEmbeds } from "@/lib/embeds.ts";
 import { useShortcut } from "@/lib/keys.ts";
 import { useBottomInset } from "@/lib/layout.ts";
@@ -250,12 +251,14 @@ function Shell() {
 
 export default function RootLayout() {
   // Nothing may render until the stored server address is in memory, or the first
-  // queries fire at the default address and fail. The dictation settings are read in the
+  // queries fire at the default address and fail. The dictation and display settings are read in the
   // same breath — they are wanted before the first press of the microphone, not before the
   // first frame, but one await is simpler than two lifetimes.
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    Promise.all([loadServerUrl(), loadVoiceSettings()]).finally(() => setReady(true));
+    Promise.all([loadServerUrl(), loadVoiceSettings(), loadDisplaySettings()]).finally(() =>
+      setReady(true),
+    );
   }, []);
 
   const isLoading = ready === false;
