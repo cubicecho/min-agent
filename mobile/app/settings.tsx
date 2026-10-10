@@ -1,5 +1,5 @@
+import { MS_PER_SECOND } from "@shared/consts.ts";
 import { FRESHNESS_DEFAULTS } from "@shared/defaults.ts";
-import { MS_PER_SECOND } from "@shared/units.ts";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";

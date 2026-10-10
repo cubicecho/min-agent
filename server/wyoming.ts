@@ -1,8 +1,8 @@
 import { connect } from "node:net";
 import { z } from "zod";
+import { MS_PER_SECOND } from "../shared/consts.ts";
 import { VOICE_DEFAULTS } from "../shared/defaults.ts";
 import { messageOf } from "../shared/errors.ts";
-import { MS_PER_SECOND } from "../shared/units.ts";
 
 /**
  * The Wyoming protocol, which is what Home Assistant's voice services speak.

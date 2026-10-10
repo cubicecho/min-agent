@@ -1,3 +1,4 @@
+import { MS_PER_SECOND } from "@shared/consts.ts";
 import { FRESHNESS_DEFAULTS } from "@shared/defaults.ts";
 import { messageOf } from "@shared/errors.ts";
 import {
@@ -8,7 +9,6 @@ import {
   type McpStatus,
   type ToolHookConfig,
 } from "@shared/types.ts";
-import { MS_PER_SECOND } from "@shared/units.ts";
 import { useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -21,7 +21,6 @@ import { DialogLayout } from "@/components/dialog-layout.tsx";
 import { ListItem } from "@/components/list-item.tsx";
 import { EmptyState } from "@/components/page.tsx";
 import { QueryState } from "@/components/query-state.tsx";
-import { Section } from "@/components/section.tsx";
 import { Alert } from "@/components/ui/alert.tsx";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button.tsx";
@@ -33,6 +32,7 @@ import { queryKeys } from "@/lib/queries.ts";
 import { useReportDirty } from "./dirty.tsx";
 import { LongTextField, TextField } from "./fields.tsx";
 import { PanelBody } from "./panel-body.tsx";
+import { SettingsSection as Section } from "./settings-section.tsx";
 
 /**
  * The MCP servers the agent can call tools on.

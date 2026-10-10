@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
+import { HintedFieldWrapper } from "@/components/app/description-hint.tsx";
 import { OptionSelect, type SelectEntry } from "@/components/option-select.tsx";
-import { FieldWrapper, useFieldContext } from "@/components/ui/form.tsx";
+import { useFieldContext } from "@/components/ui/form.tsx";
 import { Input, type InputProps } from "@/components/ui/input";
 import { Textarea, type TextareaProps } from "@/components/ui/textarea";
 
@@ -28,7 +29,7 @@ type TextFieldProps = {
 export function TextField({ label, description, required, ...props }: TextFieldProps) {
   const field = useFieldContext<string>();
   return (
-    <FieldWrapper
+    <HintedFieldWrapper
       label={label}
       description={description}
       required={required}
@@ -53,7 +54,7 @@ type LongTextFieldProps = {
 export function LongTextField({ label, description, ...props }: LongTextFieldProps) {
   const field = useFieldContext<string>();
   return (
-    <FieldWrapper
+    <HintedFieldWrapper
       label={label}
       description={description}
       controlSlot={
@@ -98,7 +99,7 @@ export function OptionalSelectField({
 }: OptionalSelectFieldProps) {
   const field = useFieldContext<string | undefined>();
   return (
-    <FieldWrapper
+    <HintedFieldWrapper
       label={label}
       description={description}
       controlSlot={

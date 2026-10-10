@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { QueryError } from "@/components/query-state.tsx";
-import { Section } from "@/components/section.tsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button.tsx";
 import { FieldRow } from "@/components/ui/form.tsx";
@@ -14,6 +13,7 @@ import { queryKeys } from "@/lib/queries.ts";
 import { ConfigForm, type ConfigSlice, type Draft } from "./config-form.tsx";
 import { OptionalSelectField, TextField } from "./fields.tsx";
 import { SettingsCard } from "./settings-card.tsx";
+import { SettingsSection as Section } from "./settings-section.tsx";
 
 type ModelDraft = Pick<Draft, "baseUrl" | "apiKey" | "model" | "taskModels" | "pricing">;
 

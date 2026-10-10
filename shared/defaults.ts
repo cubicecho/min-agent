@@ -5,7 +5,7 @@
  * is and what unit it is in. The code reads the member where it uses it, so a search for a
  * member's name finds both the value and everything that depends on it.
  *
- * This file imports nothing. What is not here: how units convert (`units.ts`), words a protocol
+ * This file imports nothing. What is not here: how units convert (`consts.ts`), words a protocol
  * or a file format fixes, and the values a test makes up for itself.
  */
 

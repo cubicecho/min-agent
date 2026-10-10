@@ -1,3 +1,4 @@
+import { MILLION, MS_PER_MINUTE, MS_PER_SECOND, PERCENT, THOUSAND } from "../consts.ts";
 import type {
   ContextBreakdown,
   LlmConfig,
@@ -5,7 +6,6 @@ import type {
   TokenUsage,
   TurnStats,
 } from "../types.ts";
-import { MILLION, MS_PER_MINUTE, MS_PER_SECOND, PERCENT, THOUSAND } from "../units.ts";
 
 type Pricing = LlmConfig["pricing"];
 
