@@ -1,11 +1,9 @@
-import { get, list } from "../../server/mcp-prompts.ts";
+import { get, list, type PromptSource } from "../../server/mcp-prompts.ts";
 
-const { promptServers, client } = vi.hoisted(() => ({
-  promptServers: vi.fn<() => { id: string; label: string }[]>(),
-  client: vi.fn<(id: string) => Promise<unknown>>(),
-}));
-
-vi.mock("../../server/mcp.ts", () => ({ promptServers: () => promptServers(), client }));
+const promptServers = vi.fn<PromptSource["promptServers"]>();
+const client = vi.fn<PromptSource["client"]>();
+/** The servers every test reads through, as `server/index.ts` hands in the real ones. */
+const mcp: PromptSource = { promptServers: () => promptServers(), client };
 
 /**
  * The prompts a server offers, as the composer's picker reads them.
@@ -59,7 +57,7 @@ beforeEach(() => {
 describe("list", () => {
   it("is empty, and dials nothing, when no connected server offers prompts", async () => {
     serving();
-    expect(await list()).toEqual([]);
+    expect(await list(mcp)).toEqual([]);
     expect(client).not.toHaveBeenCalled();
   });
 
@@ -69,7 +67,7 @@ describe("list", () => {
       server({ prompts: [{ name: "summarize", title: `${id} summary` }] }),
     );
 
-    const prompts = await list();
+    const prompts = await list(mcp);
     expect(prompts.map((prompt) => [prompt.server, prompt.name])).toEqual([
       ["docs", "summarize"],
       ["code", "summarize"],
@@ -87,7 +85,7 @@ describe("list", () => {
       }),
     );
 
-    expect((await list())[0].arguments).toEqual([
+    expect((await list(mcp))[0].arguments).toEqual([
       { name: "diff", description: undefined, required: true },
       { name: "style", description: undefined, required: false },
     ]);
@@ -101,14 +99,14 @@ describe("list", () => {
 
     // A picker has nowhere to show an error and no way to act on one; the MCP tab is where a
     // broken connection is diagnosed. Failing here would empty the list of the server that works.
-    expect((await list()).map((prompt) => prompt.server)).toEqual(["docs"]);
+    expect((await list(mcp)).map((prompt) => prompt.server)).toEqual(["docs"]);
   });
 });
 
 describe("get", () => {
   it("refuses a server that offers no prompts before dialling it", async () => {
     serving("docs");
-    await expect(get("other", "summarize", {})).rejects.toThrow(/not a connected MCP server/);
+    await expect(get(mcp, "other", "summarize", {})).rejects.toThrow(/not a connected MCP server/);
     expect(client).not.toHaveBeenCalled();
   });
 
@@ -119,7 +117,7 @@ describe("get", () => {
     }));
     client.mockResolvedValue(server({ get: got }));
 
-    expect(await get("docs", "review", { diff: "abc" })).toBe("review abc");
+    expect(await get(mcp, "docs", "review", { diff: "abc" })).toBe("review abc");
     expect(got).toHaveBeenCalledWith("review", { diff: "abc" });
   });
 
@@ -138,7 +136,7 @@ describe("get", () => {
 
     // Lossy and deliberately so: the composer sends one user message, and a worked example
     // quoted inside it is still readable as one where a dropped role would not be.
-    expect(await get("docs", "review", {})).toBe(
+    expect(await get(mcp, "docs", "review", {})).toBe(
       "assistant: Here is how I would answer.\n\nuser: Now do it for mine.",
     );
   });
@@ -159,7 +157,7 @@ describe("get", () => {
       }),
     );
 
-    const expansion = await get("docs", "look", {});
+    const expansion = await get(mcp, "docs", "look", {});
     expect(expansion).toContain("user: A");
     expect(expansion).toContain("[image image/png");
   });

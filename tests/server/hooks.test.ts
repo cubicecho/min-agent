@@ -1,17 +1,23 @@
 import { createHash } from "node:crypto";
 import { contextBlocks, type HookOutcome } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
+import { assertMcpServers } from "../../server/config.ts";
+import {
+  gather,
+  HOST,
+  type HookPool,
+  notify,
+  sessionDeleted,
+  turnIndex,
+  turnMessages,
+  withContext,
+} from "../../server/hooks.ts";
 import type { McpServerConfig, StoredMessage } from "../../shared/types.ts";
 import { sessionOf, textOf } from "../helpers.ts";
 
 const runHooks = vi.fn();
-
-vi.mock("../../server/mcp.ts", () => ({ runHooks }));
-
-const { gather, HOST, notify, sessionDeleted, turnIndex, turnMessages, withContext } = await import(
-  "../../server/hooks.ts"
-);
-const { assertMcpServers } = await import("../../server/config.ts");
+/** The pool every test runs hooks on, as `server/index.ts` hands in the real one. */
+const mcp: HookPool = { runHooks };
 
 /**
  * The half of hooks that is min-agent's own: the pool runs them, and this decides what a
@@ -229,6 +235,7 @@ describe("gather", () => {
     const emitted: unknown[] = [];
 
     const gathered = await gather(
+      mcp,
       ["sessionStart", "beforeTurn"],
       { session: { id: "s1" } },
       { emit: (event) => emitted.push(event) },
@@ -258,7 +265,7 @@ describe("gather", () => {
     runHooks.mockResolvedValue(outcomes);
     const pool = contextBlocks(outcomes);
 
-    const gathered = await gather(["beforeTurn"], { session: { id: "s1" } });
+    const gathered = await gather(mcp, ["beforeTurn"], { session: { id: "s1" } });
 
     expect(gathered.context).toBe(pool.text);
     expect(gathered.notes.map((note) => note.tokens)).toEqual(
@@ -272,7 +279,7 @@ describe("gather", () => {
 
   it("says nothing about a hook that worked and added nothing", async () => {
     runHooks.mockResolvedValue([outcome({ inject: false, text: "stored" })]);
-    expect(await gather(["beforeTurn"], { session: { id: "s1" } })).toEqual({
+    expect(await gather(mcp, ["beforeTurn"], { session: { id: "s1" } })).toEqual({
       context: "",
       notes: [],
     });
@@ -293,6 +300,7 @@ describe("gather", () => {
     const emit = vi.fn();
 
     const gathered = await gather(
+      mcp,
       ["sessionStart", "beforeTurn"],
       { session: { id: "s1" } },
       { emit },
@@ -319,7 +327,7 @@ describe("gather", () => {
     const context = { session: { id: "s1" }, host: HOST, prompt: "now" };
     const { signal } = new AbortController();
 
-    await gather(["sessionStart", "beforeTurn"], context, { signal });
+    await gather(mcp, ["sessionStart", "beforeTurn"], context, { signal });
 
     expect(runHooks.mock.calls.map(([event]) => event)).toEqual(["sessionStart", "beforeTurn"]);
     for (const [, told, options] of runHooks.mock.calls) {
@@ -344,7 +352,7 @@ describe("gather", () => {
     const first = `${"x ".repeat(2399)}x…`;
     const second = `${"x ".repeat(1599)}x…`;
 
-    expect(await gather(["beforeTurn"], { session: { id: "s1" } })).toEqual({
+    expect(await gather(mcp, ["beforeTurn"], { session: { id: "s1" } })).toEqual({
       context:
         `<context source="Memory">\n${first}\n</context>\n\n` +
         `<context source="Memory">\n${second}\n</context>`,
@@ -364,7 +372,7 @@ describe("gather", () => {
       outcome({ hookId: "silent", inject: true }),
     ]);
 
-    expect(await gather(["beforeTurn"], { session: { id: "s1" } })).toEqual({
+    expect(await gather(mcp, ["beforeTurn"], { session: { id: "s1" } })).toEqual({
       context: '<context source="a&quot;&lt;b>&amp;">\nabcdefg…\n</context>',
       notes: [
         { event: "beforeTurn", source: 'a"<b>&', hookId: "recall", tokens: 2, text: "abcdefg…" },
@@ -380,7 +388,7 @@ describe("notify", () => {
       outcome({ event: "afterTurn", hookId: "audit", ok: false, error: "boom" }),
     ]);
 
-    const notes = await notify("afterTurn", { session: { id: "s1" } });
+    const notes = await notify(mcp, "afterTurn", { session: { id: "s1" } });
 
     expect(notes).toEqual([
       { event: "afterTurn", source: "Memory", hookId: "audit", error: "boom" },
@@ -398,7 +406,7 @@ describe("notify", () => {
     const context = { session: { id: "s1" }, host: HOST, reply: "Two files." };
     const emit = vi.fn();
 
-    const notes = await notify("afterTurn", context, emit);
+    const notes = await notify(mcp, "afterTurn", context, emit);
 
     expect(notes).toEqual([
       { event: "afterTurn", source: "Memory", hookId: "audit", error: "boom" },
@@ -418,7 +426,7 @@ describe("notify", () => {
     runHooks.mockResolvedValue([outcome({ event: "beforeCompact", text: "stored" })]);
     const emit = vi.fn();
 
-    expect(await notify("beforeCompact", { session: { id: "s1" } }, emit)).toEqual([]);
+    expect(await notify(mcp, "beforeCompact", { session: { id: "s1" } }, emit)).toEqual([]);
     expect(emit).not.toHaveBeenCalled();
   });
 });
@@ -429,7 +437,7 @@ describe("sessionDeleted", () => {
       outcome({ event: "sessionDelete", hookId: "forget", ok: false, error: "boom" }),
     ]);
 
-    expect(await sessionDeleted("s1")).toEqual([
+    expect(await sessionDeleted(mcp, "s1")).toEqual([
       { event: "sessionDelete", source: "Memory", hookId: "forget", error: "boom" },
     ]);
     expect(HOST).toBe("min-agent");
@@ -443,7 +451,7 @@ describe("sessionDeleted", () => {
   // It is called without being awaited, so a rejection would be an unhandled one.
   it("never rejects, even when the pool does", async () => {
     runHooks.mockRejectedValue(new Error("pool exploded"));
-    await expect(sessionDeleted("s1")).resolves.toBeDefined();
+    await expect(sessionDeleted(mcp, "s1")).resolves.toBeDefined();
   });
 });
 

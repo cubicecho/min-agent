@@ -1,8 +1,13 @@
 import { graphql } from "graphql";
-import { loadLlmConfig, refreshLlmConfig } from "../../../server/config.ts";
-import { db } from "../../../server/db/client.ts";
-import { schema } from "../../../server/graphql/schema.ts";
-import { closeTestDb, resetTestDb } from "../db.ts";
+import { createSettings } from "../../../server/config.ts";
+import { createSchema } from "../../../server/graphql/schema.ts";
+import { createMcp } from "../../../server/mcp.ts";
+import { createStore } from "../../../server/store.ts";
+import { closeTestDb, createTestDb, resetTestDb } from "../db.ts";
+
+const db = await createTestDb();
+const settings = createSettings(db);
+const schema = createSchema({ db, mcp: createMcp(), store: createStore(db), settings });
 
 /**
  * The settings cache, exercised the way it is actually written to: through the generated
@@ -10,7 +15,7 @@ import { closeTestDb, resetTestDb } from "../db.ts";
  *
  * This needs a database because the bug it guards only exists when there is one. The mutation
  * runs inside a transaction — one the `onWrite` hook itself causes to open — and the hook used
- * to re-read the row through the module-level `db`, taking a different connection out of the
+ * to re-read the row through the settings' own `db`, taking a different connection out of the
  * pool. That connection cannot see an uncommitted write, so the refresh faithfully read the
  * row as it was *before* the save and the cache ran exactly one write behind: change the
  * reasoning effort, and the next turn ran on the previous one.
@@ -18,8 +23,6 @@ import { closeTestDb, resetTestDb } from "../db.ts";
  * PGlite is one connection, not a pool, so here that mistake does not read a stale row: the
  * read waits on the transaction it is inside and the test times out. It fails either way.
  */
-vi.mock("../../../server/db/client.ts", () => import("../db-client.ts"));
-
 /** Patches the settings row through the generated mutation, exactly as the Config screen does. */
 const save = (set: Record<string, unknown>) =>
   graphql({
@@ -38,7 +41,7 @@ describe("the settings cache", () => {
   beforeEach(async () => {
     await resetTestDb(db);
     await save({ reasoningEffort: "off", model: "", maxToolIterations: 20 });
-    await refreshLlmConfig();
+    await settings.refresh();
   });
 
   /**
@@ -50,15 +53,15 @@ describe("the settings cache", () => {
     const result = await save({ reasoningEffort: "high" });
 
     expect(result.errors).toBeUndefined();
-    expect(loadLlmConfig().reasoningEffort).toBe("high");
+    expect(settings.current().reasoningEffort).toBe("high");
   });
 
   /** And keeps having it, rather than being a read that happened to race the commit. */
   it("holds the value a fresh read of the row would give", async () => {
     await save({ model: "gpt-5", maxToolIterations: 7 });
 
-    expect(loadLlmConfig().model).toBe("gpt-5");
-    expect((await refreshLlmConfig()).maxToolIterations).toBe(7);
+    expect(settings.current().model).toBe("gpt-5");
+    expect((await settings.refresh()).maxToolIterations).toBe(7);
   });
 
   /**
@@ -75,16 +78,16 @@ describe("the settings cache", () => {
 
     expect(result.errors?.[0].message).toMatch(/maxTokens/);
     expect(result.errors?.[0].extensions.code).toBe("BAD_USER_INPUT");
-    expect(loadLlmConfig().reasoningEffort).toBe("high");
-    expect(loadLlmConfig().maxTokens).toBe(4096);
-    expect((await refreshLlmConfig()).maxTokens).toBe(4096);
+    expect(settings.current().reasoningEffort).toBe("high");
+    expect(settings.current().maxTokens).toBe(4096);
+    expect((await settings.refresh()).maxTokens).toBe(4096);
   });
 
   it("leaves the columns the patch did not name alone", async () => {
     await save({ model: "gpt-5" });
     await save({ reasoningEffort: "low" });
 
-    expect(loadLlmConfig().model).toBe("gpt-5");
-    expect(loadLlmConfig().reasoningEffort).toBe("low");
+    expect(settings.current().model).toBe("gpt-5");
+    expect(settings.current().reasoningEffort).toBe("low");
   });
 });

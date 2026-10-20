@@ -1,6 +1,5 @@
 import type { ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import { messageOf } from "../shared/errors.ts";
-import { client, resourceServers } from "./mcp.ts";
 
 /**
  * MCP resources, as two tools the model can reach for.
@@ -18,6 +17,29 @@ import { client, resourceServers } from "./mcp.ts";
  * As tools it costs two schemas when a resource-serving server is connected and nothing at all
  * otherwise, and the model pays for the listing on the turns it actually wants one.
  */
+
+/** One part of what `resources/read` returns. */
+interface ResourceContents {
+  uri?: string | undefined;
+  text?: string | undefined;
+  mimeType?: string | undefined;
+}
+
+/** The two calls of an MCP client this module makes. The SDK's `Client` is one. */
+interface ResourceClient {
+  listResources(): Promise<{
+    resources: { uri: string; name?: string | undefined; mimeType?: string | undefined }[];
+  }>;
+  readResource(request: { uri: string }): Promise<{ contents: ResourceContents[] }>;
+}
+
+/** The part of the app's MCP servers that resources are read from. `Mcp` is one. */
+export interface ResourceSource {
+  /** The connected servers that offer resources, in configuration order. */
+  resourceServers(): { id: string; label: string }[];
+  /** One server's connected client. */
+  client(id: string): Promise<ResourceClient>;
+}
 
 /** Shallow freezing these would leave `.function.description` — the part worth editing. */
 function deepFreeze<T>(value: T): T {
@@ -96,9 +118,12 @@ const line = (resource: { uri: string; name?: string; mimeType?: string }) => {
  * Servers are asked in parallel and a server that fails is reported rather than thrown for: one
  * server being unable to list is not a reason to withhold the four that could, and a model told
  * "this server errored" can work with the rest instead of concluding it has no resources at all.
+ *
+ * @param mcp - The servers to ask.
+ * @returns The listing, or why there is none.
  */
-export async function list(): Promise<string> {
-  const servers = resourceServers();
+export async function list(mcp: ResourceSource): Promise<string> {
+  const servers = mcp.resourceServers();
   if (servers.length === 0) {
     return "No connected MCP server offers resources.";
   }
@@ -106,7 +131,7 @@ export async function list(): Promise<string> {
   const listings = await Promise.all(
     servers.map(async ({ id, label }) => {
       try {
-        const { resources } = await (await client(id)).listResources();
+        const { resources } = await (await mcp.client(id)).listResources();
         for (const resource of resources) {
           owners.set(resource.uri, id);
         }
@@ -122,7 +147,7 @@ export async function list(): Promise<string> {
 }
 
 /** The text of one `resources/read`, with what has none named rather than dropped. */
-const contentsText = (contents: { uri?: string; text?: string; mimeType?: string }[]) =>
+const contentsText = (contents: ResourceContents[]) =>
   contents
     .map((part) =>
       typeof part.text === "string"
@@ -140,9 +165,13 @@ const contentsText = (contents: { uri?: string; text?: string; mimeType?: string
  * servers. Trying them all is what makes a uri lifted out of a `resource_link` readable without
  * a listing first — which, since the pool started surfacing those links in tool results, is how
  * a model most often comes by a uri at all.
+ *
+ * @param mcp - The servers to ask.
+ * @param uri - The resource's uri, as the model was given it.
+ * @returns The resource's text.
  */
-export async function read(uri: string): Promise<string> {
-  const servers = resourceServers();
+export async function read(mcp: ResourceSource, uri: string): Promise<string> {
+  const servers = mcp.resourceServers();
   if (servers.length === 0) {
     throw new Error("No connected MCP server offers resources.");
   }
@@ -155,7 +184,7 @@ export async function read(uri: string): Promise<string> {
   let last: unknown;
   for (const id of order) {
     try {
-      const { contents } = await (await client(id)).readResource({ uri });
+      const { contents } = await (await mcp.client(id)).readResource({ uri });
       owners.set(uri, id);
       const text = contentsText(contents);
       return text || "(the resource is empty)";

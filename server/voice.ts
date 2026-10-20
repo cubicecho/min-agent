@@ -7,7 +7,7 @@ import { VOICE_DEFAULTS } from "../shared/defaults.ts";
 import { messageOf } from "../shared/errors.ts";
 import { type LlmConfig, voiceBaseUrlFor, wyomingAddress } from "../shared/types.ts";
 import { toPcm, wav } from "./audio.ts";
-import { loadLlmConfig } from "./config.ts";
+import type { Settings } from "./config.ts";
 import { HttpStatus } from "./http-status.ts";
 import { synthesize, transcribe } from "./wyoming.ts";
 
@@ -95,107 +95,117 @@ const RecordingBody = z.object({ audio: z.string().min(1), mime: z.string().opti
 /** What `/speak` is posted: the reply to read aloud. */
 const SpeechBody = z.object({ text: z.string() });
 
-export const voice = express.Router();
-
 /**
- * Audio in, text out.
+ * The voice routes, `/transcribe` and `/speak`, proxied to the provider the settings name.
  *
- * The body is base64 in JSON rather than the bytes themselves because the app sends the same
- * request from three builds and only one of them holds a `Blob`: on a device the recording is
- * a file URI, and base64 is what `expo-file-system` and a browser `FileReader` both hand back
- * without a second transport. A voice clip is kilobytes, and the third it costs to encode is
- * not worth a multipart parser to save.
+ * @param settings - Read on every request, so a saved change applies to the next one.
+ * @returns The router, for `/api/voice`.
  */
-voice.post(
-  "/transcribe",
-  express.json({ limit: VOICE_DEFAULTS.maxAudioBody }),
-  async (request, response) => {
-    const config = loadLlmConfig();
-    const hasNoModel = requireModel(config.sttModel, "transcription", response) === false;
+export function createVoiceRouter(settings: Pick<Settings, "current">): express.Router {
+  const voice = express.Router();
+
+  /**
+   * Audio in, text out.
+   *
+   * The body is base64 in JSON rather than the bytes themselves because the app sends the same
+   * request from three builds and only one of them holds a `Blob`: on a device the recording is
+   * a file URI, and base64 is what `expo-file-system` and a browser `FileReader` both hand back
+   * without a second transport. A voice clip is kilobytes, and the third it costs to encode is
+   * not worth a multipart parser to save.
+   */
+  voice.post(
+    "/transcribe",
+    express.json({ limit: VOICE_DEFAULTS.maxAudioBody }),
+    async (request, response) => {
+      const config = settings.current();
+      const hasNoModel = requireModel(config.sttModel, "transcription", response) === false;
+      if (hasNoModel) {
+        return;
+      }
+
+      const body = RecordingBody.safeParse(request.body);
+      if (body.success === false) {
+        response.status(HttpStatus.badRequest).json({ error: "no audio" });
+        return;
+      }
+      const { audio, mime } = body.data;
+
+      try {
+        const bytes = Buffer.from(audio, "base64");
+        const extension = audioExtension(mime ?? "");
+        const wyoming = wyomingAddress(config.sttModel);
+
+        // Wyoming speaks PCM and the app records AAC or Opus, so this path decodes on the way in.
+        // See `audio.ts` for why that is `ffmpeg` and not a recording setting.
+        if (wyoming) {
+          response.json({ text: await transcribe(wyoming, await toPcm(bytes, extension)) });
+          return;
+        }
+
+        const file = await toFile(bytes, `speech.${extension}`, { type: mime || "audio/webm" });
+        const result = await voiceClient(config).audio.transcriptions.create({
+          file,
+          model: config.sttModel,
+        });
+        response.json({ text: result.text.trim() });
+      } catch (error) {
+        failed("transcribe", error, response);
+      }
+    },
+  );
+
+  /**
+   * Text in, audio out.
+   *
+   * Buffered rather than streamed: a reply is a few seconds of speech and the app plays it as
+   * one sound anyway, so passing a stream through would add a failure mode and save nothing.
+   */
+  voice.post("/speak", express.json({ limit: "1mb" }), async (request, response) => {
+    const config = settings.current();
+    const hasNoModel = requireModel(config.ttsModel, "speech", response) === false;
     if (hasNoModel) {
       return;
     }
 
-    const body = RecordingBody.safeParse(request.body);
-    if (body.success === false) {
-      response.status(HttpStatus.badRequest).json({ error: "no audio" });
+    const body = SpeechBody.safeParse(request.body);
+    const text = body.success ? body.data.text : "";
+    if (!text.trim()) {
+      response.status(HttpStatus.badRequest).json({ error: "no text" });
       return;
     }
-    const { audio, mime } = body.data;
 
     try {
-      const bytes = Buffer.from(audio, "base64");
-      const extension = audioExtension(mime ?? "");
-      const wyoming = wyomingAddress(config.sttModel);
+      const wyoming = wyomingAddress(config.ttsModel);
 
-      // Wyoming speaks PCM and the app records AAC or Opus, so this path decodes on the way in.
-      // See `audio.ts` for why that is `ffmpeg` and not a recording setting.
+      // Nothing to transcode in this direction: Piper hands back samples, and 44 bytes of
+      // header is the whole difference between those and a file the app can play.
       if (wyoming) {
-        response.json({ text: await transcribe(wyoming, await toPcm(bytes, extension)) });
+        const { pcm, ...format } = await synthesize(
+          wyoming,
+          spokenChunk(text, VOICE_DEFAULTS.maxSpeechChars),
+          config.ttsVoice,
+        );
+        const file = wav(pcm, format);
+        response.setHeader("Content-Type", "audio/wav");
+        response.setHeader("Content-Length", file.byteLength);
+        response.send(file);
         return;
       }
 
-      const file = await toFile(bytes, `speech.${extension}`, { type: mime || "audio/webm" });
-      const result = await voiceClient(config).audio.transcriptions.create({
-        file,
-        model: config.sttModel,
+      const spoken = await voiceClient(config).audio.speech.create({
+        model: config.ttsModel,
+        // The API insists on a voice; a server that has only one ignores what it is told.
+        voice: config.ttsVoice.trim() || "alloy",
+        input: spokenChunk(text, VOICE_DEFAULTS.maxSpeechChars),
       });
-      response.json({ text: result.text.trim() });
+      const audio = Buffer.from(await spoken.arrayBuffer());
+      response.setHeader("Content-Type", spoken.headers.get("content-type") ?? "audio/mpeg");
+      response.setHeader("Content-Length", audio.byteLength);
+      response.send(audio);
     } catch (error) {
-      failed("transcribe", error, response);
+      failed("speak", error, response);
     }
-  },
-);
+  });
 
-/**
- * Text in, audio out.
- *
- * Buffered rather than streamed: a reply is a few seconds of speech and the app plays it as
- * one sound anyway, so passing a stream through would add a failure mode and save nothing.
- */
-voice.post("/speak", express.json({ limit: "1mb" }), async (request, response) => {
-  const config = loadLlmConfig();
-  const hasNoModel = requireModel(config.ttsModel, "speech", response) === false;
-  if (hasNoModel) {
-    return;
-  }
-
-  const body = SpeechBody.safeParse(request.body);
-  const text = body.success ? body.data.text : "";
-  if (!text.trim()) {
-    response.status(HttpStatus.badRequest).json({ error: "no text" });
-    return;
-  }
-
-  try {
-    const wyoming = wyomingAddress(config.ttsModel);
-
-    // Nothing to transcode in this direction: Piper hands back samples, and 44 bytes of
-    // header is the whole difference between those and a file the app can play.
-    if (wyoming) {
-      const { pcm, ...format } = await synthesize(
-        wyoming,
-        spokenChunk(text, VOICE_DEFAULTS.maxSpeechChars),
-        config.ttsVoice,
-      );
-      const file = wav(pcm, format);
-      response.setHeader("Content-Type", "audio/wav");
-      response.setHeader("Content-Length", file.byteLength);
-      response.send(file);
-      return;
-    }
-
-    const spoken = await voiceClient(config).audio.speech.create({
-      model: config.ttsModel,
-      // The API insists on a voice; a server that has only one ignores what it is told.
-      voice: config.ttsVoice.trim() || "alloy",
-      input: spokenChunk(text, VOICE_DEFAULTS.maxSpeechChars),
-    });
-    const audio = Buffer.from(await spoken.arrayBuffer());
-    response.setHeader("Content-Type", spoken.headers.get("content-type") ?? "audio/mpeg");
-    response.setHeader("Content-Length", audio.byteLength);
-    response.send(audio);
-  } catch (error) {
-    failed("speak", error, response);
-  }
-});
+  return voice;
+}

@@ -48,7 +48,7 @@ import {
   type TurnStats,
 } from "../shared/types.ts";
 import { planFold } from "./compaction.ts";
-import { endpoint, loadLlmConfig } from "./config.ts";
+import { endpoint, type Settings } from "./config.ts";
 import {
   compactionHooks,
   type Gathered,
@@ -59,21 +59,35 @@ import {
   turnMessages,
   withContext,
 } from "./hooks.ts";
-import * as mcp from "./mcp.ts";
+import type { Mcp } from "./mcp.ts";
 import {
   LIST_RESOURCES,
   list as listResources,
   READ_RESOURCE,
   RESOURCE_TOOLS,
+  type ResourceSource,
   read as readResource,
 } from "./mcp-resources.ts";
 import { clearedChars, planPrune, sentWithStubs } from "./pruning.ts";
-import { addMessage, patchMessage, updateSession } from "./store.ts";
+import type { Store } from "./store.ts";
 import { PROXY_TOOLS, proxiedCall, proxyCatalogPrompt, proxyLoadResult } from "./tool-proxy.ts";
 
+/**
+ * What a turn talks to outside itself. `server/index.ts` hands in the real ones, and a test its
+ * own stand-ins.
+ */
+export interface TurnDeps {
+  /** The MCP servers: their tools, their hooks and their resources. */
+  mcp: Pick<Mcp, "catalog" | "tools" | "call" | "instructions" | "runHooks"> & ResourceSource;
+  /** Where the turn's messages and the chat's own columns are written. */
+  store: Pick<Store, "addMessage" | "patchMessage" | "updateSession">;
+  /** The settings the turn is run under, read once at its start. */
+  settings: Pick<Settings, "current">;
+}
+
 /** What the configured endpoint serves, id-sorted, with whatever window it declares. */
-export async function listModels(): Promise<ModelInfo[]> {
-  return listEndpointModels(endpoint());
+export async function listModels(settings: Pick<Settings, "current">): Promise<ModelInfo[]> {
+  return listEndpointModels(endpoint(settings.current()));
 }
 
 const truncateTitle = (title: string) =>
@@ -115,6 +129,7 @@ const notice = (message: string) => console.warn(`[agent] ${message}`);
  * min-agent's: it is stored on the session, and nothing is when there is none.
  */
 async function compact(
+  { mcp, store }: TurnDeps,
   session: Session,
   config: LlmConfig,
   model: string,
@@ -135,14 +150,14 @@ async function compact(
     session.messages,
     plan,
     summariser(endpoint(config), model, { signal, onNotice: notice }),
-    { hooks: compactionHooks(session) },
+    { hooks: compactionHooks(mcp, session) },
   );
   if (!record) {
     return "";
   }
 
   session.compaction = record;
-  await updateSession(session.id, { compaction: record });
+  await store.updateSession(session.id, { compaction: record });
   console.log(`[agent] compacted ${record.through} message(s) at ${used}/${contextLimit} tokens`);
   return record.summary;
 }
@@ -157,7 +172,12 @@ async function compact(
  *
  * @param compacted Whether a fold was stored on this turn, which makes a move free.
  */
-async function prune(session: Session, contextLimit: number, compacted = false): Promise<boolean> {
+async function prune(
+  { store }: TurnDeps,
+  session: Session,
+  contextLimit: number,
+  compacted = false,
+): Promise<boolean> {
   const through = planPrune(session, contextLimit, { compacted });
   if (through === undefined) {
     return false;
@@ -165,7 +185,7 @@ async function prune(session: Session, contextLimit: number, compacted = false):
 
   const from = session.pruning?.through ?? 0;
   session.pruning = { through, at: new Date().toISOString() };
-  await updateSession(session.id, { pruning: session.pruning });
+  await store.updateSession(session.id, { pruning: session.pruning });
   console.log(`[agent] cleared tool results before message ${through} (was ${from})`);
   return true;
 }
@@ -458,17 +478,17 @@ interface TurnHookContext {
 }
 
 /** Appends to the session and writes the row at the index it landed on, which is its id. */
-async function store(session: Session, message: StoredMessage) {
+async function append({ store }: TurnDeps, session: Session, message: StoredMessage) {
   session.messages.push(message);
-  return addMessage(session.id, session.messages.length - 1, message);
+  return store.addMessage(session.id, session.messages.length - 1, message);
 }
 
 /**
  * What is settled about a turn before anything is asked or stored: the model, the window, how
  * tools are discovered and the system prompt. Each is read once and holds for the whole turn.
  */
-async function planTurn(session: Session, model: string | undefined) {
-  const config = loadLlmConfig();
+async function planTurn({ mcp, settings }: TurnDeps, session: Session, model: string | undefined) {
+  const config = settings.current();
   const chosenModel = model || session.model || config.model;
   if (!chosenModel) {
     throw new Error("No model selected — pick one in Config.");
@@ -533,7 +553,7 @@ type TurnPlan = Awaited<ReturnType<typeof planTurn>>;
  * tools beside them. `call_tool` is listed on demand so that it stays the host's: answered
  * here, it does not load or carry what it names.
  */
-function declaredTools({ offersResources, proxied, native }: TurnPlan) {
+function declaredTools({ mcp }: TurnDeps, { offersResources, proxied, native }: TurnPlan) {
   const always = offersResources ? [LIST_RESOURCES, READ_RESOURCE] : [];
   const tools: ToolDefinition[] = [
     ...(offersResources ? RESOURCE_TOOLS : []),
@@ -555,7 +575,11 @@ function declaredTools({ offersResources, proxied, native }: TurnPlan) {
  * The turn's tool calls and what they leave behind: what was loaded, what was called, and which
  * calls failed.
  */
-function toolRunner({ catalog, onDemand, proxied, carried }: TurnPlan, signal?: AbortSignal) {
+function toolRunner(
+  { mcp }: TurnDeps,
+  { catalog, onDemand, proxied, carried }: TurnPlan,
+  signal?: AbortSignal,
+) {
   // What a `load_tools` answered here has loaded, for its "already loaded". On demand the loop
   // answers them and keeps its own, in the order each was loaded, which is the order they are
   // declared in: a load that lands in the middle of the tool array moves every definition after
@@ -617,7 +641,7 @@ function toolRunner({ catalog, onDemand, proxied, carried }: TurnPlan, signal?: 
         );
       }
       if (called === LIST_RESOURCES) {
-        return await listResources();
+        return await listResources(mcp);
       }
       if (called === READ_RESOURCE) {
         // Named rather than positional in the schema, so an empty one is a model that filled
@@ -626,7 +650,7 @@ function toolRunner({ catalog, onDemand, proxied, carried }: TurnPlan, signal?: 
         if (!uri) {
           throw new Error("read_resource needs a uri; pass the one list_resources gave.");
         }
-        return await readResource(uri);
+        return await readResource(mcp, uri);
       }
       // A model that skips `load_tools` and calls a catalogued tool straight from its name is
       // right about what it wants. On demand the loop has loaded it already.
@@ -654,6 +678,7 @@ function toolRunner({ catalog, onDemand, proxied, carried }: TurnPlan, signal?: 
  * in which case the first request is not expected to find the last turn's prompt cached.
  */
 async function settleHistory(
+  deps: TurnDeps,
   { config, contextLimit, onDemand, catalog }: TurnPlan,
   session: Session,
   prompt: string,
@@ -674,7 +699,7 @@ async function settleHistory(
     compactionModel
       ? tryAsk(
           "compaction",
-          () => compact(session, config, compactionModel, contextLimit, signal),
+          () => compact(deps, session, config, compactionModel, contextLimit, signal),
           { onNotice: notice },
         )
       : undefined,
@@ -685,6 +710,7 @@ async function settleHistory(
       ? preselect(endpoint(config), preselectModel, catalog, prompt, { signal, onNotice: notice })
       : undefined,
     gather(
+      deps.mcp,
       session.messages.length === 0 ? ["sessionStart", "beforeTurn"] : ["beforeTurn"],
       hookContext,
       { signal, emit },
@@ -697,6 +723,7 @@ async function settleHistory(
   // has just been rewritten, so the miss a move costs is already being paid. And before the
   // question, for compaction's reason — what is cleared is settled history.
   const prunedAtStart = await prune(
+    deps,
     session,
     contextLimit,
     session.compaction?.through !== foldedThrough,
@@ -711,6 +738,7 @@ async function settleHistory(
  * @returns The index of the question, which is where this turn begins.
  */
 async function askQuestion(
+  deps: TurnDeps,
   { proxied, catalog }: TurnPlan,
   session: Session,
   prompt: string,
@@ -723,7 +751,7 @@ async function askQuestion(
     content: prompt,
     ...(context ? { hook_context: context } : {}),
   };
-  await store(session, question);
+  await append(deps, session, question);
   // Where this turn begins, so the request can be split into what was already there and what
   // this question added — the tool traffic it goes on to produce lands after it too.
   const turnStart = session.messages.length - 1;
@@ -735,7 +763,7 @@ async function askQuestion(
     const content = proxyLoadResult(
       expandNames(preselected, catalog),
       catalog,
-      mcp.tools(preselected),
+      deps.mcp.tools(preselected),
       new Set(),
     );
     emit({ type: "tool_use", id, name: LOAD_TOOLS, input: args });
@@ -749,7 +777,7 @@ async function askQuestion(
       { role: "tool", tool_call_id: id, content },
     ];
     for (const message of exchange) {
-      await store(session, message);
+      await append(deps, session, message);
     }
   }
   return turnStart;
@@ -763,6 +791,7 @@ async function askQuestion(
  * @returns The background titling, where there is any to wait for.
  */
 function startTitle(
+  { store }: TurnDeps,
   config: LlmConfig,
   session: Session,
   prompt: string,
@@ -786,7 +815,7 @@ function startTitle(
       return;
     }
     session.title = title;
-    await updateSession(session.id, { title });
+    await store.updateSession(session.id, { title });
     emit({ type: "title", title });
   });
 }
@@ -810,25 +839,28 @@ interface AnsweredTurn {
  * What follows an answered turn, while the reply is already being read: the servers' `afterTurn`
  * hooks and the follow-up suggestions.
  */
-async function afterTurn({
-  config,
-  session,
-  prompt,
-  assistant,
-  assistantRow,
-  stats,
-  hookContext,
-  turnStart,
-  emit,
-  signal,
-}: AnsweredTurn) {
+async function afterTurn(
+  { mcp, store }: TurnDeps,
+  {
+    config,
+    session,
+    prompt,
+    assistant,
+    assistantRow,
+    stats,
+    hookContext,
+    turnStart,
+    emit,
+    signal,
+  }: AnsweredTurn,
+) {
   // Both of these land after the answer and write to the same row. Each write carries everything
   // known at the moment it runs, and they are chained, so the one that finishes second cannot put
   // back a row without the first one's change.
   let writing = Promise.resolve();
   const persist = () => {
     writing = writing.then(() =>
-      patchMessage(assistantRow, {
+      store.patchMessage(assistantRow, {
         stats,
         ...(assistant.followups ? { followups: assistant.followups } : {}),
       }),
@@ -841,7 +873,7 @@ async function afterTurn({
   // stored with the turn's stats so the line is still there after a reload. Said once it is
   // stored, as the chips are: the turn has settled on the client by now, and what it does with
   // the event is read the stored message back.
-  const remembered = notify("afterTurn", {
+  const remembered = notify(mcp, "afterTurn", {
     ...hookContext,
     reply: body,
     turn: { ...hookContext.turn, messages: turnMessages(session, turnStart) },
@@ -880,8 +912,11 @@ async function afterTurn({
  * calls, and loops until the model stops asking for tools. Each message is written as it is
  * produced, so a crash mid-run still leaves readable history.
  */
-export async function runTurn({ session, prompt, model, onEvent, signal }: RunOptions) {
-  const plan = await planTurn(session, model);
+export async function runTurn(
+  { session, prompt, model, onEvent, signal }: RunOptions,
+  deps: TurnDeps,
+) {
+  const plan = await planTurn(deps, session, model);
   const { config, contextLimit, catalog, discovery, native, carried, guidance, system } = plan;
   const chosenModel = plan.model;
   const emit = onEvent ?? (() => {});
@@ -896,6 +931,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   };
 
   const { preselected, gathered, headMoved } = await settleHistory(
+    deps,
     plan,
     session,
     prompt,
@@ -905,14 +941,22 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   );
 
   session.model = chosenModel;
-  const turnStart = await askQuestion(plan, session, prompt, gathered.context, preselected, emit);
-  const { dispatch, load, used, failed } = toolRunner(plan, signal);
+  const turnStart = await askQuestion(
+    deps,
+    plan,
+    session,
+    prompt,
+    gathered.context,
+    preselected,
+    emit,
+  );
+  const { dispatch, load, used, failed } = toolRunner(deps, plan, signal);
   for (const name of preselected) {
     load(name);
   }
 
-  const titling = startTitle(config, session, prompt, emit, signal);
-  await updateSession(session.id, { title: session.title, model: chosenModel });
+  const titling = startTitle(deps, config, session, prompt, emit, signal);
+  await deps.store.updateSession(session.id, { title: session.title, model: chosenModel });
 
   const turnUsage = emptyUsage();
   const banked = session.usage ?? emptyUsage();
@@ -941,7 +985,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       return;
     }
     pruneOwed = false;
-    if (await prune(session, contextLimit)) {
+    if (await prune(deps, session, contextLimit)) {
       previousPrompt = 0;
     }
   };
@@ -969,7 +1013,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     return system ? history : [{ role: "system", content: "" }, ...history];
   };
 
-  const { always, tools, definitions } = declaredTools(plan);
+  const { always, tools, definitions } = declaredTools(deps, plan);
 
   let result: AgentLoopResult;
   try {
@@ -1072,7 +1116,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
       // history: the reply before its tools run, every result before the next request.
       onMessage: async (message, _step, turn) => {
         if (message.role === "tool") {
-          await store(session, {
+          await append(deps, session, {
             role: "tool",
             tool_call_id: message.tool_call_id,
             content: message.content as string,
@@ -1124,8 +1168,8 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
         text = "";
         reasoning = "";
         session.usage = add(banked, turnUsage);
-        assistantRow = await store(session, assistant);
-        await updateSession(session.id, { usage: session.usage });
+        assistantRow = await append(deps, session, assistant);
+        await deps.store.updateSession(session.id, { usage: session.usage });
       },
     });
   } catch (error) {
@@ -1135,7 +1179,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     // the transcript. Keep the part that streamed, then let the error through — the route stays
     // quiet about a turn its reader ended.
     if (signal?.aborted && (text || reasoning)) {
-      await store(session, assistantMessage(text, reasoning));
+      await append(deps, session, assistantMessage(text, reasoning));
     }
     if (error instanceof ToolIterationLimit) {
       throw new Error(error.message);
@@ -1175,9 +1219,9 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
     );
   }
   await titling;
-  await patchMessage(assistantRow, { stats });
+  await deps.store.patchMessage(assistantRow, { stats });
   if (native) {
-    await updateSession(session.id, { loadedTools: session.loadedTools });
+    await deps.store.updateSession(session.id, { loadedTools: session.loadedTools });
   }
   emit({ type: "stats", stats });
   // The turn is over at this point and the reader should not be held by what comes after it, so
@@ -1185,7 +1229,7 @@ export async function runTurn({ session, prompt, model, onEvent, signal }: RunOp
   // The stream stays open a moment longer only so late chips have a way home.
   emit({ type: "done" });
 
-  await afterTurn({
+  await afterTurn(deps, {
     config,
     session,
     prompt,

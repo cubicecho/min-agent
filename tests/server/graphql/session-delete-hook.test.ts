@@ -1,8 +1,10 @@
 import { graphql } from "graphql";
-import { db } from "../../../server/db/client.ts";
-import { schema } from "../../../server/graphql/schema.ts";
-import * as store from "../../../server/store.ts";
-import { closeTestDb, resetTestDb } from "../db.ts";
+import { createSettings } from "../../../server/config.ts";
+import { createSchema } from "../../../server/graphql/schema.ts";
+import { HOST } from "../../../server/hooks.ts";
+import { createMcp } from "../../../server/mcp.ts";
+import { createStore } from "../../../server/store.ts";
+import { closeTestDb, createTestDb, resetTestDb } from "../db.ts";
 
 /**
  * Deleting a chat tells the MCP servers' `sessionDelete` hooks, so a memory server can forget it.
@@ -11,14 +13,16 @@ import { closeTestDb, resetTestDb } from "../db.ts";
  * a chat through `deleteSessionSingle`, which never goes near `store.ts`. The only place that
  * sees it is the sessions `onWrite` hook in `graphql/schema.ts`, and that is what this pins.
  */
-const sessionDeleted = vi.hoisted(() => vi.fn());
-
-vi.mock("../../../server/db/client.ts", () => import("../db-client.ts"));
-
-vi.mock("../../../server/hooks.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../server/hooks.ts")>()),
-  sessionDeleted,
-}));
+/** The pool's hook runner, which is where a delete reaches the servers. It runs none here. */
+const runHooks = vi.fn(async () => []);
+const db = await createTestDb();
+const store = createStore(db);
+const schema = createSchema({
+  db,
+  mcp: { ...createMcp(), runHooks },
+  store,
+  settings: createSettings(db),
+});
 
 const remove = (id: string) =>
   graphql({
@@ -34,7 +38,7 @@ const remove = (id: string) =>
 describe("deleting a session", () => {
   beforeEach(async () => {
     await resetTestDb(db);
-    sessionDeleted.mockReset();
+    runHooks.mockClear();
   });
 
   afterAll(() => closeTestDb(db));
@@ -45,13 +49,17 @@ describe("deleting a session", () => {
     const result = await remove(session.id);
 
     expect(result.errors).toBeUndefined();
-    expect(sessionDeleted).toHaveBeenCalledExactlyOnceWith(session.id);
+    expect(runHooks).toHaveBeenCalledExactlyOnceWith(
+      "sessionDelete",
+      { session: { id: session.id }, host: HOST },
+      expect.anything(),
+    );
   });
 
   it("fires nothing for a delete that matched no chat", async () => {
     const result = await remove("no-such-session");
 
     expect(result.errors).toBeUndefined();
-    expect(sessionDeleted).not.toHaveBeenCalled();
+    expect(runHooks).not.toHaveBeenCalled();
   });
 });
