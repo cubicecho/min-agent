@@ -1,13 +1,13 @@
 import { graphql } from "graphql";
 import { createSettings } from "../../../server/config.ts";
-import { db } from "../../../server/db/client.ts";
 import { createSchema } from "../../../server/graphql/schema.ts";
 import { createMcp } from "../../../server/mcp.ts";
 import { createStore } from "../../../server/store.ts";
-import { closeTestDb, resetTestDb } from "../db.ts";
+import { closeTestDb, createTestDb, resetTestDb } from "../db.ts";
 
+const db = await createTestDb();
 const settings = createSettings(db);
-const schema = createSchema({ mcp: createMcp(), store: createStore(db), settings });
+const schema = createSchema({ db, mcp: createMcp(), store: createStore(db), settings });
 
 /**
  * The settings cache, exercised the way it is actually written to: through the generated
@@ -15,7 +15,7 @@ const schema = createSchema({ mcp: createMcp(), store: createStore(db), settings
  *
  * This needs a database because the bug it guards only exists when there is one. The mutation
  * runs inside a transaction — one the `onWrite` hook itself causes to open — and the hook used
- * to re-read the row through the module-level `db`, taking a different connection out of the
+ * to re-read the row through the settings' own `db`, taking a different connection out of the
  * pool. That connection cannot see an uncommitted write, so the refresh faithfully read the
  * row as it was *before* the save and the cache ran exactly one write behind: change the
  * reasoning effort, and the next turn ran on the previous one.
@@ -23,8 +23,6 @@ const schema = createSchema({ mcp: createMcp(), store: createStore(db), settings
  * PGlite is one connection, not a pool, so here that mistake does not read a stale row: the
  * read waits on the transaction it is inside and the test times out. It fails either way.
  */
-vi.mock("../../../server/db/client.ts", () => import("../db-client.ts"));
-
 /** Patches the settings row through the generated mutation, exactly as the Config screen does. */
 const save = (set: Record<string, unknown>) =>
   graphql({

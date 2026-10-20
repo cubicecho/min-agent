@@ -3,11 +3,12 @@ import { createServer, type Server } from "node:http";
 import { createVoiceClient, speakableText, spokenChunk } from "@shared/client/voice.ts";
 import express from "express";
 import { createSettings } from "../../server/config.ts";
-import { db } from "../../server/db/client.ts";
 import { audioExtension, createVoiceRouter } from "../../server/voice.ts";
 import { jsonBody } from "../helpers.ts";
+import { createTestDb } from "./db.ts";
 import { storedSettings } from "./helpers.ts";
 
+const db = await createTestDb();
 /** The settings the voice routes read. Nothing queries `db`: rows are put in by `storedSettings`. */
 const settings = createSettings(db);
 

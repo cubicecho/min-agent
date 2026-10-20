@@ -5,16 +5,17 @@ import {
   createSettings,
   endpoint,
 } from "../../server/config.ts";
-import { db } from "../../server/db/client.ts";
 import { createSchema } from "../../server/graphql/schema.ts";
 import { createMcp } from "../../server/mcp.ts";
 import { createStore } from "../../server/store.ts";
 import { llmConfigSchema, modelForTask } from "../../shared/types.ts";
 import { isRecord } from "../helpers.ts";
+import { createTestDb } from "./db.ts";
 import { storedSettings } from "./helpers.ts";
 
+const db = await createTestDb();
 const settings = createSettings(db);
-const schema = createSchema({ mcp: createMcp(), store: createStore(db), settings });
+const schema = createSchema({ db, mcp: createMcp(), store: createStore(db), settings });
 
 /**
  * The settings live in Postgres and GraphQL checks their shape, so what is left to test here

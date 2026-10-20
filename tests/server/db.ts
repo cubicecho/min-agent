@@ -8,7 +8,7 @@ import { relations, schema, settings } from "../../server/db/schema.ts";
  * The database the store and the generated schema are tested against: a real Postgres, in
  * this process, with nothing to install and nothing to point at.
  *
- * A file boots one in `beforeAll` (by importing `db`, see `db-client.ts`), empties it with
+ * A file makes one with `createTestDb` at its top and hands it to what it tests, empties it with
  * `resetTestDb` before each test, and closes it with `closeTestDb` when it is done. Booting
  * one is the expensive part, which is why it is not done per test.
  */

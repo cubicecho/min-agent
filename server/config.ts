@@ -172,7 +172,7 @@ export function createSettings(db: Db) {
    * Re-reads the row into the cache.
    *
    * `reader` is not decoration. The generated settings mutation runs inside a transaction — one
-   * the `onWrite` hook itself causes to exist — and a hook that read through the module-level
+   * the `onWrite` hook itself causes to exist — and a hook that read through the settings' own
    * `db` took a *different* connection out of the pool, one that cannot see an uncommitted write.
    * So it faithfully re-read the row as it was before the save, and the cache ran exactly one
    * write behind: a turn after changing the reasoning effort used the previous effort, and the

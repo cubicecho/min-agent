@@ -4,27 +4,28 @@ import compression from "compression";
 import express from "express";
 import { createYoga, maskError } from "graphql-yoga";
 import { createSettings } from "./config.ts";
-import { db, waitForDatabase } from "./db/client.ts";
+import { createDb, waitForDatabase } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
 import { surfaced } from "./errors.ts";
 import { createSchema } from "./graphql/schema.ts";
 import { HttpStatus } from "./http-status.ts";
 import { createMcp } from "./mcp.ts";
-import { displayHost, HOST, PORT, ROOT } from "./paths.ts";
+import { DATABASE_URL, displayHost, HOST, PORT, ROOT } from "./paths.ts";
 import { createStore } from "./store.ts";
 import { createVoiceRouter } from "./voice.ts";
 
 // The tables and the settings row have to exist before anything reads them, and the settings
 // cache has to be warm before the first turn asks it for a model. The database may still be
 // coming up — see `waitForDatabase` — so this is the one place that tolerates it being late.
-await waitForDatabase();
-await runMigrations();
+const db = createDb(DATABASE_URL);
+await waitForDatabase(db);
+await runMigrations(db);
 const settings = createSettings(db);
 await settings.refresh();
 
 // The one pool of MCP connections the process runs on, handed to everything that talks to a server.
 const mcp = createMcp();
-const schema = createSchema({ mcp, store: createStore(db), settings });
+const schema = createSchema({ db, mcp, store: createStore(db), settings });
 
 const app = express();
 

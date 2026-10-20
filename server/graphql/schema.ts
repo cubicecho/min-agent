@@ -15,7 +15,7 @@ import { GraphQLJSON } from "graphql-scalars";
 import type { EmbedConfig, McpServerConfig } from "../../shared/types.ts";
 import { listModels } from "../agent.ts";
 import { assertLlmConfigPatch, hasApiKey, type Settings } from "../config.ts";
-import { db } from "../db/client.ts";
+import type { Db } from "../db/client.ts";
 import { settings } from "../db/schema.ts";
 import { surfaced } from "../errors.ts";
 import { sessionDeleted } from "../hooks.ts";
@@ -192,6 +192,8 @@ const mcpList = new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(McpServerS
 
 /** What the schema's resolvers talk to. `server/index.ts` hands in the real ones. */
 export interface SchemaDeps {
+  /** The database the generated CRUD reads and writes. */
+  db: Db;
   /** The MCP servers: their state, their prompts, and the pool a turn runs on. */
   mcp: Mcp;
   /** The chats and their messages. */
@@ -206,7 +208,7 @@ export interface SchemaDeps {
  * @param deps - What the resolvers talk to.
  * @returns The schema.
  */
-export function createSchema({ mcp, store, settings: config }: SchemaDeps): GraphQLSchema {
+export function createSchema({ db, mcp, store, settings: config }: SchemaDeps): GraphQLSchema {
   /**
    * The CRUD half of the API is generated from the Drizzle schema — sessions, messages and the
    * settings row all get their queries, filters and mutations for free, and stay in step with the

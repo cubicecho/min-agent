@@ -14,10 +14,13 @@ const { createSchema } = await import("../server/graphql/schema.ts");
 const { createMcp } = await import("../server/mcp.ts");
 const { createStore } = await import("../server/store.ts");
 const { createSettings } = await import("../server/config.ts");
-const { db } = await import("../server/db/client.ts");
+const { createDb } = await import("../server/db/client.ts");
+const { DATABASE_URL } = await import("../server/paths.ts");
+const db = createDb(DATABASE_URL);
 // A pool that is never synced dials nothing, and a database nothing queries is never connected
 // to: only the types are read.
 const schema = createSchema({
+  db,
   mcp: createMcp(),
   store: createStore(db),
   settings: createSettings(db),
