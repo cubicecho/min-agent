@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button.tsx";
 import { Form } from "@/components/ui/form.tsx";
 import { Check, CircleCheck } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
+import { useDescriptionPlacement } from "@/lib/display-settings.ts";
 import {
   defaultServerUrl,
   hasDefaultServerUrl,
@@ -16,7 +17,6 @@ import {
   setServerUrl,
 } from "@/lib/server-url.ts";
 import { useReportDirty } from "./dirty.tsx";
-import { TextField } from "./fields.tsx";
 import { PanelBody } from "./panel-body.tsx";
 import { SettingsCard } from "./settings-card.tsx";
 
@@ -46,6 +46,7 @@ const hint = () => {
  * here; an Android or Electron build cannot work until it is filled in.
  */
 export function ServerPanel() {
+  const placement = useDescriptionPlacement();
   const queryClient = useQueryClient();
   const [probe, setProbe] = useState<Probe>(null);
 
@@ -86,8 +87,9 @@ export function ServerPanel() {
               contentSlot={
                 <Form className="gap-4">
                   <form.AppField name="url">
-                    {() => (
-                      <TextField
+                    {(field) => (
+                      <field.InputField
+                        descriptionPlacement={placement}
                         label="Base URL"
                         description={hint()}
                         placeholder="http://192.168.1.20:8787"

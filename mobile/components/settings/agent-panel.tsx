@@ -7,6 +7,7 @@ import { FieldRow } from "@/components/ui/form.tsx";
 import { Check, Copy } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
 import { useCopy } from "@/lib/copy.ts";
+import { useDescriptionPlacement } from "@/lib/display-settings.ts";
 import { ConfigForm } from "./config-form.tsx";
 import { useAnyDirty } from "./dirty.tsx";
 import { SettingsCard } from "./settings-card.tsx";
@@ -109,6 +110,7 @@ function CopySpec() {
  * old panel that had no other home.
  */
 export function AgentPanel() {
+  const placement = useDescriptionPlacement();
   return (
     <ConfigForm
       tab="agent"
@@ -142,6 +144,7 @@ export function AgentPanel() {
                       <form.AppField name="maxTokens">
                         {(field) => (
                           <field.NumberField
+                            descriptionPlacement={placement}
                             integer
                             label="Max reply tokens"
                             description="The longest single reply. Not the context window."
@@ -151,6 +154,7 @@ export function AgentPanel() {
                       <form.AppField name="temperature">
                         {(field) => (
                           <field.NumberField
+                            descriptionPlacement={placement}
                             label="Temperature"
                             description="Higher is more random. 0 is deterministic."
                           />
@@ -166,6 +170,7 @@ export function AgentPanel() {
                       <form.AppField name="maxToolIterations">
                         {(field) => (
                           <field.NumberField
+                            descriptionPlacement={placement}
                             integer
                             label="Max tool loops"
                             description="How many tool calls one turn may make."
@@ -175,6 +180,7 @@ export function AgentPanel() {
                       <form.AppField name="contextLimit">
                         {(field) => (
                           <field.NumberField
+                            descriptionPlacement={placement}
                             integer
                             label="Context window"
                             description="The whole conversation. 0 asks the server."
@@ -187,7 +193,8 @@ export function AgentPanel() {
 
                 <form.AppField name="reasoningEffort">
                   {(field) => (
-                    <field.OptionSelectField
+                    <field.ComboboxField
+                      descriptionPlacement={placement}
                       label="Reasoning effort"
                       description="Only a reasoning model takes this. Off and None are not the same: Off leaves the setting off the request, which is the only thing a server that has never heard of reasoning will accept, and None sends it — the way a model that can reason is told not to on this turn. A model that refuses the setting is asked again without it, so a wrong pick here costs a round trip rather than the turn."
                       options={EFFORT_OPTIONS}
@@ -203,7 +210,8 @@ export function AgentPanel() {
             contentSlot={
               <form.AppField name="toolDiscovery">
                 {(field) => (
-                  <field.OptionSelectField
+                  <field.ComboboxField
+                    descriptionPlacement={placement}
                     label="MCP tools"
                     description="On demand puts a name-only catalogue in the system prompt and lets the model pull in the schemas it needs mid-turn. Much cheaper with many tools; costs one extra round trip on the turns that use them. Proxied does the same without changing the tool list, so a load keeps the server's prompt cache; the model calls each tool through one fixed tool, which smaller models get wrong more often."
                     options={DISCOVERY_OPTIONS}

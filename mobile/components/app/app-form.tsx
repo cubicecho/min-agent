@@ -1,57 +1,29 @@
 import { useState } from "react";
-import { Combobox, type SelectEntry } from "@/components/combobox.tsx";
-import { PasswordInput, type PasswordInputProps } from "@/components/password-input.tsx";
-import { createAppForm, splitProps, useFieldContext } from "@/components/ui/form.tsx";
+import { ComboboxField } from "@/components/ui/combobox-field.tsx";
+import {
+  createAppForm,
+  type FieldProps,
+  FieldWrapper,
+  splitProps,
+  useFieldContext,
+} from "@/components/ui/form.tsx";
 import { Input, type InputProps } from "@/components/ui/input";
-import { HintedFieldWrapper } from "./description-hint.tsx";
 
-type FieldText = {
-  label: string;
-  /** A line under the control — what to put in it, or what changing it costs. */
-  description?: React.ReactNode | undefined;
-};
-
-type PasswordFieldProps = FieldText & Omit<PasswordInputProps, "value" | "onChangeText" | "onBlur">;
-
-/**
- * A secret, as cubeui's `PasswordInput` with its reveal button, bound the way `InputField` is.
- * cubeui ships the input but no field for it.
- */
-function PasswordField(props: PasswordFieldProps) {
-  const [fieldProps, control] = splitProps(props);
-  const field = useFieldContext<string>();
-  return (
-    <HintedFieldWrapper
-      {...fieldProps}
-      label={props.label}
-      controlSlot={
-        <PasswordInput
-          // "Show API key", not "Show password": none of these is a password.
-          showLabel={`Show ${props.label}`}
-          hideLabel={`Hide ${props.label}`}
-          {...control}
-          value={field.state.value ?? ""}
-          onBlur={field.handleBlur}
-          onChangeText={field.handleChange}
-        />
-      }
-    />
-  );
-}
-
-type NumberFieldProps = FieldText &
+type NumberFieldProps = FieldProps &
   Omit<InputProps, "value" | "onChangeText" | "onBlur" | "type"> & {
     /** For the values a schema keeps whole — token counts, loop limits. Rounds on the way out. */
     integer?: boolean | undefined;
   };
 
 /**
- * A number, typed as text.
+ * A number, typed as text, that writes `0` for an empty box.
  *
- * `InputField` with `type="number"` stores `Number(text)` on every keystroke and shows the
- * stored value back, so a decimal cannot be typed through it: "0." is 0, and the dot is gone
- * before the next digit arrives. This keeps what was typed and hands the form a number only
- * when the text is one.
+ * cubeui's own `NumberField` writes `number | null`, with an empty box as `null`. Every number on
+ * the settings panels is stored as a plain number, and an empty one has always meant `0` ("0 asks
+ * the server"), so this one stays until those values take `null`.
+ *
+ * @param props - The field's label and description, and the `Input` props.
+ * @returns The field.
  */
 function NumberField(props: NumberFieldProps) {
   const [fieldProps, { integer, ...control }] = splitProps(props);
@@ -69,9 +41,8 @@ function NumberField(props: NumberFieldProps) {
   }
 
   return (
-    <HintedFieldWrapper
+    <FieldWrapper
       {...fieldProps}
-      label={props.label}
       controlSlot={
         <Input
           inputMode={integer ? "numeric" : "decimal"}
@@ -102,48 +73,11 @@ function NumberField(props: NumberFieldProps) {
   );
 }
 
-type OptionSelectFieldProps = FieldText & {
-  options: readonly SelectEntry[];
-  placeholder?: string | undefined;
-  disabled?: boolean | undefined;
-  /** A search box over the list, for one too long to scroll. */
-  searchable?: boolean | undefined;
-  searchPlaceholder?: string | undefined;
-  onOpenChange?: ((open: boolean) => void) | undefined;
-};
-
 /**
- * A choice from a list, as cubeui's `Combobox` — groups, notes and all. The registry's own
- * `SelectField` takes flat label/value pairs only, which is not enough for a model list.
- */
-function OptionSelectField(props: OptionSelectFieldProps) {
-  const [fieldProps, control] = splitProps(props);
-  const field = useFieldContext<string>();
-  return (
-    <HintedFieldWrapper
-      {...fieldProps}
-      label={props.label}
-      controlSlot={
-        <Combobox
-          {...control}
-          aria-label={props.label}
-          value={field.state.value}
-          onValueChange={(next) => {
-            field.handleChange(next);
-            field.handleBlur();
-          }}
-        />
-      }
-    />
-  );
-}
-
-/**
- * The app's form hook: cubeui's native fields plus the three it does not ship, joined once here
- * so every form reaches all of them on `field.*`.
+ * The app's form hook: cubeui's native fields, its `ComboboxField`, and the app's `NumberField`,
+ * joined once here so every form reaches all of them on `field.*`.
  */
 export const { useAppForm, withForm } = createAppForm({
-  PasswordField,
   NumberField,
-  OptionSelectField,
+  ComboboxField,
 });

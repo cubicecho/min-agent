@@ -1,80 +1,11 @@
-import type { ReactNode } from "react";
-import { HintedFieldWrapper } from "@/components/app/description-hint.tsx";
 import { Combobox, type SelectEntry } from "@/components/combobox.tsx";
-import { useFieldContext } from "@/components/ui/form.tsx";
-import { Input, type InputProps } from "@/components/ui/input";
-import { Textarea, type TextareaProps } from "@/components/ui/textarea";
-
-/**
- * The bound fields the settings panels need and neither cubeui nor `app-form` ships. Each reads
- * the field it is rendered under, so it goes inside a `form.AppField`:
- *
- * ```tsx
- * <form.AppField name="baseUrl">{() => <TextField label="Base URL" description="…" />}</form.AppField>
- * ```
- */
-
-type TextFieldProps = {
-  label: string;
-  /** A line under the box — what to put in it, or what changing it costs. */
-  description?: ReactNode | undefined;
-  required?: boolean | undefined;
-} & Omit<InputProps, "value" | "onChangeText" | "onBlur">;
-
-/**
- * A line of text with a hint under it. cubeui's `InputField` takes a label and nothing else for
- * the field's shell, and most of the boxes on these panels need the line that says what goes in
- * them. Bound through the field context, so it is used inside any `form.AppField`.
- */
-export function TextField({ label, description, required, ...props }: TextFieldProps) {
-  const field = useFieldContext<string>();
-  return (
-    <HintedFieldWrapper
-      label={label}
-      description={description}
-      required={required}
-      controlSlot={
-        <Input
-          {...props}
-          value={field.state.value ?? ""}
-          onBlur={field.handleBlur}
-          onChangeText={field.handleChange}
-        />
-      }
-    />
-  );
-}
-
-type LongTextFieldProps = {
-  label: string;
-  description?: ReactNode | undefined;
-} & Omit<TextareaProps, "value" | "onChangeText" | "onBlur">;
-
-/** `TextField`'s several-line twin, for the same reason: `TextAreaField` has no hint line. */
-export function LongTextField({ label, description, ...props }: LongTextFieldProps) {
-  const field = useFieldContext<string>();
-  return (
-    <HintedFieldWrapper
-      label={label}
-      description={description}
-      controlSlot={
-        <Textarea
-          {...props}
-          value={field.state.value ?? ""}
-          onBlur={field.handleBlur}
-          onChangeText={field.handleChange}
-        />
-      }
-    />
-  );
-}
+import { type FieldProps, FieldWrapper, useFieldContext } from "@/components/ui/form.tsx";
 
 /** A select needs a non-empty value, so "unset" gets a sentinel that never reaches the form. */
 const UNSET = "__none__";
 
-type OptionalSelectFieldProps = {
+type OptionalSelectFieldProps = Omit<FieldProps, "label"> & {
   label: string;
-  description?: ReactNode | undefined;
   /** What the "nothing picked" row says. */
   emptyLabel: string;
   options: readonly SelectEntry[];
@@ -86,22 +17,27 @@ type OptionalSelectFieldProps = {
 
 /**
  * A choice that may be left unmade: the list, with a row above it that stores an empty string.
- * `OptionSelectField` binds the value as it is, and an empty value has no row to show.
+ *
+ * cubeui's `ComboboxField clearable` writes `null` for that row, and the settings schema keeps
+ * task models as strings, where `""` is a task that is off. Used inside a `form.AppField`.
+ *
+ * @param props - The field's label and description, the options, and the row for nothing.
+ * @returns The field.
  */
 export function OptionalSelectField({
   label,
-  description,
   emptyLabel,
   options,
   disabled,
   searchable,
   searchPlaceholder,
+  ...fieldProps
 }: OptionalSelectFieldProps) {
   const field = useFieldContext<string | undefined>();
   return (
-    <HintedFieldWrapper
+    <FieldWrapper
+      {...fieldProps}
       label={label}
-      description={description}
       controlSlot={
         <Combobox
           aria-label={label}
