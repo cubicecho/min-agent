@@ -1,12 +1,12 @@
 import { sql } from "drizzle-orm";
-import { db } from "../../server/db/client.ts";
-import * as store from "../../server/store.ts";
-import { closeTestDb, resetTestDb } from "./db.ts";
+import { createStore } from "../../server/store.ts";
+import { closeTestDb, createTestDb, resetTestDb } from "./db.ts";
 
 /**
  * The store is Postgres, so testing it means talking to one: PGlite, in this process.
  */
-vi.mock("../../server/db/client.ts", () => import("./db-client.ts"));
+const db = await createTestDb();
+const store = createStore(db);
 
 describe("session store", () => {
   beforeEach(() => resetTestDb(db));
@@ -58,7 +58,7 @@ describe("session store", () => {
     await store.deleteSession(session.id);
 
     expect(await store.getSession(session.id)).toBeNull();
-    const counted = await db.execute<{ count: number }>(
+    const counted: { rows: { count: number }[] } = await db.execute(
       sql`select count(*)::int as count from messages`,
     );
     const [{ count }] = counted.rows;

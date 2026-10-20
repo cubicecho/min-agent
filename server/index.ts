@@ -3,22 +3,29 @@ import path from "node:path";
 import compression from "compression";
 import express from "express";
 import { createYoga, maskError } from "graphql-yoga";
-import { loadMcpServers, refreshLlmConfig } from "./config.ts";
-import { waitForDatabase } from "./db/client.ts";
+import { createSettings } from "./config.ts";
+import { createDb, waitForDatabase } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
 import { surfaced } from "./errors.ts";
-import { schema } from "./graphql/schema.ts";
+import { createSchema } from "./graphql/schema.ts";
 import { HttpStatus } from "./http-status.ts";
-import * as mcp from "./mcp.ts";
-import { displayHost, HOST, PORT, ROOT } from "./paths.ts";
-import { voice } from "./voice.ts";
+import { createMcp } from "./mcp.ts";
+import { DATABASE_URL, displayHost, HOST, PORT, ROOT } from "./paths.ts";
+import { createStore } from "./store.ts";
+import { createVoiceRouter } from "./voice.ts";
 
 // The tables and the settings row have to exist before anything reads them, and the settings
 // cache has to be warm before the first turn asks it for a model. The database may still be
 // coming up — see `waitForDatabase` — so this is the one place that tolerates it being late.
-await waitForDatabase();
-await runMigrations();
-await refreshLlmConfig();
+const db = createDb(DATABASE_URL);
+await waitForDatabase(db);
+await runMigrations(db);
+const settings = createSettings(db);
+await settings.refresh();
+
+// The one pool of MCP connections the process runs on, handed to everything that talks to a server.
+const mcp = createMcp();
+const schema = createSchema({ db, mcp, store: createStore(db), settings });
 
 const app = express();
 
@@ -77,7 +84,7 @@ app.use(yoga.graphqlEndpoint, yoga);
  * The one part of the API that is not GraphQL, because both directions of it are bytes: a
  * recording on the way in and a spoken reply on the way out. See `voice.ts`.
  */
-app.use("/api/voice", voice);
+app.use("/api/voice", createVoiceRouter(settings));
 
 /**
  * Expo fingerprints what it emits into `_expo/static/`, so those files are good forever and a
@@ -125,7 +132,7 @@ app.listen(PORT, HOST, () => {
   console.log(`[min-agent] http://${displayHost()}:${PORT}`);
 });
 
-await mcp.sync(await loadMcpServers());
+await mcp.sync(await settings.loadMcpServers());
 
 const shutdown = async () => {
   await mcp.shutdown();

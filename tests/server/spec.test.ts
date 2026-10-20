@@ -5,12 +5,19 @@ import {
   resolveAgentSpec,
 } from "@cubicecho/agent-core/spec";
 import { graphql } from "graphql";
-import { coerceLlmConfig } from "../../server/config.ts";
-import { schema } from "../../server/graphql/schema.ts";
+import { coerceLlmConfig, createSettings } from "../../server/config.ts";
+import { createSchema } from "../../server/graphql/schema.ts";
+import { createMcp } from "../../server/mcp.ts";
 import { SPEC_EXTENSION, settingsSpec } from "../../server/spec.ts";
+import { createStore } from "../../server/store.ts";
 import { SpecDocument } from "../../shared/gql/graphql.ts";
 import { type LlmConfig, llmConfigSchema } from "../../shared/types.ts";
 import { isRecord } from "../helpers.ts";
+import { createTestDb } from "./db.ts";
+
+const db = await createTestDb();
+const settings = createSettings(db);
+const schema = createSchema({ db, mcp: createMcp(), store: createStore(db), settings });
 
 /**
  * The settings row on its way out as an agent spec, and what has to be true of the document

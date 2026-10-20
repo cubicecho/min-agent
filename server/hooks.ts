@@ -2,7 +2,7 @@ import * as core from "@cubicecho/agent-core";
 import type { HookContext, HookEvent, HookMessage } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import type { HookNote, Session, StoredMessage, StreamEvent } from "../shared/types.ts";
-import * as mcp from "./mcp.ts";
+import type { Mcp } from "./mcp.ts";
 
 /**
  * The MCP servers' hooks, fired at min-agent's points in a session.
@@ -28,16 +28,20 @@ export const HOST = "min-agent";
  */
 const notice = (message: string) => console.warn(`[hooks] ${message}`);
 
+/** What the hooks run on: the app's MCP servers, or a test's stand-in for them. */
+export type HookPool = Pick<Mcp, "runHooks">;
+
 /**
- * The pool, as the runner agent-core's hooks are handed.
+ * The pool, as the runner agent-core's hooks are handed. The runner it returns never rejects, as
+ * the pool's `runHooks` does not.
  *
- * @param event Which of the servers' hooks to run.
- * @param context What they are told.
- * @param options `signal` ends them all.
- * @returns One outcome per hook. Never rejects, as the pool's `runHooks` does not.
+ * @param mcp The servers whose hooks run.
+ * @returns What runs one event's hooks, `signal` ending them all.
  */
-const run: core.HookRunner = (event, context, { signal }) =>
-  mcp.runHooks(event, context, { signal, onNotice: notice });
+const runnerOf =
+  (mcp: HookPool): core.HookRunner =>
+  (event, context, { signal }) =>
+    mcp.runHooks(event, context, { signal, onNotice: notice });
 
 /**
  * A note as the chat's stream carries it.
@@ -129,17 +133,19 @@ export interface Gathered {
  * - Blocks are capped per hook and 2000 tokens in total, so a generous server cannot crowd out
  *   the conversation it was meant to inform.
  *
+ * @param mcp The servers whose hooks run.
  * @param events Which to run, in the order their context is assembled and the budget spent.
  * @param context What the hooks are told.
  * @param options `signal` is the turn's. `emit` hears each note as a `hook` event.
  * @returns The context to send with the question, and a note for each hook worth mentioning.
  */
 export async function gather(
+  mcp: HookPool,
   events: readonly HookEvent[],
   context: HookContext,
   { signal, emit }: { signal?: AbortSignal; emit?: (event: StreamEvent) => void } = {},
 ): Promise<Gathered> {
-  return core.gather(run, events, context, {
+  return core.gather(runnerOf(mcp), events, context, {
     signal,
     onNote: told(emit),
     maxTokens: core.HOOK_CONTEXT_TOKENS,
@@ -152,17 +158,19 @@ export async function gather(
  * No signal: these run once the turn has been answered, and a reader who stops listening
  * at that point has not asked for the turn not to be remembered.
  *
+ * @param mcp The servers whose hooks run.
  * @param event `afterTurn`, `beforeCompact` or `sessionDelete`.
  * @param context What the hooks are told.
  * @param emit Hears each note as a `hook` event.
  * @returns The notes, which with nothing injected are only ever failures.
  */
 export async function notify(
+  mcp: HookPool,
   event: HookEvent,
   context: HookContext,
   emit?: (event: StreamEvent) => void,
 ): Promise<HookNote[]> {
-  return core.notify(run, event, context, told(emit));
+  return core.notify(runnerOf(mcp), event, context, told(emit));
 }
 
 /**
@@ -173,13 +181,15 @@ export async function notify(
  * time to one. No `onNote` either, as `notify` has no `emit` when nobody is listening — a fold
  * is not part of the turn the chat is watching.
  *
+ * @param mcp The servers whose hooks run.
  * @param session The chat being folded.
  * @returns The pool as the runner, and what every hook here is told.
  */
 export const compactionHooks = (
+  mcp: HookPool,
   session: Pick<Session, "id">,
 ): NonNullable<core.CompactionRunOptions["hooks"]> => ({
-  run,
+  run: runnerOf(mcp),
   context: { session: { id: session.id }, host: HOST },
 });
 
@@ -187,8 +197,9 @@ export const compactionHooks = (
  * A chat was deleted. Tells the servers that keep anything under its id. Never rejects, as
  * agent-core's `notify` does not, because this is called without being awaited.
  *
+ * @param mcp The servers whose hooks run.
  * @param id The chat that went.
  * @returns The failures, for a caller that waits for them.
  */
-export const sessionDeleted = (id: string) =>
-  notify("sessionDelete", { session: { id }, host: HOST });
+export const sessionDeleted = (mcp: HookPool, id: string) =>
+  notify(mcp, "sessionDelete", { session: { id }, host: HOST });

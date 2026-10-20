@@ -32,6 +32,7 @@ const mcp = {
   resourceServers: vi.fn(),
   call: vi.fn(),
   runHooks: vi.fn(),
+  client: vi.fn(),
 };
 
 /** Every row `addMessage` was handed, as it was at that moment. */
@@ -39,8 +40,7 @@ let stored: StoredMessage[] = [];
 /** Every `updateSession` patch, in order. */
 let updates: Record<string, unknown>[] = [];
 
-vi.mock("../../server/mcp.ts", () => mcp);
-vi.mock("../../server/store.ts", () => ({
+const store = {
   addMessage: async (_session: string, idx: number, message: StoredMessage) => {
     stored[idx] = structuredClone(message);
     return `row-${idx}`;
@@ -49,11 +49,7 @@ vi.mock("../../server/store.ts", () => ({
   updateSession: async (_session: string, patch: Record<string, unknown>) => {
     updates.push(structuredClone(patch));
   },
-}));
-vi.mock("../../server/config.ts", async (original) => ({
-  ...(await original<typeof import("../../server/config.ts")>()),
-  loadLlmConfig: () => settings,
-}));
+};
 
 const { runTurn } = await import("../../server/agent.ts");
 
@@ -224,11 +220,14 @@ const reads = (count: number, from = 0, name = "fs__read") => [
 
 async function run(chat: Session, prompt: string) {
   const events: StreamEvent[] = [];
-  const stats = await runTurn({
-    session: chat,
-    prompt,
-    onEvent: (event) => events.push(structuredClone(event)),
-  });
+  const stats = await runTurn(
+    {
+      session: chat,
+      prompt,
+      onEvent: (event) => events.push(structuredClone(event)),
+    },
+    { mcp, store, settings: { current: () => settings } },
+  );
   return { events, stats };
 }
 

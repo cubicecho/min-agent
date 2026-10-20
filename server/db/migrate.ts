@@ -2,7 +2,7 @@ import path from "node:path";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { DATABASE_DEFAULTS } from "../../shared/defaults.ts";
 import { ROOT } from "../paths.ts";
-import { db } from "./client.ts";
+import type { Db } from "./client.ts";
 import { settings } from "./schema.ts";
 
 /**
@@ -15,8 +15,11 @@ import { settings } from "./schema.ts";
  * Running it here rather than as a deploy step is a deliberate trade for a single-instance
  * self-hosted app: `docker compose up` on a new machine is the whole install. Two of them
  * booting at once both try, which `RACED` below is about.
+ *
+ * @param db - The database to migrate.
+ * @returns Once it is up to date and the settings row exists.
  */
-export async function runMigrations() {
+export async function runMigrations(db: Db) {
   await withoutRacing(() => migrate(db, { migrationsFolder: path.join(ROOT, "drizzle") }));
 
   // The settings row is a singleton the UI edits in place, so it has to exist before the UI

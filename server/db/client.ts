@@ -2,19 +2,22 @@ import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { DATABASE_DEFAULTS } from "../../shared/defaults.ts";
 import { messageOf } from "../../shared/errors.ts";
-import { DATABASE_URL } from "../paths.ts";
 import { relations } from "./schema.ts";
 
 /**
- * The one connection to Postgres. Everything above this file imports `db` and nothing else,
- * so the driver and the connection string are named in exactly one place.
+ * A connection pool to Postgres, so the driver is named in exactly one place. `server/index.ts`
+ * builds the one the process runs on and hands it to everything that reads or writes a table.
  *
- * `pg`'s pool connects lazily, so importing this costs nothing: a build step that only needs
- * the table definitions — printing the GraphQL schema, say — never opens a socket.
+ * `pg`'s pool connects lazily, so building one costs nothing: a build step that only needs the
+ * table definitions — printing the GraphQL schema, say — never opens a socket.
+ *
+ * @param url - The connection string, `DATABASE_URL`.
+ * @returns The database.
  */
-export const db = drizzle({ connection: DATABASE_URL, relations });
+export const createDb = (url: string) => drizzle({ connection: url, relations });
 
-export type Db = typeof db;
+/** A database the server reads and writes through: the process's, or a test's PGlite. */
+export type Db = ReturnType<typeof createDb>;
 
 /**
  * Waits for the database to answer before anything tries to use it.
@@ -27,8 +30,11 @@ export type Db = typeof db;
  *
  * The wait is bounded on purpose: a wrong `DATABASE_URL` should fail the boot with the
  * driver's own error rather than hang forever looking like a slow start.
+ *
+ * @param db - The database to wait for.
+ * @returns Once it answers.
  */
-export async function waitForDatabase() {
+export async function waitForDatabase(db: Db) {
   for (let attempt = 1; ; attempt++) {
     try {
       await db.execute(sql`select 1`);

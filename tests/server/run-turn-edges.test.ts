@@ -54,8 +54,7 @@ let log: string[] = [];
 /** Called as each row is written, before the write resolves. */
 let onStore: (message: StoredMessage) => void = () => {};
 
-vi.mock("../../server/mcp.ts", () => mcp);
-vi.mock("../../server/store.ts", () => ({
+const store = {
   addMessage: async (_session: string, idx: number, message: StoredMessage) => {
     stored[idx] = structuredClone(message);
     log.push(`store ${message.role}${message.role === "tool" ? ` ${message.tool_call_id}` : ""}`);
@@ -68,11 +67,7 @@ vi.mock("../../server/store.ts", () => ({
   updateSession: async (_session: string, patch: Record<string, unknown>) => {
     updates.push(structuredClone(patch));
   },
-}));
-vi.mock("../../server/config.ts", async (original) => ({
-  ...(await original<typeof import("../../server/config.ts")>()),
-  loadLlmConfig: () => settings,
-}));
+};
 
 const { runTurn } = await import("../../server/agent.ts");
 
@@ -196,21 +191,24 @@ async function run(
   { onEvent, signal }: { onEvent?: (event: StreamEvent) => void; signal?: AbortSignal } = {},
 ) {
   const events: StreamEvent[] = [];
-  const settled: { stats?: TurnStats; error?: Error } = await runTurn({
-    session: chat,
-    prompt,
-    signal,
-    onEvent: (event) => {
-      events.push(structuredClone(event));
-      if (event.type === "tool_use") {
-        log.push(`tool_use ${event.id}`);
-      }
-      if (event.type === "tool_result") {
-        log.push(`tool_result ${event.toolUseId}`);
-      }
-      onEvent?.(event);
+  const settled: { stats?: TurnStats; error?: Error } = await runTurn(
+    {
+      session: chat,
+      prompt,
+      signal,
+      onEvent: (event) => {
+        events.push(structuredClone(event));
+        if (event.type === "tool_use") {
+          log.push(`tool_use ${event.id}`);
+        }
+        if (event.type === "tool_result") {
+          log.push(`tool_result ${event.toolUseId}`);
+        }
+        onEvent?.(event);
+      },
     },
-  }).then(
+    { mcp, store, settings: { current: () => settings } },
+  ).then(
     (stats) => ({ stats }),
     (error: unknown) => ({ error: errorOf(error) }),
   );
