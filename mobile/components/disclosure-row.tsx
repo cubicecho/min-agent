@@ -31,34 +31,13 @@ type DisclosureRowProps = {
 };
 
 /**
- * One row in a list of things you can open: a run, a task, an archived record. One source for
- * both platforms.
+ * One row in a list of things you can open: a run, a task, an archived record. The row is `Item`,
+ * so it lines up with rows that do not open, and the opening is `Disclosure`'s.
  *
- * The row itself is `Item`, so a row that opens and a row that does not line up down to the
- * padding. What this adds is `Disclosure`'s opening, and it is here rather than left to each app
- * because the parts of a disclosure that go wrong are the small ones:
- *
- * - **The whole heading is one button** — a `<button>` on the web, `role="button"` on device —
- *   so the row is reached by Tab and works with Space, not a chevron with a press handler, which
- *   is the version hand-written rows ship.
- * - `aria-expanded` on that button, so the state is announced rather than only drawn as a
- *   rotated chevron; and on the web `aria-controls` naming the body, while the body is there.
- * - The chevron turns off the same boolean, so there is one source of truth for open.
- * - **`actionSlot` sits outside the button.** A control nested inside a button is invalid HTML and,
- *   in practice, a delete button that cannot be pressed. Three pages of one app were laid out
- *   this way after finding that out.
- *
- * It is not a prop on `Item`: an `open`/`onOpenChange` pair there would turn every existing
- * caller's heading into a button, which is a different element and a different contract. And it
- * is not `Disclosure` itself, whose look is a section's compact muted line; this is a list row,
- * bordered, with badges and a line of facts beside the title.
- *
- * Open is controlled, because in these apps a row is often opened from somewhere else — a deep
- * link to a run, a "show the failure" button further up the page. An uncontrolled default would
- * be a convenience worth adding, not the base case.
- *
- * On a device, a string `meta` is wrapped in a `Text` by the `Item` part it sits in; an element is
- * placed as it is. `actionSlot` and `contentSlot` take elements only.
+ * The whole heading is one button carrying `aria-expanded`, and the chevron turns off the same
+ * boolean. `actionSlot` sits outside that button, because a control nested in a button is invalid
+ * HTML and cannot be pressed. Open is controlled, since a row is often opened from somewhere else,
+ * such as a deep link.
  */
 export function DisclosureRow({
   open,
@@ -88,7 +67,7 @@ export function DisclosureRow({
         {...(Platform.OS === "web" && isOpen ? { "aria-controls": contentId } : {})}
         onPress={() => onOpenChange(!open)}
         className={cn(
-          "min-w-0 flex-1 flex-row items-start gap-2 rounded",
+          "min-w-0 flex-1 flex-row items-start gap-2 rounded-sm",
           Platform.select({
             web: "text-left focus-visible:bg-hover focus-visible:outline-none",
             default: undefined,
@@ -109,7 +88,7 @@ export function DisclosureRow({
             <Text
               testID="disclosure-row-title"
               className={cn(
-                "min-w-0 shrink font-medium text-foreground text-sm leading-snug",
+                "min-w-0 shrink font-semibold text-foreground text-sm leading-snug",
                 // `truncate` is the ellipsis on the web; on device it is `numberOfLines`, which is
                 // what `line-clamp-1` becomes and what `truncate` does not.
                 Platform.select({ web: "truncate", default: "line-clamp-1" }),

@@ -1,9 +1,9 @@
 import { Platform, Text, View } from "react-native";
-import { ActionButton } from "@/components/action-button.tsx";
 import { BookOpen, Mic, Send } from "@/components/app/app-icons";
 import { MUTED } from "@/components/chat/token-readouts.tsx";
 import { SettingsLink } from "@/components/settings/link.tsx";
 import { Alert } from "@/components/ui/alert.tsx";
+import { Button } from "@/components/ui/button.tsx";
 import { Square } from "@/components/ui/icons";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
@@ -106,10 +106,10 @@ export function Composer({
           press it.
         */}
         {onPickPrompt ? (
-          <ActionButton
+          <Button
             variant="secondary"
             size="icon-lg"
-            label="Insert an MCP prompt"
+            aria-label="Insert an MCP prompt"
             onPress={onPickPrompt}
             iconSlot={<BookOpen aria-hidden className="size-4" />}
           />
@@ -120,10 +120,10 @@ export function Composer({
           the phone keyboard already has a microphone key of its own.
         */}
         {dictation.supported ? (
-          <ActionButton
+          <Button
             variant={dictation.listening ? "destructive" : "secondary"}
             size="icon-lg"
-            label={dictation.listening ? "Stop dictating" : "Dictate a message"}
+            aria-label={dictation.listening ? "Stop dictating" : "Dictate a message"}
             disabled={dictation.transcribing}
             onPress={dictation.toggle}
             iconSlot={
@@ -135,17 +135,17 @@ export function Composer({
           />
         ) : null}
         {busy ? (
-          <ActionButton
+          <Button
             variant="secondary"
             size="icon-lg"
-            label="Stop the turn"
+            aria-label="Stop the turn"
             onPress={onStop}
             iconSlot={<Square aria-hidden className="size-4" />}
           />
         ) : (
-          <ActionButton
+          <Button
             size="icon-lg"
-            label="Send"
+            aria-label="Send"
             disabled={!draft.trim()}
             onPress={onSend}
             iconSlot={<Send aria-hidden className="size-4" />}

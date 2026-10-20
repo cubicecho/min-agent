@@ -939,7 +939,7 @@ hours: at nine in the morning something from eleven last night is yesterday, not
 ago. The difference is rounded, because the two midnights can be 23 or 25 hours apart when the
 clocks change and a chat should not slide into the wrong day over it.
 
-A chat is renamed in a dialog — the pencil opens a `FormDialog` with the title in it — over the
+A chat is renamed in a dialog — the pencil opens a `DialogLayout` with the title in it — over the
 `updateSessionSingle` mutation the generated CRUD hands us for free. cubeui's rule is that a row
 is never edited in place: a field that appears where a label was moves everything beside it.
 
@@ -953,7 +953,7 @@ any order, so typing more always narrows.
 
 The rule is `matchTerms` in `shared/client/search.ts`. Filtering is done in the client: what is
 being filtered is already in memory, and a round trip per keystroke would be slower than the
-scanning it replaced. The model pickers filter the same way, through `OptionSelect`'s
+scanning it replaced. The model pickers filter the same way, through `Combobox`'s
 `searchable`: an Ollama box with forty tags on it is a list to type into rather than scroll.
 
 ## Other apps in the sidebar

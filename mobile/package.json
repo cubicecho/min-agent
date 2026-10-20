@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@cubicecho/agent-mcp-pool": "^3.3.0",
+    "@radix-ui/react-slot": "^1.5.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@ronradtke/react-native-markdown-display": "^9.0.3",
     "@tanstack/react-form": "^1.33.5",
@@ -38,8 +39,8 @@
     "expo-updates": "~57.0.21",
     "highlight.js": "^11.12.0",
     "lowlight": "^3.3.0",
-    "lucide-react": "^1.34.0",
-    "lucide-react-native": "^1.34.0",
+    "lucide-react": "^1.41.0",
+    "lucide-react-native": "^1.41.0",
     "nativewind": "^5.0.0-rc.0",
     "radix-ui": "^1.6.7",
     "react": "19.2.3",

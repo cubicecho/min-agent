@@ -1,5 +1,5 @@
 import { Tabs as TabsPrimitive } from "radix-ui";
-import type * as React from "react";
+import * as React from "react";
 import { useEffect, useRef } from "react";
 import {
   TABS_LIST_CLASS,
@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 /** The shared contract, widened to what the radix part underneath accepts. */
 type Wide<Base, Radix> = Base & Omit<Radix, keyof Base>;
 
+/** The root of a set of tabs: it holds which one is active. */
 function Tabs({
   value,
   onValueChange,
@@ -44,13 +45,19 @@ function Tabs({
  */
 function reveal(list: HTMLElement) {
   const tab = list.querySelector('[role="tab"][data-state="active"]');
-  if (!tab) return;
+  if (!tab) {
+    return;
+  }
   const box = list.getBoundingClientRect();
   const span = tab.getBoundingClientRect();
-  if (span.left < box.left) list.scrollLeft -= box.left - span.left + TABS_LIST_INSET;
-  else if (span.right > box.right) list.scrollLeft += span.right - box.right + TABS_LIST_INSET;
+  if (span.left < box.left) {
+    list.scrollLeft -= box.left - span.left + TABS_LIST_INSET;
+  } else if (span.right > box.right) {
+    list.scrollLeft += span.right - box.right + TABS_LIST_INSET;
+  }
 }
 
+/** The row of tab buttons. */
 function TabsList({
   className,
   ref,
@@ -62,7 +69,9 @@ function TabsList({
   // is watched: it covers a click, an arrow key, the caller's `value` and a `defaultValue` alike.
   useEffect(() => {
     const node = list.current;
-    if (!node) return;
+    if (!node) {
+      return;
+    }
     reveal(node);
     const observer = new MutationObserver(() => reveal(node));
     observer.observe(node, { attributes: true, attributeFilter: ["data-state"], subtree: true });
@@ -74,8 +83,12 @@ function TabsList({
       data-slot="tabs-list"
       ref={(node) => {
         list.current = node;
-        if (typeof ref === "function") return ref(node);
-        if (ref) ref.current = node;
+        if (typeof ref === "function") {
+          return ref(node);
+        }
+        if (ref) {
+          ref.current = node;
+        }
       }}
       // `justify-center-safe`: plain centring puts the first tabs of a row that overflows past
       // the start, where no scrolling reaches them. The scrollbar is hidden because the row is
@@ -90,17 +103,22 @@ function TabsList({
   );
 }
 
+/** One tab's button, which shows the pane with the same `value`. */
 function TabsTrigger({
   className,
   disabled,
   children,
   trailingSlot,
+  linkSlot,
   ...props
 }: Wide<TabsTriggerProps, React.ComponentProps<typeof TabsPrimitive.Trigger>>) {
   return (
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       {...(disabled === undefined ? {} : { disabled })}
+      // A link is the tab itself: radix merges the tab's role, state and keys onto it. `type` is
+      // a button's, and on an `<a>` would only be a stray attribute.
+      {...(linkSlot === undefined ? {} : { asChild: true, type: undefined })}
       // An icon child takes the trigger's colour through `currentColor`, so only
       // its size is set here; device has no inheritance and uses a context.
       className={cn(
@@ -112,12 +130,19 @@ function TabsTrigger({
       )}
       {...props}
     >
-      {children}
-      {trailingSlot}
+      {linkSlot === undefined ? (
+        <>
+          {children}
+          {trailingSlot}
+        </>
+      ) : (
+        React.cloneElement(linkSlot, undefined, children, trailingSlot)
+      )}
     </TabsPrimitive.Trigger>
   );
 }
 
+/** One tab's pane, rendered while its tab is active. */
 function TabsContent({
   className,
   ...props

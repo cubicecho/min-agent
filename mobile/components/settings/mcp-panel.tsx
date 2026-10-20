@@ -13,7 +13,6 @@ import { useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Text } from "react-native";
-import { ActionButton } from "@/components/action-button.tsx";
 import { useAppForm } from "@/components/app/app-form.tsx";
 import { Globe, Server, Terminal } from "@/components/app/app-icons";
 import { ConfirmButton } from "@/components/confirm-button.tsx";
@@ -308,7 +307,7 @@ function Editor({
             <ConfirmButton
               variant="ghost"
               size="icon"
-              label={`Remove ${name}`}
+              aria-label={`Remove ${name}`}
               title={`Remove ${name}?`}
               description="The agent loses its tools, and its hooks stop running."
               confirmLabel="Remove"
@@ -469,10 +468,10 @@ function Editor({
                           title={`Hook ${index + 1}`}
                           level={4}
                           actionSlot={
-                            <ActionButton
+                            <Button
                               variant="ghost"
                               size="icon-sm"
-                              label={`Remove hook ${index + 1}`}
+                              aria-label={`Remove hook ${index + 1}`}
                               onPress={() => hooks.removeValue(index)}
                               iconSlot={<X className="size-4" />}
                             />
@@ -639,7 +638,7 @@ export function McpPanel({ active = true }: { active?: boolean }) {
                   count={list.length}
                   emptySlot={
                     <EmptyState
-                      icon={Server}
+                      iconSlot={<Server />}
                       title="No servers yet"
                       description="Add one to give the agent some tools."
                     />

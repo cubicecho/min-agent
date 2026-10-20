@@ -13,6 +13,7 @@ import {
 export type SearchInputProps = Omit<InputProps, "type" | "leadingSlot" | "trailingSlot"> &
   SearchInputOwnProps;
 
+/** A search box with a leading icon and a button that clears it. */
 export function SearchInput({
   label,
   clearLabel = SEARCH_CLEAR_LABEL,
@@ -40,11 +41,16 @@ export function SearchInput({
   const settled = useSettledText(onSettledText, debounce);
 
   const change = (next: string) => {
-    if (value === undefined) setDraft(next);
+    if (value === undefined) {
+      setDraft(next);
+    }
     onChangeText?.(next);
     // An emptied box is not someone part-way through a word, so there is nothing to wait for.
-    if (next === "") settled.now(next);
-    else settled.later(next);
+    if (next === "") {
+      settled.now(next);
+    } else {
+      settled.later(next);
+    }
   };
 
   // Enter asks now. Left as the caller's own when nothing is settling, so the key is not taken
@@ -70,7 +76,7 @@ export function SearchInput({
       aria-labelledby={ariaLabelledBy}
       leadingSlot={<Search />}
       trailingSlot={
-        clearable && text !== "" && !disabled ? (
+        clearable && text !== "" && disabled !== true ? (
           <Button
             variant="secondary"
             size="icon-xs"

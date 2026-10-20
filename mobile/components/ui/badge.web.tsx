@@ -7,6 +7,7 @@ import {
   badgeHasLabel,
   badgeIconClass,
   badgeRemoveLabel,
+  badgeSoftDotClass,
   badgeTextFallback,
   badgeTextVariants,
   badgeVariants,
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
 
 export type { BadgeProps, BadgeVariant };
 
+/** A small pill naming a kind or a state, or a dot of the same colour when it has no children. */
 export function Badge({
   variant = "default",
   backgroundColor,
@@ -24,6 +26,8 @@ export function Badge({
   label,
   onRemove,
   removeLabel,
+  mono = false,
+  pulse = false,
   asChild = false,
   style,
   children,
@@ -35,6 +39,37 @@ export function Badge({
   }) {
   const shape = asChild || badgeHasLabel(children) ? "pill" : "dot";
   const Comp = asChild ? Slot.Root : "span";
+  const dotName = label
+    ? ({ role: "img", "aria-label": label } as const)
+    : ({ "aria-hidden": true } as const);
+
+  const softDot = shape === "pill" && !backgroundColor ? badgeSoftDotClass(variant) : null;
+  const pill =
+    shape === "pill" ? (
+      <>
+        {softDot ? <span aria-hidden className={softDot} /> : null}
+        {children}
+        {onRemove ? (
+          <button
+            type="button"
+            aria-label={removeLabel ?? badgeRemoveLabel(children, label)}
+            className="-my-1 -mr-1.5 -ml-1 inline-flex cursor-pointer items-center justify-center rounded-full p-1 text-inherit outline-none hover:opacity-75 focus-visible:opacity-75"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRemove();
+            }}
+            // The keys that press it, stopped too, so a badge's own `onKeyDown` does not act on them.
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.stopPropagation();
+              }
+            }}
+          >
+            <X className={badgeIconClass} aria-hidden />
+          </button>
+        ) : null}
+      </>
+    ) : null;
 
   return (
     <Comp
@@ -43,8 +78,11 @@ export function Badge({
       className={cn(
         "inline-flex w-fit overflow-hidden whitespace-nowrap transition-colors focus-visible:outline-none [&>svg]:pointer-events-none [&>svg]:size-3",
         badgeContainerVariants({ variant, shape }),
-        shape === "pill" && (backgroundColor ? badgeTextFallback : badgeTextVariants({ variant })),
+        shape === "pill" &&
+          (backgroundColor ? badgeTextFallback(mono) : badgeTextVariants({ variant, mono })),
         variant === "link" && "[a&]:hover:underline [a&]:focus-visible:underline",
+        // Tailwind's pulse is `BADGE_PULSE_MS` long and `BADGE_PULSE_LOW` faint, as on device.
+        pulse && shape === "dot" && "motion-safe:animate-pulse",
         className,
       )}
       style={{
@@ -54,40 +92,13 @@ export function Badge({
       }}
       // A dot carries meaning and no text, so it is named or it is decoration;
       // the same split `color-dot` makes, for the same reason.
-      {...(shape === "dot"
-        ? label
-          ? ({ role: "img", "aria-label": label } as const)
-          : ({ "aria-hidden": true } as const)
-        : {})}
+      {...(shape === "dot" ? dotName : {})}
       {...props}
     >
       {/* `asChild` renders `children` and nothing beside it. `Slot` counts every child
           expression, a `null` included, so a second slot here — even one that is always
           empty under `asChild` — made it throw "failed to slot onto its children" (#152). */}
-      {asChild ? (
-        children
-      ) : shape === "pill" ? (
-        <>
-          {children}
-          {onRemove ? (
-            <button
-              type="button"
-              aria-label={removeLabel ?? badgeRemoveLabel(children, label)}
-              className="-my-1 -mr-1.5 -ml-1 inline-flex cursor-pointer items-center justify-center rounded-full p-1 text-inherit outline-none hover:opacity-75 focus-visible:opacity-75"
-              onClick={(event) => {
-                event.stopPropagation();
-                onRemove();
-              }}
-              // The keys that press it, stopped too, so a badge's own `onKeyDown` does not act on them.
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") event.stopPropagation();
-              }}
-            >
-              <X className={badgeIconClass} aria-hidden />
-            </button>
-          ) : null}
-        </>
-      ) : null}
+      {asChild ? children : pill}
     </Comp>
   );
 }

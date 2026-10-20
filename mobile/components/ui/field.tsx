@@ -46,7 +46,7 @@ function FieldLegend({
       webAs="legend"
       testID="field-legend"
       className={cn(
-        "mb-3 font-medium text-foreground",
+        "mb-3 font-semibold text-foreground",
         variant === "legend" ? "text-base" : "text-sm",
         className,
       )}
@@ -89,6 +89,7 @@ const fieldVariants = cva("w-full gap-2", {
   defaultVariants: { orientation: "vertical" },
 });
 
+/** One field's column: its label, control, description and error. */
 function Field({
   className,
   orientation = "vertical",
@@ -105,12 +106,14 @@ function Field({
   );
 }
 
+/** The label that names the field's control. */
 function FieldLabel({ className, ...props }: React.ComponentProps<typeof Label>) {
   // `data-slot` rather than `testID`: `Label`'s shared contract has no `testID`, the native half
   // ignores an attribute it does not know, and the web half spreads it over its own `label`.
   return <Label data-slot="field-label" className={className} {...props} />;
 }
 
+/** The muted help text for the field. */
 function FieldDescription({ className, ...props }: TextProps) {
   return (
     <Text
@@ -138,7 +141,7 @@ function FieldError({
   errors,
   ...props
 }: TextProps & { errors?: readonly FieldErrorEntry[] | undefined }) {
-  const classes = cn("text-negative text-sm font-medium", className);
+  const classes = cn("text-negative text-sm font-semibold", className);
   const messages = [
     ...new Set(
       (errors ?? [])
@@ -154,7 +157,9 @@ function FieldError({
       </Text>
     );
   }
-  if (messages.length === 0) return null;
+  if (messages.length === 0) {
+    return null;
+  }
   return (
     <View role="alert" testID="field-error" id={props.id} className="gap-1">
       <View role="list" className="gap-1">
@@ -195,7 +200,7 @@ function FieldTitle({ className, ...props }: TextProps) {
   return (
     <Text
       testID="field-label"
-      className={cn("text-foreground text-sm font-medium", className)}
+      className={cn("text-foreground text-sm font-semibold", className)}
       {...props}
     />
   );

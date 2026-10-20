@@ -11,6 +11,7 @@ import {
 import { Search } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
+/** The root of a filtered list: it holds the search text and decides which items match. */
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
   return (
     <CommandPrimitive
@@ -24,6 +25,7 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
   );
 }
 
+/** A `Command` inside a dialog: a command palette. */
 function CommandDialog({
   title = COMMAND_DIALOG_TITLE,
   description = COMMAND_DIALOG_DESCRIPTION,
@@ -47,7 +49,7 @@ function CommandDialog({
         className={cn("overflow-hidden p-0", className)}
         showCloseButton={showCloseButton}
       >
-        <Command className="**:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-foreground/60 [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+        <Command className="**:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-foreground/60 [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
           {children}
         </Command>
       </DialogContent>
@@ -55,13 +57,14 @@ function CommandDialog({
   );
 }
 
+/** The search box that filters the list. */
 function CommandInput({
   className,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.Input>) {
   return (
     <div data-slot="command-input-wrapper" className="flex h-9 items-center gap-2 border-b px-3">
-      <Search className="size-4 shrink-0 opacity-50" />
+      <Search className="size-4 shrink-0 text-foreground/60" />
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
@@ -74,26 +77,32 @@ function CommandInput({
   );
 }
 
+/** The scrolling list of groups and items. */
 function CommandList({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.List>) {
   return (
     <CommandPrimitive.List
       data-slot="command-list"
-      className={cn("max-h-[300px] scroll-py-1 overflow-x-hidden overflow-y-auto", className)}
+      className={cn("max-h-72 scroll-py-1 overflow-x-hidden overflow-y-auto", className)}
       {...props}
     />
   );
 }
 
-function CommandEmpty({ ...props }: React.ComponentProps<typeof CommandPrimitive.Empty>) {
+/** What is shown when no item matches the search. */
+function CommandEmpty({
+  className,
+  ...props
+}: React.ComponentProps<typeof CommandPrimitive.Empty>) {
   return (
     <CommandPrimitive.Empty
       data-slot="command-empty"
-      className="py-6 text-center text-sm"
+      className={cn("py-6 text-center text-sm", className)}
       {...props}
     />
   );
 }
 
+/** A set of items under a heading, hidden when none of them matches. */
 function CommandGroup({
   className,
   ...props
@@ -102,7 +111,7 @@ function CommandGroup({
     <CommandPrimitive.Group
       data-slot="command-group"
       className={cn(
-        "overflow-hidden p-1 text-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-foreground/60",
+        "overflow-hidden p-1 text-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-foreground/60",
         className,
       )}
       {...props}
@@ -110,6 +119,7 @@ function CommandGroup({
   );
 }
 
+/** A rule between groups. */
 function CommandSeparator({
   className,
   ...props
@@ -126,6 +136,7 @@ function CommandSeparator({
   );
 }
 
+/** One row that can be chosen, filtered by its `value` and its text. */
 function CommandItem({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.Item>) {
   return (
     <CommandPrimitive.Item
@@ -139,6 +150,7 @@ function CommandItem({ className, ...props }: React.ComponentProps<typeof Comman
   );
 }
 
+/** The keyboard shortcut shown at the far end of an item. */
 function CommandShortcut({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span

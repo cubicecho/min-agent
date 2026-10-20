@@ -16,7 +16,6 @@ import { Linking, Platform, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import "../global.css";
-import { ActionButton } from "@/components/action-button.tsx";
 import { MessageSquare } from "@/components/app/app-icons";
 import { EMBED_ICON } from "@/components/apps/embed-icon.ts";
 import { useNewChat } from "@/components/chat/session-list.tsx";
@@ -221,8 +220,8 @@ function Shell() {
           </>
         }
         actionSlot={
-          <ActionButton
-            label="New chat"
+          <Button
+            aria-label="New chat"
             variant="ghost"
             size="icon-sm"
             disabled={newChat.isPending}

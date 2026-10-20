@@ -68,3 +68,7 @@ export type DialogSectionProps = {
   className?: string | undefined;
   children?: ReactNode;
 };
+
+/** The dialog's card, on both platforms. */
+export const DIALOG_CONTENT_CLASS =
+  "w-full max-w-lg gap-4 rounded-lg border border-foreground/10 bg-background p-6 shadow-lg";

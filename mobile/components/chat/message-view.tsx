@@ -6,7 +6,6 @@ import type { HookNote, LlmConfig, StoredMessage, TurnStats } from "@shared/type
 import { INJECT_EVENTS } from "@shared/types.ts";
 import { type ComponentType, memo, type ReactNode, useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
-import { ActionButton } from "@/components/action-button.tsx";
 import { Cpu, Volume2, Wrench, Zap } from "@/components/app/app-icons";
 import { MarkdownBody } from "@/components/chat/markdown.tsx";
 import { DisclosureRow } from "@/components/disclosure-row.tsx";
@@ -299,10 +298,10 @@ const StoredMessages = memo(function StoredMessages({
               // question would double the space a short exchange takes up.
               aside={
                 onEdit ? (
-                  <ActionButton
+                  <Button
                     variant="ghost"
                     size="icon-sm"
-                    label="Edit this message"
+                    aria-label="Edit this message"
                     onPress={() => onEdit(index)}
                     iconSlot={<Pencil aria-hidden className="size-3.5 text-muted-foreground" />}
                   />
@@ -353,10 +352,10 @@ const StoredMessages = memo(function StoredMessages({
               <View className="flex-row items-center gap-1">
                 {body ? <CopyButton value={body} label="Copy reply" /> : null}
                 {onRetry ? (
-                  <ActionButton
+                  <Button
                     variant="ghost"
                     size="icon-sm"
-                    label="Retry this reply"
+                    aria-label="Retry this reply"
                     onPress={() => onRetry(index)}
                     iconSlot={<RefreshCw aria-hidden className="size-3.5 text-muted-foreground" />}
                   />
@@ -366,10 +365,10 @@ const StoredMessages = memo(function StoredMessages({
                   that can be stopped, so pressing it again is the way to stop it.
                 */}
                 {onSpeak && body ? (
-                  <ActionButton
+                  <Button
                     variant="ghost"
                     size="icon-sm"
-                    label={speakingIndex === index ? "Stop reading" : "Read this reply aloud"}
+                    aria-label={speakingIndex === index ? "Stop reading" : "Read this reply aloud"}
                     onPress={() => onSpeak(index, body)}
                     iconSlot={
                       speakingIndex === index ? (

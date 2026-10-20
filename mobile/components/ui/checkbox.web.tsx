@@ -23,6 +23,7 @@ export type CheckboxProps = Omit<
   accessibilityLabel?: string | undefined;
 };
 
+/** A box that is checked, unchecked or indeterminate. */
 function Checkbox({
   className,
   accessibilityLabel,
@@ -36,7 +37,7 @@ function Checkbox({
       aria-label={ariaLabel ?? accessibilityLabel}
       className={cn(
         CHECKBOX_CLASS,
-        "peer flex border-foreground/15 bg-background focus-visible:outline-none data-[state=unchecked]:focus-visible:bg-hover data-[state=checked]:focus-visible:bg-active/90 data-[state=indeterminate]:focus-visible:bg-active/90 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-negative data-[state=checked]:border-active data-[state=checked]:bg-active data-[state=checked]:text-active-foreground data-[state=indeterminate]:border-active data-[state=indeterminate]:bg-active data-[state=indeterminate]:text-active-foreground",
+        "peer flex border-foreground/50 bg-background focus-visible:outline-none data-[state=unchecked]:focus-visible:bg-hover data-[state=checked]:focus-visible:bg-active/90 data-[state=indeterminate]:focus-visible:bg-active/90 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-negative data-[state=checked]:border-active data-[state=checked]:bg-active data-[state=checked]:text-active-foreground data-[state=indeterminate]:border-active data-[state=indeterminate]:bg-active data-[state=indeterminate]:text-active-foreground",
         className,
       )}
     >

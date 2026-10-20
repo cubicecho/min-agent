@@ -2,9 +2,12 @@ import { createContext, useContext, useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { Check, ChevronDown } from "@/components/ui/icons";
 import {
+  SELECT_CONTENT_CLASS,
+  SELECT_ICON_CLASS,
   SELECT_ITEM_CLASS,
   SELECT_ITEM_TEXT_CLASS,
   SELECT_LABEL_CLASS,
+  SELECT_PLACEHOLDER_CLASS,
   SELECT_SEPARATOR_CLASS,
   SELECT_TRIGGER_CLASS,
   SELECT_TRIGGER_TEXT_CLASS,
@@ -18,7 +21,7 @@ import {
   type SelectTriggerProps,
   type SelectValueProps,
 } from "@/components/ui/select-base";
-import { cn } from "@/lib/utils";
+import { cn, FIELD_INVALID_CLASS, isInvalid } from "@/lib/utils";
 
 type SelectState = {
   disabled: boolean;
@@ -36,6 +39,7 @@ const SelectContext = createContext<SelectState>({
   setOpen: () => {},
 });
 
+/** The root of a select: it holds the chosen value and the open state. */
 function Select({
   value: valueProp,
   defaultValue = "",
@@ -70,13 +74,16 @@ function Select({
   );
 }
 
+/** The button that shows the chosen value and opens the options. */
 function SelectTrigger({ className, onBlur, disabled, children, ...aria }: SelectTriggerProps) {
   const select = useContext(SelectContext);
   const isDisabled = disabled ?? select.disabled;
   return (
     <Pressable
-      // The `role` is hand-written because a `<button>` has no native counterpart.
-      role="button"
+      // The `role` is hand-written because a `<button>` has no native counterpart. Radix's trigger
+      // is a `combobox` that says whether its list is open; this says the same.
+      role="combobox"
+      aria-expanded={select.open}
       disabled={isDisabled}
       {...aria}
       onPress={() => {
@@ -85,10 +92,15 @@ function SelectTrigger({ className, onBlur, disabled, children, ...aria }: Selec
         // would on web, and a form depends on that to mark the field touched.
         onBlur?.();
       }}
-      className={cn(SELECT_TRIGGER_CLASS, isDisabled && "opacity-50", className)}
+      className={cn(
+        SELECT_TRIGGER_CLASS,
+        isInvalid(aria["aria-invalid"]) && FIELD_INVALID_CLASS,
+        isDisabled && "opacity-50",
+        className,
+      )}
     >
       {children}
-      <ChevronDown className="h-4 w-4 opacity-50" />
+      <ChevronDown className={SELECT_ICON_CLASS} />
     </Pressable>
   );
 }
@@ -101,14 +113,18 @@ function SelectTrigger({ className, onBlur, disabled, children, ...aria }: Selec
  */
 function SelectValue({ placeholder, children }: SelectValueProps) {
   const { value } = useContext(SelectContext);
-  const content = value && children ? children : placeholder;
+  const chosen = Boolean(value && children);
+  const content = chosen ? children : placeholder;
   return typeof content === "string" ? (
-    <Text className={SELECT_TRIGGER_TEXT_CLASS}>{content}</Text>
+    <Text className={cn(SELECT_TRIGGER_TEXT_CLASS, chosen === false && SELECT_PLACEHOLDER_CLASS)}>
+      {content}
+    </Text>
   ) : (
     content
   );
 }
 
+/** The list of options. */
 function SelectContent({ className, children }: SelectContentProps) {
   const { open, setOpen } = useContext(SelectContext);
   return (
@@ -121,37 +137,30 @@ function SelectContent({ className, children }: SelectContentProps) {
           role="button"
           aria-label="Close"
         />
-        <View
-          className={cn(
-            "max-h-96 w-full max-w-sm rounded-md border border-foreground/10 bg-secondary p-1",
-            className,
-          )}
-        >
-          <ScrollView>{children}</ScrollView>
+        <View className={cn(SELECT_CONTENT_CLASS, "max-h-96 w-full max-w-sm p-1", className)}>
+          {/* `list`, because React Native's roles stop short of radix's `listbox`. */}
+          <ScrollView role="list">{children}</ScrollView>
         </View>
       </View>
     </Modal>
   );
 }
 
+/** One option. */
 function SelectItem({ value, disabled = false, className, children }: SelectItemProps) {
   const select = useContext(SelectContext);
   const selected = select.value === value;
   return (
     <Pressable
-      role="menuitem"
+      role="option"
+      aria-selected={selected}
       disabled={disabled}
       aria-disabled={disabled}
       onPress={() => {
         select.onValueChange(value);
         select.setOpen(false);
       }}
-      className={cn(
-        SELECT_ITEM_CLASS,
-        selected && "bg-active/40",
-        disabled && "opacity-50",
-        className,
-      )}
+      className={cn(SELECT_ITEM_CLASS, disabled && "opacity-50", className)}
     >
       {selected ? (
         <View className="absolute left-2 h-3.5 w-3.5 items-center justify-center">
@@ -176,10 +185,12 @@ function SelectGroup({ children }: SelectGroupProps) {
   return <View role="group">{children}</View>;
 }
 
+/** The heading over a group of options. */
 function SelectLabel({ className, children }: SelectLabelProps) {
   return <Text className={cn(SELECT_LABEL_CLASS, className)}>{children}</Text>;
 }
 
+/** A rule between groups of options. */
 function SelectSeparator({ className }: SelectSeparatorProps) {
   return <View role="separator" className={cn(SELECT_SEPARATOR_CLASS, className)} />;
 }

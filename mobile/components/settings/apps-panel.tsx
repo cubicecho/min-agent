@@ -4,7 +4,6 @@ import { useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Linking, Platform, View } from "react-native";
-import { ActionButton } from "@/components/action-button.tsx";
 import { useAppForm } from "@/components/app/app-form.tsx";
 import { ExternalLink, LayoutGrid } from "@/components/app/app-icons";
 import { EMBED_ICON } from "@/components/apps/embed-icon.ts";
@@ -142,7 +141,7 @@ function Editor({
               <ConfirmButton
                 variant="ghost"
                 size="icon"
-                label={`Remove ${name}`}
+                aria-label={`Remove ${name}`}
                 title={`Remove ${name}?`}
                 description="Its row leaves the sidebar. The app itself is not touched."
                 confirmLabel="Remove"
@@ -152,10 +151,10 @@ function Editor({
             ) : null}
             <form.Subscribe selector={(state) => state.values.url}>
               {(url) => (
-                <ActionButton
+                <Button
                   variant="ghost"
                   size="icon"
-                  label="Open in the browser"
+                  aria-label="Open in the browser"
                   disabled={!url}
                   onPress={() => void Linking.openURL(url)}
                   iconSlot={<ExternalLink className="size-4" />}
@@ -312,7 +311,7 @@ export function AppsPanel({ active = true }: { active?: boolean }) {
                   count={list.length}
                   emptySlot={
                     <EmptyState
-                      icon={LayoutGrid}
+                      iconSlot={<LayoutGrid />}
                       title="No apps yet"
                       description="Add one to put it in the sidebar."
                     />

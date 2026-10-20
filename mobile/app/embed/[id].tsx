@@ -2,7 +2,6 @@ import { type EmbedConfig, embedTitle } from "@shared/types.ts";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
 import { Linking, Platform, View } from "react-native";
-import { ActionButton } from "@/components/action-button.tsx";
 import { ExternalLink, LayoutGrid } from "@/components/app/app-icons";
 import { TITLE_ROW } from "@/components/app/title-row.ts";
 import { EMBED_ICON } from "@/components/apps/embed-icon.ts";
@@ -57,7 +56,7 @@ export default function EmbedScreen() {
             count={0}
             emptySlot={
               <EmptyState
-                icon={LayoutGrid}
+                iconSlot={<LayoutGrid />}
                 title={`No app is configured under “${id}”.`}
                 actionSlot={<SettingsLink tab="apps" label="Add one" />}
               />
@@ -81,8 +80,8 @@ export default function EmbedScreen() {
             className={cn("border-border border-b py-2", TITLE_ROW)}
             title={embedTitle(embed)}
             actionSlot={
-              <ActionButton
-                label="Open in the browser"
+              <Button
+                aria-label="Open in the browser"
                 variant="ghost"
                 size="icon-sm"
                 onPress={() => open(embed)}
@@ -114,6 +113,7 @@ export default function EmbedScreen() {
     );
   }
 
+  const EmbedIcon = EMBED_ICON[embed.icon];
   return (
     <PageLayout
       title={embedTitle(embed)}
@@ -122,7 +122,7 @@ export default function EmbedScreen() {
         // The page already has the app's name over it, so this is the one thing left to say and
         // the one thing to do about it — not a card repeating the title across the whole pane.
         <EmptyState
-          icon={EMBED_ICON[embed.icon]}
+          iconSlot={<EmbedIcon />}
           level={2}
           title={
             embed.mode === "external"
