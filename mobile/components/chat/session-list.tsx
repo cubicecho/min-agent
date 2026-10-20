@@ -4,10 +4,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
 import { View } from "react-native";
-import { ActionButton } from "@/components/action-button.tsx";
 import { useAppForm } from "@/components/app/app-form.tsx";
 import { MessageSquare } from "@/components/app/app-icons";
 import { ConfirmButton } from "@/components/confirm-button.tsx";
+import { DialogLayout } from "@/components/dialog-layout.tsx";
 import { ListItem } from "@/components/list-item.tsx";
 import { EmptyState } from "@/components/page.tsx";
 import { PageLayout } from "@/components/page-layout.tsx";
@@ -15,9 +15,9 @@ import { QueryState } from "@/components/query-state.tsx";
 import { Section } from "@/components/section.tsx";
 import { SettingsLink } from "@/components/settings/link.tsx";
 import { Sidebar, SidebarSection } from "@/components/sidebar.tsx";
+import { Alert } from "@/components/ui/alert.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Form } from "@/components/ui/form.tsx";
-import { FormDialog, FormDialogFooter } from "@/components/ui/form-dialog.tsx";
 import { Pencil, Plus, Trash2 } from "@/components/ui/icons";
 import type { InputHandle } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
@@ -153,8 +153,9 @@ function RenameForm({ list, id, title }: { list: List; id: string; title: string
     },
   });
 
+  const renameError = list.rename.error?.message;
   return (
-    <FormDialog
+    <DialogLayout
       open
       onOpenChange={(open) => {
         const isClosing = open === false;
@@ -163,18 +164,32 @@ function RenameForm({ list, id, title }: { list: List; id: string; title: string
         }
       }}
       title="Rename chat"
-    >
-      <form.AppForm>
-        <Form>
-          <form.AppField name="title">
-            {(field) => <field.InputField label="Title" autoFocus />}
-          </form.AppField>
-          <FormDialogFooter onCancel={close} error={list.rename.error?.message ?? null}>
+      hasUnsavedChanges={() => form.state.isDefaultValue === false}
+      contentSlot={
+        <form.AppForm>
+          <Form>
+            <form.AppField name="title">
+              {(field) => <field.InputField label="Title" autoFocus />}
+            </form.AppField>
+            {renameError ? (
+              <Alert
+                variant="destructive"
+                title="Could not rename the chat"
+                description={renameError}
+              />
+            ) : null}
+          </Form>
+        </form.AppForm>
+      }
+      footerActionsSlot={(cancel) => (
+        <>
+          <Button variant="outline" onPress={cancel} content="Cancel" />
+          <form.AppForm>
             <form.SubmitButton isEdit editLabel="Rename" savingLabel="Renaming…" />
-          </FormDialogFooter>
-        </Form>
-      </form.AppForm>
-    </FormDialog>
+          </form.AppForm>
+        </>
+      )}
+    />
   );
 }
 
@@ -207,17 +222,17 @@ function Search({ list }: { list: List }) {
 function RowActions({ list, id, title }: { list: List; id: string; title: string }) {
   return (
     <View className="flex-row items-center">
-      <ActionButton
+      <Button
         variant="ghost"
         size="icon-sm"
-        label={`Rename ${title}`}
+        aria-label={`Rename ${title}`}
         onPress={() => list.setRenaming({ id, title })}
         iconSlot={<Pencil aria-hidden className="size-4" />}
       />
       <ConfirmButton
         variant="ghost"
         size="icon-sm"
-        label={`Delete ${title}`}
+        aria-label={`Delete ${title}`}
         title="Delete this chat?"
         description={`“${title}” and everything said in it will be gone. This cannot be undone.`}
         onConfirm={() => list.remove.mutate(id)}
@@ -261,7 +276,7 @@ function ListState({ list, compact }: { list: List; compact?: boolean }) {
             <EmptyState compact title="No sessions yet." />
           ) : (
             <EmptyState
-              icon={MessageSquare}
+              iconSlot={<MessageSquare />}
               title="No sessions yet"
               description="Start a chat and it will be listed here."
               actionSlot={<NewChatButton list={list} />}

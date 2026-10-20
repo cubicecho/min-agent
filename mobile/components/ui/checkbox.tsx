@@ -4,6 +4,7 @@ import { CHECKBOX_CLASS, type CheckboxProps } from "@/components/ui/checkbox-bas
 import { Check } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
+/** A box that is checked or not. */
 function Checkbox({
   checked: checkedProp,
   defaultChecked = false,
@@ -29,7 +30,7 @@ function Checkbox({
       onBlur={onBlur}
       className={cn(
         CHECKBOX_CLASS,
-        checked ? "border-active bg-active" : "border-foreground/15 bg-background",
+        checked ? "border-active bg-active" : "border-foreground/50 bg-background",
         disabled && "opacity-50",
         className,
       )}

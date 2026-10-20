@@ -55,17 +55,23 @@ function createItemStore() {
   const entries = new Map<string, Entry>();
   const listeners = new Set<() => void>();
   const notify = () => {
-    for (const listener of listeners) listener();
+    for (const listener of listeners) {
+      listener();
+    }
   };
   return {
     set(id: string, entry: Entry) {
       const was = entries.get(id);
-      if (was && was.matches === entry.matches && was.shown === entry.shown) return;
+      if (was && was.matches === entry.matches && was.shown === entry.shown) {
+        return;
+      }
       entries.set(id, entry);
       notify();
     },
     remove(id: string) {
-      if (entries.delete(id)) notify();
+      if (entries.delete(id)) {
+        notify();
+      }
     },
     subscribe(listener: () => void) {
       listeners.add(listener);
@@ -76,13 +82,21 @@ function createItemStore() {
     /** Items that match the search: what cmdk calls the filtered count. */
     matching() {
       let count = 0;
-      for (const entry of entries.values()) if (entry.matches) count++;
+      for (const entry of entries.values()) {
+        if (entry.matches) {
+          count++;
+        }
+      }
       return count;
     },
     /** Items drawn in one group, forced or matching. */
     shownIn(group: string) {
       let count = 0;
-      for (const entry of entries.values()) if (entry.group === group && entry.shown) count++;
+      for (const entry of entries.values()) {
+        if (entry.group === group && entry.shown) {
+          count++;
+        }
+      }
       return count;
     },
   };
@@ -110,6 +124,7 @@ const CommandContext = createContext<CommandState>({
 
 const CommandGroupContext = createContext<string | undefined>(undefined);
 
+/** The root of a filtered list: it holds the search text and decides which items match. */
 function Command({
   label,
   filter = matchesEveryWord,
@@ -128,6 +143,7 @@ function Command({
   );
 }
 
+/** A `Command` inside a dialog: a command palette. */
 function CommandDialog({
   title = COMMAND_DIALOG_TITLE,
   description = COMMAND_DIALOG_DESCRIPTION,
@@ -155,6 +171,7 @@ function CommandDialog({
   );
 }
 
+/** The search box that filters the list. */
 function CommandInput({
   value,
   onValueChange,
@@ -168,7 +185,9 @@ function CommandInput({
   // A controlled box drives the search; an uncontrolled one writes it as it is typed. cmdk's
   // arrangement, so a caller who holds `value` and clears it clears the filter too.
   useEffect(() => {
-    if (value !== undefined) setSearch(value);
+    if (value !== undefined) {
+      setSearch(value);
+    }
   }, [value, setSearch]);
 
   return (
@@ -177,7 +196,9 @@ function CommandInput({
         type="search"
         value={value ?? search}
         onChangeText={(text) => {
-          if (value === undefined) setSearch(text);
+          if (value === undefined) {
+            setSearch(text);
+          }
           onValueChange?.(text);
         }}
         placeholder={placeholder}
@@ -191,6 +212,7 @@ function CommandInput({
   );
 }
 
+/** The scrolling list of groups and items. */
 function CommandList({ label = COMMAND_LIST_LABEL, className, children }: CommandListProps) {
   return (
     <ScrollView
@@ -201,17 +223,20 @@ function CommandList({ label = COMMAND_LIST_LABEL, className, children }: Comman
       // word and drops one it does not know, so on device the rows sit in a plain `list`.
       role={Platform.OS === "web" ? ("listbox" as Role) : "list"}
       aria-label={label}
-      className={cn("max-h-[300px]", className)}
+      className={cn("max-h-72", className)}
     >
       {children}
     </ScrollView>
   );
 }
 
+/** What is shown when no item matches the search. */
 function CommandEmpty({ className, children }: CommandEmptyProps) {
   const { store } = useContext(CommandContext);
   const matching = useSyncExternalStore(store.subscribe, store.matching, store.matching);
-  if (matching > 0) return null;
+  if (matching > 0) {
+    return null;
+  }
   return (
     <View className={cn("py-6", className)}>
       {typeof children === "string" ? (
@@ -223,12 +248,19 @@ function CommandEmpty({ className, children }: CommandEmptyProps) {
   );
 }
 
+/** A set of items under a heading, hidden when none of them matches. */
 function CommandGroup({ heading, forceMount = false, className, children }: CommandGroupProps) {
   const { store } = useContext(CommandContext);
   const id = useId();
   const shownIn = () => store.shownIn(id);
   const shown = useSyncExternalStore(store.subscribe, shownIn, shownIn);
-  const hidden = !forceMount && shown === 0;
+  const hidden = forceMount === false && shown === 0;
+  const title =
+    typeof heading === "string" ? (
+      <Text className="px-2 py-1.5 text-xs font-semibold text-foreground/60">{heading}</Text>
+    ) : (
+      heading
+    );
   return (
     <CommandGroupContext.Provider value={id}>
       {/* Hidden rather than unmounted: the items inside have to stay mounted to say whether they
@@ -238,23 +270,23 @@ function CommandGroup({ heading, forceMount = false, className, children }: Comm
         aria-label={typeof heading === "string" ? heading : undefined}
         className={cn("p-1", hidden && "hidden", className)}
       >
-        {heading == null ? null : typeof heading === "string" ? (
-          <Text className="px-2 py-1.5 text-xs font-medium text-foreground/60">{heading}</Text>
-        ) : (
-          heading
-        )}
+        {title}
         {children}
       </View>
     </CommandGroupContext.Provider>
   );
 }
 
+/** A rule between groups. */
 function CommandSeparator({ alwaysRender = false, className }: CommandSeparatorProps) {
   const { search } = useContext(CommandContext);
-  if (search !== "" && !alwaysRender) return null;
+  if (search !== "" && alwaysRender === false) {
+    return null;
+  }
   return <View aria-hidden className={cn("-mx-1 h-px bg-foreground/10", className)} />;
 }
 
+/** One row that can be chosen, filtered by its `value` and its text. */
 function CommandItem({
   value,
   keywords,
@@ -271,7 +303,8 @@ function CommandItem({
   const group = useContext(CommandGroupContext);
   const id = useId();
   const itemValue = (value ?? commandItemText(children)).trim();
-  const matches = !shouldFilter || search.trim() === "" || filter(itemValue, search, keywords) > 0;
+  const matches =
+    shouldFilter === false || search.trim() === "" || filter(itemValue, search, keywords) > 0;
   const shown = matches || forceMount;
 
   // Before paint, so `CommandEmpty` does not flash "No results" over a list that has rows.
@@ -280,7 +313,9 @@ function CommandItem({
   }, [store, id, matches, shown, group]);
   useLayoutEffect(() => () => store.remove(id), [store, id]);
 
-  if (!shown) return null;
+  if (shown === false) {
+    return null;
+  }
   return (
     <Pressable
       role="option"
@@ -315,6 +350,7 @@ function CommandItem({
   );
 }
 
+/** The keyboard shortcut shown at the far end of an item. */
 function CommandShortcut({ className, children }: CommandShortcutProps) {
   return (
     <Text className={cn("ml-auto text-xs tracking-widest text-foreground/60", className)}>

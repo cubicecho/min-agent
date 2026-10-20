@@ -9,7 +9,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { ActionButton } from "@/components/action-button.tsx";
 import { ArrowDown, MessageSquare } from "@/components/app/app-icons";
 import { Composer } from "@/components/chat/composer.tsx";
 import { MessageView } from "@/components/chat/message-view.tsx";
@@ -17,8 +16,8 @@ import { PromptPicker, useMcpPrompts } from "@/components/chat/prompt-picker.tsx
 import { SessionsPanel, SessionsScreen } from "@/components/chat/session-list.tsx";
 import { ContextMeter, LiveMeter, MUTED, TokensDialog } from "@/components/chat/token-readouts.tsx";
 import { useTurn } from "@/components/chat/use-turn.ts";
+import { Combobox } from "@/components/combobox.tsx";
 import { HeaderContentFooter } from "@/components/header-content-footer.tsx";
-import { OptionSelect } from "@/components/option-select.tsx";
 import { EmptyState } from "@/components/page.tsx";
 import { PageHeader } from "@/components/page-header.tsx";
 import { SettingsLink } from "@/components/settings/link.tsx";
@@ -229,17 +228,17 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
                   model picker.
                 */}
                 {fill || usageLine ? (
-                  <ActionButton
+                  <Button
                     variant="ghost"
                     size="sm"
-                    label="What the tokens went on"
+                    aria-label="What the tokens went on"
                     className="h-auto flex-wrap gap-3 px-1 py-0.5"
                     onPress={() => setTokensOpen(true)}
                     iconSlot={fill ? <ContextMeter fill={fill} /> : null}
                     content={usageLine ? <Text className={MUTED}>{usageLine}</Text> : null}
                   />
                 ) : null}
-                <OptionSelect
+                <Combobox
                   aria-label="Model"
                   searchable
                   searchPlaceholder="Find a model…"
@@ -360,7 +359,7 @@ function Nothing({ configured }: { configured: boolean }) {
   if (configured) {
     return (
       <EmptyState
-        icon={MessageSquare}
+        iconSlot={<MessageSquare />}
         title="No chat open"
         description="Send a message to start one, or open one from the list."
       />
@@ -368,7 +367,7 @@ function Nothing({ configured }: { configured: boolean }) {
   }
   return (
     <EmptyState
-      icon={MessageSquare}
+      iconSlot={<MessageSquare />}
       title="No model yet"
       description="Point min-agent at an OpenAI-compatible server and pick a model, and this becomes a chat."
       actionSlot={<SettingsLink tab="model" label="Set up a model" />}

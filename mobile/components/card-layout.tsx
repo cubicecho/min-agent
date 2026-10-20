@@ -9,6 +9,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  DescriptionHint,
+  DescriptionHintText,
+  type DescriptionPlacement,
+} from "@/components/ui/description-hint";
 import { cn, type SlotNode } from "@/lib/utils";
 
 export type CardLayoutProps = {
@@ -27,6 +32,16 @@ export type CardLayoutProps = {
   level?: 1 | 2 | 3 | undefined;
   /** One line on what the card holds, or what changing it costs. */
   description?: ReactNode | undefined;
+  /**
+   * Where the description is drawn. `inline` (the default) puts it under the title; `popover`
+   * puts it behind a small button after the title, named "About <title>", and on the web a screen
+   * reader still reads it under the title. It stays inline on a card with no title, which has nothing to put
+   * the button beside, and on a card with no body and no footer, where the description is all
+   * the card says.
+   */
+  descriptionPlacement?: DescriptionPlacement | undefined;
+  /** The `popover` button's glyph. A question mark by default. */
+  descriptionIconSlot?: SlotNode | undefined;
   /**
    * Sits before the title. On the web it is sized to the text — pass a bare `<Plus />`. On device
    * an icon cannot be sized from outside it, so pass it at the size you want.
@@ -63,7 +78,7 @@ export type CardLayoutProps = {
 const ICON = Platform.select({ web: "[&_svg]:size-4", default: undefined });
 
 /** A bar standing in for text that has not arrived — `Skeleton`'s look, on both platforms. */
-const BAR = cn("h-4 rounded-md bg-hover", Platform.OS === "web" && "animate-pulse");
+const BAR = cn("h-4 rounded-md bg-foreground/10", Platform.OS === "web" && "animate-pulse");
 
 /**
  * The header, as a row that wraps: the title and description in one column, the action after it.
@@ -129,6 +144,8 @@ export function CardLayout({
   title,
   level = 3,
   description,
+  descriptionPlacement = "inline",
+  descriptionIconSlot,
   iconSlot,
   actionSlot,
   emptySlot,
@@ -144,16 +161,24 @@ export function CardLayout({
   // `Children.count` rather than a truth test: `{items.map(…)}` on an empty array is an empty
   // array, not null, and it is the shape a card is nearly always handed.
   const isEmpty = Children.count(contentSlot) === 0;
-  const body = loading ? <CardLayoutSkeleton /> : isEmpty && emptySlot ? emptySlot : contentSlot;
+  const settled = isEmpty && emptySlot ? emptySlot : contentSlot;
+  const body = loading ? <CardLayoutSkeleton /> : settled;
 
   const hasText = Boolean(title || description);
   const hasHeader = Boolean(hasText || actionSlot);
   const hasFooter = Boolean(footerSlot || footerActionsSlot);
 
+  // A card that is only its title and description keeps the description: folded, it would be a
+  // heading on an empty card.
+  const folded =
+    Boolean(title && description) &&
+    descriptionPlacement === "popover" &&
+    Boolean(body || hasFooter);
+
   return (
     <Card testID="card-layout" className={className}>
       {hasHeader ? (
-        <CardHeader className={cn(HEADER, !hasText && "justify-end", headerClassName)}>
+        <CardHeader className={cn(HEADER, hasText === false && "justify-end", headerClassName)}>
           {hasText ? (
             <View className={HEADER_TEXT}>
               {title ? (
@@ -175,9 +200,23 @@ export function CardLayout({
                   >
                     {title}
                   </CardTitle>
+                  {folded ? (
+                    <DescriptionHint
+                      testID="card-layout-description-trigger"
+                      label={title}
+                      fallbackName="About this card"
+                      description={description}
+                      iconSlot={descriptionIconSlot}
+                    />
+                  ) : null}
                 </View>
               ) : null}
-              {description ? <CardDescription>{description}</CardDescription> : null}
+              {/* Read where the inline line would be. A card is not a landmark or a control, so
+                  there is nothing for an `aria-describedby` to hang on. */}
+              {folded ? <DescriptionHintText>{description}</DescriptionHintText> : null}
+              {description && folded === false ? (
+                <CardDescription>{description}</CardDescription>
+              ) : null}
             </View>
           ) : null}
           {actionSlot ? <View className={HEADER_ACTION}>{actionSlot}</View> : null}
@@ -185,13 +224,21 @@ export function CardLayout({
       ) : null}
 
       {/* The header keeps its real title while loading: only the part that is waiting waits. */}
-      {body ? <CardContent className={cn("min-w-0", contentClassName)}>{body}</CardContent> : null}
+      {body ? (
+        // `CardContent` is `pt-0` because a header above it brings the top padding. With no
+        // header the body is the first thing in the card and sat on its top edge.
+        <CardContent className={cn("min-w-0", hasHeader === false && "pt-6", contentClassName)}>
+          {body}
+        </CardContent>
+      ) : null}
 
       {hasFooter ? (
         <CardFooter
           className={cn(
             footerSlot && footerActionsSlot && "justify-between",
             !footerSlot && "justify-end",
+            // The same, for a footer with neither a header nor a body over it.
+            hasHeader === false && !body && "pt-6",
             footerClassName,
           )}
         >

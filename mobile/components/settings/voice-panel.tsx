@@ -53,26 +53,30 @@ export function VoicePanel() {
             title="Models"
             contentSlot={
               <>
-                <FieldRow>
-                  <form.AppField name="sttModel">
-                    {() => (
-                      <TextField
-                        label="Speech to text"
-                        description="whisper-1, or tcp://host:10300 for a Wyoming one. Blank uses the device."
-                        placeholder="off"
-                      />
-                    )}
-                  </form.AppField>
-                  <form.AppField name="ttsModel">
-                    {() => (
-                      <TextField
-                        label="Text to speech"
-                        description="tts-1, or tcp://host:10200 for a Wyoming one. Blank uses the device."
-                        placeholder="off"
-                      />
-                    )}
-                  </form.AppField>
-                </FieldRow>
+                <FieldRow
+                  contentSlot={
+                    <>
+                      <form.AppField name="sttModel">
+                        {() => (
+                          <TextField
+                            label="Speech to text"
+                            description="whisper-1, or tcp://host:10300 for a Wyoming one. Blank uses the device."
+                            placeholder="off"
+                          />
+                        )}
+                      </form.AppField>
+                      <form.AppField name="ttsModel">
+                        {() => (
+                          <TextField
+                            label="Text to speech"
+                            description="tts-1, or tcp://host:10200 for a Wyoming one. Blank uses the device."
+                            placeholder="off"
+                          />
+                        )}
+                      </form.AppField>
+                    </>
+                  }
+                />
 
                 <form.AppField name="ttsVoice">
                   {() => (

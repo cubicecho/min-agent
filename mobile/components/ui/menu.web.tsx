@@ -40,6 +40,7 @@ const MenuContext = createContext<MenuState>({
   skipReturnRef: { current: false },
 });
 
+/** The root of a menu of actions: it holds the open state. */
 function Menu({
   open,
   onOpenChange,
@@ -52,7 +53,9 @@ function Menu({
   const [uncontrolled, setUncontrolled] = useState(defaultOpen);
   const isOpen = open ?? uncontrolled;
   const setOpen = (next: boolean) => {
-    if (open === undefined) setUncontrolled(next);
+    if (open === undefined) {
+      setUncontrolled(next);
+    }
     onOpenChange?.(next);
   };
   const skipReturnRef = useRef(false);
@@ -63,6 +66,7 @@ function Menu({
   );
 }
 
+/** The element that opens the menu. */
 function MenuTrigger({
   asChild,
   ...props
@@ -70,6 +74,7 @@ function MenuTrigger({
   return <MenuPrimitive.Trigger data-slot="menu-trigger" asChild={asChild ?? false} {...props} />;
 }
 
+/** The menu's list of rows. */
 function MenuContent({
   className,
   align = "center",
@@ -94,7 +99,9 @@ function MenuContent({
           onCloseAutoFocus?.(event);
           // Radix focuses the trigger unless the event is prevented. A `focusesElsewhere` row
           // has already focused its target by now, and the trigger would take it back.
-          if (skipReturnRef.current) event.preventDefault();
+          if (skipReturnRef.current) {
+            event.preventDefault();
+          }
           skipReturnRef.current = false;
         }}
       />
@@ -102,6 +109,7 @@ function MenuContent({
   );
 }
 
+/** One action in the menu, which closes it when chosen. */
 function MenuItem({
   iconSlot,
   label,
@@ -121,7 +129,7 @@ function MenuItem({
       {iconSlot}
       <span className={cn(MENU_ITEM_TEXT_CLASS, "truncate")}>{label}</span>
       {typeof trailing === "string" ? (
-        <span className={cn(MENU_TRAILING_CLASS, "tracking-widest")}>{trailing}</span>
+        <span className={MENU_TRAILING_CLASS}>{trailing}</span>
       ) : (
         trailing
       )}
@@ -134,11 +142,9 @@ function MenuItem({
   // which every router's click does — so a menu handed the router's click would never close.
   // Cloned the other way, the router link is handed radix's click and runs it first. A disabled
   // row is no link at all, so nothing can follow it.
-  const anchor = disabled ? undefined : linkSlot ? (
-    cloneElement(linkSlot, undefined, row)
-  ) : href !== undefined ? (
-    <a href={href}>{row}</a>
-  ) : undefined;
+  const plainAnchor = href !== undefined ? <a href={href}>{row}</a> : undefined;
+  const liveAnchor = linkSlot ? cloneElement(linkSlot, undefined, row) : plainAnchor;
+  const anchor = disabled ? undefined : liveAnchor;
   return (
     <MenuPrimitive.Item
       data-slot="menu-item"
@@ -174,6 +180,7 @@ function MenuItem({
   );
 }
 
+/** A rule between groups of rows. */
 function MenuSeparator({
   className,
   ...props
@@ -201,7 +208,7 @@ function ToggleRowBody({
       {iconSlot}
       <span className={cn(MENU_ITEM_TEXT_CLASS, "truncate")}>{label}</span>
       {typeof trailing === "string" ? (
-        <span className={cn(MENU_TRAILING_CLASS, "tracking-widest")}>{trailing}</span>
+        <span className={MENU_TRAILING_CLASS}>{trailing}</span>
       ) : (
         trailing
       )}
@@ -216,6 +223,7 @@ function ToggleRowBody({
 
 const TOGGLE_ROW_CLASS = cn(MENU_ITEM_CLASS, MENU_ITEM_WEB_CLASS, "text-foreground focus:bg-hover");
 
+/** A row that is checked or not, and toggles when chosen. */
 function MenuCheckboxItem({
   iconSlot,
   label,
@@ -250,6 +258,7 @@ function MenuCheckboxItem({
   );
 }
 
+/** A set of `MenuRadioItem`s of which one is chosen. */
 function MenuRadioGroup({
   value,
   onValueChange,

@@ -58,13 +58,17 @@ export function useSettledText(
   };
   const later = (text: string) => {
     clearTimeout(timer.current);
-    if (onSettledText === undefined) return;
+    if (onSettledText === undefined) {
+      return;
+    }
     timer.current = setTimeout(() => handler.current?.(text), debounce);
   };
   return { later, now };
 }
 
+/** The search box's accessible name unless it is given one. */
 export const SEARCH_LABEL = "Search";
+/** The accessible name of the button that clears the search box. */
 export const SEARCH_CLEAR_LABEL = "Clear search";
 
 /**
@@ -83,7 +87,11 @@ export function searchInputName({
   ariaLabelledBy: string | undefined;
   id: string | undefined;
 }): string | undefined {
-  if (ariaLabel !== undefined) return ariaLabel;
-  if (label !== undefined) return label;
+  if (ariaLabel !== undefined) {
+    return ariaLabel;
+  }
+  if (label !== undefined) {
+    return label;
+  }
   return ariaLabelledBy || id ? undefined : SEARCH_LABEL;
 }

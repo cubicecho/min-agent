@@ -70,7 +70,7 @@ export function ConfirmDialog({
         role="alertdialog"
         showCloseButton={false}
         onInteractOutside={holdOpen}
-        className="sm:max-w-[360px]"
+        className="sm:max-w-sm"
       >
         {/* Keyed by the text, so a prompt raised over an open one for something else starts
             empty too. Closing unmounts the body on both platforms, which is what empties the
@@ -149,7 +149,9 @@ function ConfirmDialogBody({
             value={typed}
             onChangeText={setTyped}
             onSubmitEditing={() => {
-              if (!locked) onConfirm();
+              if (locked === false) {
+                onConfirm();
+              }
             }}
             autoFocus
           />

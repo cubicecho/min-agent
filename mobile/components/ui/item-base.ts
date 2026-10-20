@@ -1,7 +1,10 @@
 import { cva } from "class-variance-authority";
 
+/** How an `Item`'s surface is drawn. */
 export type ItemVariant = "default" | "outline" | "muted";
+/** How much padding an `Item` has. */
 export type ItemSize = "default" | "sm";
+/** What `ItemMedia` holds, which picks its box. */
 export type ItemMediaVariant = "default" | "icon" | "image";
 
 /**
@@ -55,7 +58,7 @@ export const ITEM_CONTENT_CLASS = "flex-1 gap-1";
 export const ITEM_TITLE_CLASS = "flex-row items-center gap-2";
 
 /** The title's type. On a device it goes on the `Text` a string is wrapped in, with its ink. */
-export const ITEM_TITLE_TEXT = "text-sm leading-snug font-medium";
+export const ITEM_TITLE_TEXT = "text-sm leading-snug font-semibold";
 
 /** The muted line under the title, two lines at most. */
 export const ITEM_DESCRIPTION_CLASS =

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { OptionSelect, type SelectEntry } from "@/components/option-select.tsx";
+import { Combobox, type SelectEntry } from "@/components/combobox.tsx";
 import { PasswordInput, type PasswordInputProps } from "@/components/password-input.tsx";
 import { createAppForm, splitProps, useFieldContext } from "@/components/ui/form.tsx";
 import { Input, type InputProps } from "@/components/ui/input";
@@ -113,7 +113,7 @@ type OptionSelectFieldProps = FieldText & {
 };
 
 /**
- * A choice from a list, as cubeui's `OptionSelect` — groups, notes and all. The registry's own
+ * A choice from a list, as cubeui's `Combobox` — groups, notes and all. The registry's own
  * `SelectField` takes flat label/value pairs only, which is not enough for a model list.
  */
 function OptionSelectField(props: OptionSelectFieldProps) {
@@ -124,7 +124,7 @@ function OptionSelectField(props: OptionSelectFieldProps) {
       {...fieldProps}
       label={props.label}
       controlSlot={
-        <OptionSelect
+        <Combobox
           {...control}
           aria-label={props.label}
           value={field.state.value}

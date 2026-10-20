@@ -147,8 +147,11 @@ function toEnd(scroller: unknown, animated: boolean) {
 
 /** Hands a node to a caller's ref, whichever kind of ref it is. */
 function assign<T>(ref: Ref<T> | undefined, node: T | null) {
-  if (typeof ref === "function") ref(node);
-  else if (ref) ref.current = node;
+  if (typeof ref === "function") {
+    ref(node);
+  } else if (ref) {
+    ref.current = node;
+  }
 }
 
 /**
@@ -184,7 +187,9 @@ function Body({
   const scroller = useRef<unknown>(null);
   useImperativeHandle<ScrollHandle, ScrollHandle>(scrollRef, () => ({
     scrollToEnd: ({ animated = true } = {}) => {
-      if (scroll && scroller.current) toEnd(scroller.current, animated);
+      if (scroll && scroller.current) {
+        toEnd(scroller.current, animated);
+      }
     },
   }));
 
@@ -195,7 +200,7 @@ function Body({
         // The chassis's own ref type is the device's scroller; on the web both are a `<div>`.
         ref={(node) => {
           scroller.current = node;
-          assign(contentRef as unknown as Ref<ElementRef<typeof View>>, node);
+          assign(contentRef as Ref<ElementRef<typeof View>>, node);
         }}
         // A scrolling region a keyboard cannot reach is a region a keyboard user cannot read:
         // the mouse wheel moves it and nothing else does, which axe reports as

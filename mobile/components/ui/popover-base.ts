@@ -60,3 +60,13 @@ export type PopoverSectionProps = {
   className?: string | undefined;
   children?: ReactNode;
 };
+
+/** The pane's card. */
+export const POPOVER_CONTENT_CLASS =
+  "w-72 rounded-md border border-foreground/10 bg-secondary p-4 shadow-md";
+/** The block holding the title and the description. */
+export const POPOVER_HEADER_CLASS = "gap-1";
+/** The pane's title. */
+export const POPOVER_TITLE_CLASS = "text-sm font-semibold text-foreground";
+/** The sentence under the title. */
+export const POPOVER_DESCRIPTION_CLASS = "text-sm text-foreground/60";

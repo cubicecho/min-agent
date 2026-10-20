@@ -18,6 +18,7 @@ type SeparatorProps = Omit<React.ComponentProps<typeof View>, "className" | "chi
   decorative?: boolean | undefined;
 };
 
+/** A one-pixel rule between groups, horizontal or vertical. */
 function Separator({
   className,
   orientation = "horizontal",

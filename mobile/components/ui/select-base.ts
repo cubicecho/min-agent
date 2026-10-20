@@ -76,10 +76,22 @@ export type SelectSeparatorProps = {
   className?: string | undefined;
 };
 
+/** The select trigger's box, which matches an input's. */
 export const SELECT_TRIGGER_CLASS =
-  "border-foreground/15 bg-background h-10 w-full flex-row items-center justify-between rounded-md border px-3 py-2";
+  "border-foreground/50 bg-background h-10 w-full flex-row items-center justify-between rounded-md border px-3 py-2";
+/** The type of the chosen value in the trigger. */
 export const SELECT_TRIGGER_TEXT_CLASS = "text-foreground text-sm";
+/** The type of the placeholder, shown while nothing is chosen. */
+export const SELECT_PLACEHOLDER_CLASS = "text-foreground/60";
+/** The chevron at the trigger's end. */
+export const SELECT_ICON_CLASS = "h-4 w-4 text-foreground/60";
+/** The card the options sit on. */
+export const SELECT_CONTENT_CLASS = "rounded-md border border-foreground/10 bg-secondary shadow-md";
+/** One option's row, with room at its start for the tick. */
 export const SELECT_ITEM_CLASS = "w-full flex-row items-center rounded-sm py-1.5 pl-8 pr-2";
+/** The type of an option's label. */
 export const SELECT_ITEM_TEXT_CLASS = "text-sm text-foreground";
+/** The heading over a group of options. */
 export const SELECT_LABEL_CLASS = "px-2 py-1.5 text-foreground/60 text-xs";
+/** The rule between groups of options. */
 export const SELECT_SEPARATOR_CLASS = "-mx-1 my-1 h-px bg-foreground/10";

@@ -271,14 +271,18 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
         title="Pricing"
         description="Only used to turn the token counts into a cost. Leave both at 0 — the default for a local model — and min-agent shows tokens alone."
         contentSlot={
-          <FieldRow>
-            <form.AppField name="pricing.inputPer1M">
-              {(field) => <field.NumberField label="Input $ / 1M" />}
-            </form.AppField>
-            <form.AppField name="pricing.outputPer1M">
-              {(field) => <field.NumberField label="Output $ / 1M" />}
-            </form.AppField>
-          </FieldRow>
+          <FieldRow
+            contentSlot={
+              <>
+                <form.AppField name="pricing.inputPer1M">
+                  {(field) => <field.NumberField label="Input $ / 1M" />}
+                </form.AppField>
+                <form.AppField name="pricing.outputPer1M">
+                  {(field) => <field.NumberField label="Output $ / 1M" />}
+                </form.AppField>
+              </>
+            }
+          />
         }
       />
     </>

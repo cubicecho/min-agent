@@ -20,13 +20,22 @@ type QueryLike = {
 /** What a failure says when neither the caller nor the error has anything to say. */
 const FALLBACK = "The server did not answer.";
 
-/** The error's own `message`, which is the transport's wording rather than the app's. */
+/**
+ * The error's own `message`, which is the transport's wording rather than the app's. Empty when it
+ * has none, so the caller's `|| FALLBACK` speaks; the forms' `messageOf` prints the value instead.
+ */
 function messageOf(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
   if (typeof error === "object" && error !== null && "message" in error) {
     const { message } = error as { message: unknown };
-    if (typeof message === "string") return message;
+    if (typeof message === "string") {
+      return message;
+    }
   }
   return "";
 }
@@ -36,6 +45,7 @@ const settles = (value: unknown): value is PromiseLike<unknown> =>
   value !== null &&
   typeof (value as { then?: unknown }).then === "function";
 
+/** Draws a query's error, loading or empty state, and `contentSlot` once there are rows. */
 export function QueryState({
   query,
   what,
@@ -71,7 +81,7 @@ export function QueryState({
   describe?: ((error: unknown) => string) | undefined;
   className?: string | undefined;
 }) {
-  if (query.isError)
+  if (query.isError) {
     return (
       <QueryError
         error={query.error}
@@ -82,7 +92,8 @@ export function QueryState({
         {...(className === undefined ? {} : { className })}
       />
     );
-  if (query.isPending)
+  }
+  if (query.isPending) {
     return (
       <RowSkeleton
         rows={rows}
@@ -90,7 +101,10 @@ export function QueryState({
         {...(className === undefined ? {} : { className })}
       />
     );
-  if (count === 0) return <>{emptySlot}</>;
+  }
+  if (count === 0) {
+    return <>{emptySlot}</>;
+  }
   return null;
 }
 
@@ -138,7 +152,9 @@ export function QueryError({
   const [retrying, setRetrying] = useState(false);
   const retry = () => {
     const result = onRetry();
-    if (!settles(result)) return;
+    if (settles(result) === false) {
+      return;
+    }
     setRetrying(true);
     Promise.resolve(result)
       .catch(() => {})
@@ -150,12 +166,12 @@ export function QueryError({
   // The same three parts — what failed, why, try again — at the size of a nav row. No card, since a
   // bordered box inside a rail reads as one more row, and the retry is a small outline button so the rail's
   // only filled control stays the primary action above it.
-  if (compact)
+  if (compact) {
     return (
       <View role="alert" testID="query-error" className={cn("min-w-0 gap-1 px-2 py-1", className)}>
         <View className="min-w-0 flex-row items-center gap-1.5">
           <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-negative" aria-hidden />
-          <Text className="min-w-0 flex-1 font-medium text-negative text-xs">
+          <Text className="min-w-0 flex-1 font-semibold text-negative text-xs">
             Could not load {what}
           </Text>
         </View>
@@ -172,6 +188,7 @@ export function QueryError({
         </View>
       </View>
     );
+  }
 
   return (
     <Card
@@ -187,7 +204,7 @@ export function QueryError({
           colour because native inherits none — the two standing conversion rules. */}
       <View className="flex-row items-center gap-2">
         <TriangleAlert className="h-4 w-4 text-negative" aria-hidden />
-        <Text className="font-medium text-negative text-sm">Could not load {what}</Text>
+        <Text className="font-semibold text-negative text-sm">Could not load {what}</Text>
       </View>
       <Text className="text-foreground/60 text-sm">{reason}</Text>
       <View className="flex-row">
@@ -232,7 +249,7 @@ export function RowSkeleton({
   compact?: boolean | undefined;
   className?: string | undefined;
 }) {
-  if (compact)
+  if (compact) {
     return (
       <View role="status" aria-label="Loading" className={cn("gap-1", className)}>
         {Array.from({ length: rows }, (_, index) => (
@@ -241,11 +258,12 @@ export function RowSkeleton({
             key={index}
             testID="row-skeleton"
             aria-hidden
-            className="h-8 animate-pulse rounded-md bg-hover"
+            className="h-8 animate-pulse rounded-md bg-foreground/10"
           />
         ))}
       </View>
     );
+  }
 
   return (
     <View role="status" aria-label="Loading" className={cn("gap-2", className)}>
@@ -260,8 +278,8 @@ export function RowSkeleton({
           {/* `animate-pulse` resolves to nothing on device and is kept for the same reason
               `page.tsx` keeps `container mx-auto`: the class is what the compiled web half needs,
               and dropping it here to tidy the native file would quietly regress the DOM. */}
-          <View className="h-4 w-1/3 animate-pulse rounded-md bg-hover" />
-          <View className="h-3 w-2/3 animate-pulse rounded-md bg-hover" />
+          <View className="h-4 w-1/3 animate-pulse rounded-md bg-foreground/10" />
+          <View className="h-3 w-2/3 animate-pulse rounded-md bg-foreground/10" />
         </Card>
       ))}
     </View>

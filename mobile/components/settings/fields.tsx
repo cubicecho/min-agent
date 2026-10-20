@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { HintedFieldWrapper } from "@/components/app/description-hint.tsx";
-import { OptionSelect, type SelectEntry } from "@/components/option-select.tsx";
+import { Combobox, type SelectEntry } from "@/components/combobox.tsx";
 import { useFieldContext } from "@/components/ui/form.tsx";
 import { Input, type InputProps } from "@/components/ui/input";
 import { Textarea, type TextareaProps } from "@/components/ui/textarea";
@@ -103,7 +103,7 @@ export function OptionalSelectField({
       label={label}
       description={description}
       controlSlot={
-        <OptionSelect
+        <Combobox
           aria-label={label}
           disabled={disabled}
           searchable={searchable}

@@ -136,46 +136,54 @@ export function AgentPanel() {
             description="What one turn is allowed to spend. The context window is the whole conversation, and the reply limit is only the answer at the end of it."
             contentSlot={
               <>
-                <FieldRow>
-                  <form.AppField name="maxTokens">
-                    {(field) => (
-                      <field.NumberField
-                        integer
-                        label="Max reply tokens"
-                        description="The longest single reply. Not the context window."
-                      />
-                    )}
-                  </form.AppField>
-                  <form.AppField name="temperature">
-                    {(field) => (
-                      <field.NumberField
-                        label="Temperature"
-                        description="Higher is more random. 0 is deterministic."
-                      />
-                    )}
-                  </form.AppField>
-                </FieldRow>
+                <FieldRow
+                  contentSlot={
+                    <>
+                      <form.AppField name="maxTokens">
+                        {(field) => (
+                          <field.NumberField
+                            integer
+                            label="Max reply tokens"
+                            description="The longest single reply. Not the context window."
+                          />
+                        )}
+                      </form.AppField>
+                      <form.AppField name="temperature">
+                        {(field) => (
+                          <field.NumberField
+                            label="Temperature"
+                            description="Higher is more random. 0 is deterministic."
+                          />
+                        )}
+                      </form.AppField>
+                    </>
+                  }
+                />
 
-                <FieldRow>
-                  <form.AppField name="maxToolIterations">
-                    {(field) => (
-                      <field.NumberField
-                        integer
-                        label="Max tool loops"
-                        description="How many tool calls one turn may make."
-                      />
-                    )}
-                  </form.AppField>
-                  <form.AppField name="contextLimit">
-                    {(field) => (
-                      <field.NumberField
-                        integer
-                        label="Context window"
-                        description="The whole conversation. 0 asks the server."
-                      />
-                    )}
-                  </form.AppField>
-                </FieldRow>
+                <FieldRow
+                  contentSlot={
+                    <>
+                      <form.AppField name="maxToolIterations">
+                        {(field) => (
+                          <field.NumberField
+                            integer
+                            label="Max tool loops"
+                            description="How many tool calls one turn may make."
+                          />
+                        )}
+                      </form.AppField>
+                      <form.AppField name="contextLimit">
+                        {(field) => (
+                          <field.NumberField
+                            integer
+                            label="Context window"
+                            description="The whole conversation. 0 asks the server."
+                          />
+                        )}
+                      </form.AppField>
+                    </>
+                  }
+                />
 
                 <form.AppField name="reasoningEffort">
                   {(field) => (
