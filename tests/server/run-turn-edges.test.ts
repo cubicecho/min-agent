@@ -54,7 +54,7 @@ let log: string[] = [];
 /** Called as each row is written, before the write resolves. */
 let onStore: (message: StoredMessage) => void = () => {};
 
-vi.mock("../../server/store.ts", () => ({
+const store = {
   addMessage: async (_session: string, idx: number, message: StoredMessage) => {
     stored[idx] = structuredClone(message);
     log.push(`store ${message.role}${message.role === "tool" ? ` ${message.tool_call_id}` : ""}`);
@@ -67,7 +67,7 @@ vi.mock("../../server/store.ts", () => ({
   updateSession: async (_session: string, patch: Record<string, unknown>) => {
     updates.push(structuredClone(patch));
   },
-}));
+};
 vi.mock("../../server/config.ts", async (original) => ({
   ...(await original<typeof import("../../server/config.ts")>()),
   loadLlmConfig: () => settings,
@@ -211,7 +211,7 @@ async function run(
         onEvent?.(event);
       },
     },
-    { mcp },
+    { mcp, store },
   ).then(
     (stats) => ({ stats }),
     (error: unknown) => ({ error: errorOf(error) }),

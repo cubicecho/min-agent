@@ -3,9 +3,10 @@ import { loadLlmConfig, refreshLlmConfig } from "../../../server/config.ts";
 import { db } from "../../../server/db/client.ts";
 import { createSchema } from "../../../server/graphql/schema.ts";
 import { createMcp } from "../../../server/mcp.ts";
+import { createStore } from "../../../server/store.ts";
 import { closeTestDb, resetTestDb } from "../db.ts";
 
-const schema = createSchema({ mcp: createMcp() });
+const schema = createSchema({ mcp: createMcp(), store: createStore(db) });
 
 /**
  * The settings cache, exercised the way it is actually written to: through the generated

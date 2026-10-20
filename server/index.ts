@@ -4,13 +4,14 @@ import compression from "compression";
 import express from "express";
 import { createYoga, maskError } from "graphql-yoga";
 import { loadMcpServers, refreshLlmConfig } from "./config.ts";
-import { waitForDatabase } from "./db/client.ts";
+import { db, waitForDatabase } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
 import { surfaced } from "./errors.ts";
 import { createSchema } from "./graphql/schema.ts";
 import { HttpStatus } from "./http-status.ts";
 import { createMcp } from "./mcp.ts";
 import { displayHost, HOST, PORT, ROOT } from "./paths.ts";
+import { createStore } from "./store.ts";
 import { voice } from "./voice.ts";
 
 // The tables and the settings row have to exist before anything reads them, and the settings
@@ -22,7 +23,7 @@ await refreshLlmConfig();
 
 // The one pool of MCP connections the process runs on, handed to everything that talks to a server.
 const mcp = createMcp();
-const schema = createSchema({ mcp });
+const schema = createSchema({ mcp, store: createStore(db) });
 
 const app = express();
 

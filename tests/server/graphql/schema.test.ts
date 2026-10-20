@@ -1,10 +1,12 @@
 import { GraphQLError, isScalarType, isSchema, printSchema, validateSchema } from "graphql";
 import { GraphQLJSON } from "graphql-scalars";
+import { db } from "../../../server/db/client.ts";
 import { surfaced, UserError, userErrorIn } from "../../../server/errors.ts";
 import { createSchema } from "../../../server/graphql/schema.ts";
 import { createMcp } from "../../../server/mcp.ts";
+import { createStore } from "../../../server/store.ts";
 
-const schema = createSchema({ mcp: createMcp() });
+const schema = createSchema({ mcp: createMcp(), store: createStore(db) });
 
 /**
  * The schema itself, with no database behind it — `buildSchema` reads the table definitions,

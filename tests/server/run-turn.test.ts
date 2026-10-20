@@ -62,7 +62,7 @@ let patches: { row: string; patch: Pick<StoredMessage, "stats" | "followups"> }[
 /** Every `updateSession` patch, in order. */
 let updates: Record<string, unknown>[] = [];
 
-vi.mock("../../server/store.ts", () => ({
+const store = {
   addMessage: async (_session: string, idx: number, message: StoredMessage) => {
     stored[idx] = structuredClone(message);
     return `row-${idx}`;
@@ -73,7 +73,7 @@ vi.mock("../../server/store.ts", () => ({
   updateSession: async (_session: string, patch: Record<string, unknown>) => {
     updates.push(structuredClone(patch));
   },
-}));
+};
 vi.mock("../../server/config.ts", async (original) => ({
   ...(await original<typeof import("../../server/config.ts")>()),
   loadLlmConfig: () => settings,
@@ -277,7 +277,7 @@ async function run(
         onEvent?.(event);
       },
     },
-    { mcp },
+    { mcp, store },
   ).then(
     (stats) => ({ stats }),
     (error: unknown) => ({ error: errorOf(error) }),

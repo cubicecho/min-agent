@@ -1,7 +1,7 @@
 import { messageOf } from "../shared/errors.ts";
 import type { HookNote, StreamEvent, TurnStats } from "../shared/types.ts";
 import { runTurn, type TurnDeps } from "./agent.ts";
-import { getSession } from "./store.ts";
+import type { Store } from "./store.ts";
 
 /**
  * One streamed event, flattened for GraphQL.
@@ -29,6 +29,11 @@ export interface TurnEvent {
   hook?: HookNote;
 }
 
+/** What a streamed turn talks to: the turn's own, and the store it reads the chat from. */
+export type TurnEventsDeps = TurnDeps & {
+  store: TurnDeps["store"] & Pick<Store, "getSession">;
+};
+
 const flatten = (event: StreamEvent, seq: number): TurnEvent => ({ seq, ...event });
 
 export interface TurnArgs {
@@ -55,8 +60,11 @@ export interface TurnArgs {
  * @param deps - What the turn talks to.
  * @returns The turn's events, numbered from 1.
  */
-export async function* runTurnEvents(args: TurnArgs, deps: TurnDeps): AsyncGenerator<TurnEvent> {
-  const session = await getSession(args.sessionId);
+export async function* runTurnEvents(
+  args: TurnArgs,
+  deps: TurnEventsDeps,
+): AsyncGenerator<TurnEvent> {
+  const session = await deps.store.getSession(args.sessionId);
   if (!session) {
     throw new Error("session not found");
   }

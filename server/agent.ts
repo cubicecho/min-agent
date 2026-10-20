@@ -69,7 +69,7 @@ import {
   read as readResource,
 } from "./mcp-resources.ts";
 import { clearedChars, planPrune, sentWithStubs } from "./pruning.ts";
-import { addMessage, patchMessage, updateSession } from "./store.ts";
+import type { Store } from "./store.ts";
 import { PROXY_TOOLS, proxiedCall, proxyCatalogPrompt, proxyLoadResult } from "./tool-proxy.ts";
 
 /**
@@ -79,6 +79,8 @@ import { PROXY_TOOLS, proxiedCall, proxyCatalogPrompt, proxyLoadResult } from ".
 export interface TurnDeps {
   /** The MCP servers: their tools, their hooks and their resources. */
   mcp: Pick<Mcp, "catalog" | "tools" | "call" | "instructions" | "runHooks"> & ResourceSource;
+  /** Where the turn's messages and the chat's own columns are written. */
+  store: Pick<Store, "addMessage" | "patchMessage" | "updateSession">;
 }
 
 /** What the configured endpoint serves, id-sorted, with whatever window it declares. */
@@ -125,7 +127,7 @@ const notice = (message: string) => console.warn(`[agent] ${message}`);
  * min-agent's: it is stored on the session, and nothing is when there is none.
  */
 async function compact(
-  { mcp }: TurnDeps,
+  { mcp, store }: TurnDeps,
   session: Session,
   config: LlmConfig,
   model: string,
@@ -153,7 +155,7 @@ async function compact(
   }
 
   session.compaction = record;
-  await updateSession(session.id, { compaction: record });
+  await store.updateSession(session.id, { compaction: record });
   console.log(`[agent] compacted ${record.through} message(s) at ${used}/${contextLimit} tokens`);
   return record.summary;
 }
@@ -168,7 +170,12 @@ async function compact(
  *
  * @param compacted Whether a fold was stored on this turn, which makes a move free.
  */
-async function prune(session: Session, contextLimit: number, compacted = false): Promise<boolean> {
+async function prune(
+  { store }: TurnDeps,
+  session: Session,
+  contextLimit: number,
+  compacted = false,
+): Promise<boolean> {
   const through = planPrune(session, contextLimit, { compacted });
   if (through === undefined) {
     return false;
@@ -176,7 +183,7 @@ async function prune(session: Session, contextLimit: number, compacted = false):
 
   const from = session.pruning?.through ?? 0;
   session.pruning = { through, at: new Date().toISOString() };
-  await updateSession(session.id, { pruning: session.pruning });
+  await store.updateSession(session.id, { pruning: session.pruning });
   console.log(`[agent] cleared tool results before message ${through} (was ${from})`);
   return true;
 }
@@ -469,9 +476,9 @@ interface TurnHookContext {
 }
 
 /** Appends to the session and writes the row at the index it landed on, which is its id. */
-async function store(session: Session, message: StoredMessage) {
+async function append({ store }: TurnDeps, session: Session, message: StoredMessage) {
   session.messages.push(message);
-  return addMessage(session.id, session.messages.length - 1, message);
+  return store.addMessage(session.id, session.messages.length - 1, message);
 }
 
 /**
@@ -714,6 +721,7 @@ async function settleHistory(
   // has just been rewritten, so the miss a move costs is already being paid. And before the
   // question, for compaction's reason — what is cleared is settled history.
   const prunedAtStart = await prune(
+    deps,
     session,
     contextLimit,
     session.compaction?.through !== foldedThrough,
@@ -728,7 +736,7 @@ async function settleHistory(
  * @returns The index of the question, which is where this turn begins.
  */
 async function askQuestion(
-  { mcp }: TurnDeps,
+  deps: TurnDeps,
   { proxied, catalog }: TurnPlan,
   session: Session,
   prompt: string,
@@ -741,7 +749,7 @@ async function askQuestion(
     content: prompt,
     ...(context ? { hook_context: context } : {}),
   };
-  await store(session, question);
+  await append(deps, session, question);
   // Where this turn begins, so the request can be split into what was already there and what
   // this question added — the tool traffic it goes on to produce lands after it too.
   const turnStart = session.messages.length - 1;
@@ -753,7 +761,7 @@ async function askQuestion(
     const content = proxyLoadResult(
       expandNames(preselected, catalog),
       catalog,
-      mcp.tools(preselected),
+      deps.mcp.tools(preselected),
       new Set(),
     );
     emit({ type: "tool_use", id, name: LOAD_TOOLS, input: args });
@@ -767,7 +775,7 @@ async function askQuestion(
       { role: "tool", tool_call_id: id, content },
     ];
     for (const message of exchange) {
-      await store(session, message);
+      await append(deps, session, message);
     }
   }
   return turnStart;
@@ -781,6 +789,7 @@ async function askQuestion(
  * @returns The background titling, where there is any to wait for.
  */
 function startTitle(
+  { store }: TurnDeps,
   config: LlmConfig,
   session: Session,
   prompt: string,
@@ -804,7 +813,7 @@ function startTitle(
       return;
     }
     session.title = title;
-    await updateSession(session.id, { title });
+    await store.updateSession(session.id, { title });
     emit({ type: "title", title });
   });
 }
@@ -829,7 +838,7 @@ interface AnsweredTurn {
  * hooks and the follow-up suggestions.
  */
 async function afterTurn(
-  { mcp }: TurnDeps,
+  { mcp, store }: TurnDeps,
   {
     config,
     session,
@@ -849,7 +858,7 @@ async function afterTurn(
   let writing = Promise.resolve();
   const persist = () => {
     writing = writing.then(() =>
-      patchMessage(assistantRow, {
+      store.patchMessage(assistantRow, {
         stats,
         ...(assistant.followups ? { followups: assistant.followups } : {}),
       }),
@@ -944,8 +953,8 @@ export async function runTurn(
     load(name);
   }
 
-  const titling = startTitle(config, session, prompt, emit, signal);
-  await updateSession(session.id, { title: session.title, model: chosenModel });
+  const titling = startTitle(deps, config, session, prompt, emit, signal);
+  await deps.store.updateSession(session.id, { title: session.title, model: chosenModel });
 
   const turnUsage = emptyUsage();
   const banked = session.usage ?? emptyUsage();
@@ -974,7 +983,7 @@ export async function runTurn(
       return;
     }
     pruneOwed = false;
-    if (await prune(session, contextLimit)) {
+    if (await prune(deps, session, contextLimit)) {
       previousPrompt = 0;
     }
   };
@@ -1105,7 +1114,7 @@ export async function runTurn(
       // history: the reply before its tools run, every result before the next request.
       onMessage: async (message, _step, turn) => {
         if (message.role === "tool") {
-          await store(session, {
+          await append(deps, session, {
             role: "tool",
             tool_call_id: message.tool_call_id,
             content: message.content as string,
@@ -1157,8 +1166,8 @@ export async function runTurn(
         text = "";
         reasoning = "";
         session.usage = add(banked, turnUsage);
-        assistantRow = await store(session, assistant);
-        await updateSession(session.id, { usage: session.usage });
+        assistantRow = await append(deps, session, assistant);
+        await deps.store.updateSession(session.id, { usage: session.usage });
       },
     });
   } catch (error) {
@@ -1168,7 +1177,7 @@ export async function runTurn(
     // the transcript. Keep the part that streamed, then let the error through — the route stays
     // quiet about a turn its reader ended.
     if (signal?.aborted && (text || reasoning)) {
-      await store(session, assistantMessage(text, reasoning));
+      await append(deps, session, assistantMessage(text, reasoning));
     }
     if (error instanceof ToolIterationLimit) {
       throw new Error(error.message);
@@ -1208,9 +1217,9 @@ export async function runTurn(
     );
   }
   await titling;
-  await patchMessage(assistantRow, { stats });
+  await deps.store.patchMessage(assistantRow, { stats });
   if (native) {
-    await updateSession(session.id, { loadedTools: session.loadedTools });
+    await deps.store.updateSession(session.id, { loadedTools: session.loadedTools });
   }
   emit({ type: "stats", stats });
   // The turn is over at this point and the reader should not be held by what comes after it, so

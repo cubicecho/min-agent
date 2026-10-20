@@ -47,13 +47,13 @@ const mcp = {
 /** Every `updateSession` patch, in order. */
 let updates: Record<string, unknown>[] = [];
 
-vi.mock("../../server/store.ts", () => ({
+const store = {
   addMessage: async (_session: string, idx: number) => `row-${idx}`,
   patchMessage: async () => {},
   updateSession: async (_session: string, patch: Record<string, unknown>) => {
     updates.push(structuredClone(patch));
   },
-}));
+};
 vi.mock("../../server/config.ts", async (original) => ({
   ...(await original<typeof import("../../server/config.ts")>()),
   loadLlmConfig: () => settings,
@@ -187,7 +187,7 @@ const transcript = (contextTokens: number): StoredMessage[] => [
 ];
 
 const run = (chat: Session, prompt = "and now?") =>
-  runTurn({ session: chat, prompt, onEvent: () => {} }, { mcp });
+  runTurn({ session: chat, prompt, onEvent: () => {} }, { mcp, store });
 
 /** What `beforeCompact` was told, once per time it ran. */
 const compactHooks = () =>

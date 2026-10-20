@@ -30,7 +30,7 @@ import { sessionDeleted } from "../hooks.ts";
 import type { Mcp } from "../mcp.ts";
 import * as mcpPrompts from "../mcp-prompts.ts";
 import { settingsSpec } from "../spec.ts";
-import { truncateSession } from "../store.ts";
+import type { Store } from "../store.ts";
 import { runTurnEvents, type TurnArgs } from "../turns.ts";
 
 const McpToolType = new GraphQLObjectType({
@@ -202,6 +202,8 @@ const mcpList = new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(McpServerS
 export interface SchemaDeps {
   /** The MCP servers: their state, their prompts, and the pool a turn runs on. */
   mcp: Mcp;
+  /** The chats and their messages. */
+  store: Store;
 }
 
 /**
@@ -210,7 +212,7 @@ export interface SchemaDeps {
  * @param deps - What the resolvers talk to.
  * @returns The schema.
  */
-export function createSchema({ mcp }: SchemaDeps): GraphQLSchema {
+export function createSchema({ mcp, store }: SchemaDeps): GraphQLSchema {
   /**
    * The CRUD half of the API is generated from the Drizzle schema — sessions, messages and the
    * settings row all get their queries, filters and mutations for free, and stay in step with the
@@ -426,7 +428,7 @@ export function createSchema({ mcp }: SchemaDeps): GraphQLSchema {
             fromIdx: { type: new GraphQLNonNull(GraphQLInt) },
           },
           resolve: (_source, args: { id: string; fromIdx: number }) =>
-            truncateSession(args.id, args.fromIdx),
+            store.truncateSession(args.id, args.fromIdx),
         },
         saveEmbeds: {
           type: embedList,
@@ -457,7 +459,7 @@ export function createSchema({ mcp }: SchemaDeps): GraphQLSchema {
               description: "Overrides the session's model for this turn.",
             },
           },
-          subscribe: (_source, args: TurnArgs) => runTurnEvents(args, { mcp }),
+          subscribe: (_source, args: TurnArgs) => runTurnEvents(args, { mcp, store }),
           resolve: (event: unknown) => event,
         },
       },
