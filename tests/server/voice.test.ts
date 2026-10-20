@@ -2,9 +2,14 @@ import { once } from "node:events";
 import { createServer, type Server } from "node:http";
 import { createVoiceClient, speakableText, spokenChunk } from "@shared/client/voice.ts";
 import express from "express";
-import { audioExtension, voice } from "../../server/voice.ts";
+import { createSettings } from "../../server/config.ts";
+import { db } from "../../server/db/client.ts";
+import { audioExtension, createVoiceRouter } from "../../server/voice.ts";
 import { jsonBody } from "../helpers.ts";
 import { storedSettings } from "./helpers.ts";
+
+/** The settings the voice routes read. Nothing queries `db`: rows are put in by `storedSettings`. */
+const settings = createSettings(db);
 
 /**
  * The two ends of voice that are worth pinning down: what a reply sounds like once the
@@ -203,7 +208,7 @@ describe("the key the voice proxy sends", () => {
    * @returns The `Authorization` header the provider received.
    */
   const spoken = async (apiKey: string) => {
-    await storedSettings({ baseUrl: urlOf(provider), ttsModel: "tts-1", apiKey });
+    await storedSettings(settings, { baseUrl: urlOf(provider), ttsModel: "tts-1", apiKey });
     const response = await fetch(`${urlOf(agent)}/speak`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -220,12 +225,12 @@ describe("the key the voice proxy sends", () => {
       response.writeHead(200, { "content-type": "audio/mpeg" });
       response.end(Buffer.from([1, 2, 3]));
     }).listen(0, "127.0.0.1");
-    agent = express().use(voice).listen(0, "127.0.0.1");
+    agent = express().use(createVoiceRouter(settings)).listen(0, "127.0.0.1");
     await Promise.all([once(provider, "listening"), once(agent, "listening")]);
   });
 
   afterAll(async () => {
-    await storedSettings({});
+    await storedSettings(settings, {});
     provider.close();
     agent.close();
   });
@@ -283,17 +288,17 @@ describe("a voice request that is not one", () => {
   };
 
   beforeAll(async () => {
-    await storedSettings({
+    await storedSettings(settings, {
       baseUrl: "http://127.0.0.1:1",
       sttModel: "whisper-1",
       ttsModel: "tts-1",
     });
-    agent = express().use(voice).listen(0, "127.0.0.1");
+    agent = express().use(createVoiceRouter(settings)).listen(0, "127.0.0.1");
     await once(agent, "listening");
   });
 
   afterAll(async () => {
-    await storedSettings({});
+    await storedSettings(settings, {});
     agent.close();
   });
 

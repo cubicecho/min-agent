@@ -14,15 +14,7 @@ import {
 import { GraphQLJSON } from "graphql-scalars";
 import type { EmbedConfig, McpServerConfig } from "../../shared/types.ts";
 import { listModels } from "../agent.ts";
-import {
-  assertLlmConfigPatch,
-  hasApiKey,
-  loadLlmConfig,
-  loadMcpServers,
-  refreshLlmConfig,
-  saveEmbeds,
-  saveMcpServers,
-} from "../config.ts";
+import { assertLlmConfigPatch, hasApiKey, type Settings } from "../config.ts";
 import { db } from "../db/client.ts";
 import { settings } from "../db/schema.ts";
 import { surfaced } from "../errors.ts";
@@ -204,6 +196,8 @@ export interface SchemaDeps {
   mcp: Mcp;
   /** The chats and their messages. */
   store: Store;
+  /** The settings row, cached, and the MCP servers and embeds saved beside it. */
+  settings: Settings;
 }
 
 /**
@@ -212,7 +206,7 @@ export interface SchemaDeps {
  * @param deps - What the resolvers talk to.
  * @returns The schema.
  */
-export function createSchema({ mcp, store }: SchemaDeps): GraphQLSchema {
+export function createSchema({ mcp, store, settings: config }: SchemaDeps): GraphQLSchema {
   /**
    * The CRUD half of the API is generated from the Drizzle schema — sessions, messages and the
    * settings row all get their queries, filters and mutations for free, and stay in step with the
@@ -258,7 +252,7 @@ export function createSchema({ mcp, store }: SchemaDeps): GraphQLSchema {
     },
     mapColumnType: (column) => (column.columnType === "PgTimestamp" ? GraphQLDateTime : undefined),
     onWrite: {
-      // `loadLlmConfig()` is read synchronously all through a turn, so the copy it reads has to
+      // `settings.current()` is read synchronously all through a turn, so the copy it reads has to
       // be renewed by whatever wrote the row — including the generated mutation, which knows
       // nothing about the cache.
       settings: {
@@ -271,7 +265,7 @@ export function createSchema({ mcp, store }: SchemaDeps): GraphQLSchema {
         // a read on any other connection sees the row as it was before the write — which is how
         // the cache came to run one save behind.
         after: async ({ tx }) => {
-          await refreshLlmConfig(tx);
+          await config.refresh(tx);
         },
       },
       // Deleting a chat is the generated `deleteSessionSingle`, which never passes through
@@ -311,7 +305,7 @@ export function createSchema({ mcp, store }: SchemaDeps): GraphQLSchema {
         models: {
           type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(ModelInfoType))),
           description: "Models the configured OpenAI-compatible server reports, id-sorted.",
-          resolve: () => listModels(),
+          resolve: () => listModels(config),
         },
         mcpStatus: {
           type: mcpList,
@@ -345,12 +339,12 @@ export function createSchema({ mcp, store }: SchemaDeps): GraphQLSchema {
           type: new GraphQLNonNull(HealthType),
           description: "Answers only once the settings are loaded and the schema is up.",
           resolve: () => {
-            const config = loadLlmConfig();
+            const current = config.current();
             return {
               ok: true,
-              baseUrl: config.baseUrl,
-              model: config.model,
-              hasApiKey: hasApiKey(config),
+              baseUrl: current.baseUrl,
+              model: current.model,
+              hasApiKey: hasApiKey(current),
             };
           },
         },
@@ -359,14 +353,14 @@ export function createSchema({ mcp, store }: SchemaDeps): GraphQLSchema {
           description:
             "Whether a key is set, without saying what it is. The Config tab shows a filled " +
             "placeholder rather than an empty box; the key itself is excluded from `Setting`.",
-          resolve: () => hasApiKey(),
+          resolve: () => hasApiKey(config.current()),
         },
         spec: {
           type: new GraphQLNonNull(GraphQLJSON),
           description:
             "The saved settings as an agent spec: a `cubicecho.agent/1` document another host on " +
             "`@cubicecho/agent-core` can read. The API key is never part of it.",
-          resolve: () => settingsSpec(loadLlmConfig()),
+          resolve: () => settingsSpec(config.current()),
         },
       },
     }),
@@ -386,7 +380,7 @@ export function createSchema({ mcp, store }: SchemaDeps): GraphQLSchema {
               .update(settings)
               .set({ apiKey: args.apiKey })
               .where(eq(settings.id, "default"));
-            await refreshLlmConfig();
+            await config.refresh();
             return true;
           },
         },
@@ -402,7 +396,7 @@ export function createSchema({ mcp, store }: SchemaDeps): GraphQLSchema {
             },
           },
           resolve: async (_source, args: { servers: McpServerConfig[] }) => {
-            const saved = await saveMcpServers(args.servers);
+            const saved = await config.saveMcpServers(args.servers);
             await mcp.sync(saved);
             return mcp.state();
           },
@@ -412,7 +406,7 @@ export function createSchema({ mcp, store }: SchemaDeps): GraphQLSchema {
           description: "Tears down one server's connection and dials it again.",
           args: { id: { type: new GraphQLNonNull(GraphQLString) } },
           resolve: async (_source, args: { id: string }) => {
-            await mcp.reconnect(args.id, await loadMcpServers());
+            await mcp.reconnect(args.id, await config.loadMcpServers());
             return mcp.state();
           },
         },
@@ -439,7 +433,7 @@ export function createSchema({ mcp, store }: SchemaDeps): GraphQLSchema {
           args: {
             embeds: { type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(EmbedInput))) },
           },
-          resolve: (_source, args: { embeds: EmbedConfig[] }) => saveEmbeds(args.embeds),
+          resolve: (_source, args: { embeds: EmbedConfig[] }) => config.saveEmbeds(args.embeds),
         },
       },
     }),
@@ -459,7 +453,8 @@ export function createSchema({ mcp, store }: SchemaDeps): GraphQLSchema {
               description: "Overrides the session's model for this turn.",
             },
           },
-          subscribe: (_source, args: TurnArgs) => runTurnEvents(args, { mcp, store }),
+          subscribe: (_source, args: TurnArgs) =>
+            runTurnEvents(args, { mcp, store, settings: config }),
           resolve: (event: unknown) => event,
         },
       },

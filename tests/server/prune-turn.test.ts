@@ -50,10 +50,6 @@ const store = {
     updates.push(structuredClone(patch));
   },
 };
-vi.mock("../../server/config.ts", async (original) => ({
-  ...(await original<typeof import("../../server/config.ts")>()),
-  loadLlmConfig: () => settings,
-}));
 
 const { runTurn } = await import("../../server/agent.ts");
 
@@ -230,7 +226,7 @@ async function run(chat: Session, prompt: string) {
       prompt,
       onEvent: (event) => events.push(structuredClone(event)),
     },
-    { mcp, store },
+    { mcp, store, settings: { current: () => settings } },
   );
   return { events, stats };
 }

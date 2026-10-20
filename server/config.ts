@@ -9,29 +9,12 @@ import {
   type McpServerConfig,
   mcpServerSchema,
 } from "../shared/types.ts";
-import { type Db, db } from "./db/client.ts";
+import type { Db } from "./db/client.ts";
 import { embeds, mcpServers, settings } from "./db/schema.ts";
 import { UserError } from "./errors.ts";
 
 /** The singleton settings row. There is exactly one, created by `ensureSchema`. */
 const DEFAULT_ID = "default";
-
-/**
- * The settings, kept in memory.
- *
- * They are read on nearly every line of a turn — the model, the system prompt, the token
- * ceiling, four task models — and a turn is not a place to be awaiting the database for a row
- * that changes when someone clicks Save. So the row is loaded once at boot and again after any
- * write, and `loadLlmConfig()` stays the synchronous call it always was. Every write goes
- * through GraphQL, which refreshes this on the way out (`onWrite` in `graphql/schema.ts`), so
- * a second process editing the row is the only way to make this stale — and there isn't one.
- *
- * The refresh happens inside the writing transaction, which is the only place it can see the
- * write (see `refreshLlmConfig`). A transaction that then rolled back would leave this holding
- * a value that never landed — narrow enough to accept, and the alternative was a cache that
- * was wrong after *every* save rather than after a rolled-back one.
- */
-let cached: LlmConfig = llmConfigSchema.parse({});
 
 /** The same schema with every field optional: the shape of a patch rather than a whole row. */
 const llmConfigPatchSchema = llmConfigSchema.partial();
@@ -47,7 +30,7 @@ const reasons = (issues: { path: PropertyKey[]; message: string }[]) =>
  * types and nothing else — `maxTokens: Int`, any integer at all. Every bound that makes a
  * value usable lives in `llmConfigSchema`, which was only ever consulted on the way *out*. So
  * a number the schema rejects could be stored happily and then refuse to load, and because
- * `refreshLlmConfig` runs before the server listens, the next restart died on boot and took
+ * the first `refresh` runs before the server listens, the next restart died on boot and took
  * with it the only screen that could have corrected the number.
  */
 export function assertLlmConfigPatch(patch: unknown): void {
@@ -104,34 +87,15 @@ export function coerceLlmConfig(row: unknown): LlmConfig {
 type Reader = Pick<Db, "select">;
 
 /**
- * Re-reads the row into `cached`.
- *
- * `reader` is not decoration. The generated settings mutation runs inside a transaction — one
- * the `onWrite` hook itself causes to exist — and a hook that read through the module-level
- * `db` took a *different* connection out of the pool, one that cannot see an uncommitted write.
- * So it faithfully re-read the row as it was before the save, and the cache ran exactly one
- * write behind: a turn after changing the reasoning effort used the previous effort, and the
- * new one only arrived when some later, unrelated save refreshed it. Reading through the
- * mutation's own executor is what makes the write visible.
- */
-export async function refreshLlmConfig(reader: Reader = db): Promise<LlmConfig> {
-  const [row] = await reader.select().from(settings).where(eq(settings.id, DEFAULT_ID)).limit(1);
-  cached = coerceLlmConfig(row ?? {});
-  return cached;
-}
-
-export const loadLlmConfig = (): LlmConfig => cached;
-
-/**
  * Whether there is a key at all: one in the settings row, else one in the environment.
  *
  * The package's `resolveApiKey` never answers empty — with neither it hands back `NO_KEY`, the
  * placeholder the SDK is given — so that is what "no key" has to be read from.
  *
- * @param config The settings to ask about, the cached row by default.
+ * @param config The settings to ask about.
  * @returns false when neither the row nor `$OPENAI_API_KEY` holds one.
  */
-export const hasApiKey = (config = cached): boolean => resolveApiKey(config) !== NO_KEY;
+export const hasApiKey = (config: LlmConfig): boolean => resolveApiKey(config) !== NO_KEY;
 
 /**
  * The settings, as `@cubicecho/agent-core` wants an endpoint.
@@ -147,10 +111,10 @@ export const hasApiKey = (config = cached): boolean => resolveApiKey(config) !==
  * the two alike, but its probes for a local server's window send no `Authorization` header for
  * an empty key and `Bearer agent-core` for the placeholder.
  *
- * @param config The settings to adapt, the cached row by default.
+ * @param config The settings to adapt.
  * @returns The endpoint, with an empty `apiKey` when no key is set.
  */
-export const endpoint = (config = cached): Endpoint => {
+export const endpoint = (config: LlmConfig): Endpoint => {
   const apiKey = resolveApiKey(config);
   return {
     baseUrl: config.baseUrl,
@@ -180,66 +144,118 @@ export function assertMcpServers(list: McpServerConfig[]) {
   }
 }
 
-export async function loadMcpServers(): Promise<McpServerConfig[]> {
-  const rows = await db.select().from(mcpServers).orderBy(asc(mcpServers.position));
-  return rows.map((row) => mcpServerSchema.parse(row));
-}
-
 /**
- * Replaces the whole set in one transaction.
+ * Builds the settings over a database: `server/index.ts` hands it the process's, a test its own.
  *
- * The MCP tab edits a list and saves it, and a row's id is the tool namespace the user chose —
- * so a rename is a delete and an insert, not an update. Diffing that against the table row by
- * row would be more machinery than deleting and rewriting nine rows is worth.
+ * @param db - The database the settings row, the MCP servers and the embeds are kept in.
+ * @returns The settings. The cache holds the defaults until the first `refresh`.
  */
-export async function saveMcpServers(list: McpServerConfig[]): Promise<McpServerConfig[]> {
-  const parsed = list.map((server) => mcpServerSchema.parse(server));
-  assertMcpServers(parsed);
+export function createSettings(db: Db) {
+  /**
+   * The settings, kept in memory.
+   *
+   * They are read on nearly every line of a turn — the model, the system prompt, the token
+   * ceiling, four task models — and a turn is not a place to be awaiting the database for a row
+   * that changes when someone clicks Save. So the row is loaded once at boot and again after any
+   * write, and `current()` stays the synchronous call it always was. Every write goes
+   * through GraphQL, which refreshes this on the way out (`onWrite` in `graphql/schema.ts`), so
+   * a second process editing the row is the only way to make this stale — and there isn't one.
+   *
+   * The refresh happens inside the writing transaction, which is the only place it can see the
+   * write (see `refresh`). A transaction that then rolled back would leave this holding
+   * a value that never landed — narrow enough to accept, and the alternative was a cache that
+   * was wrong after *every* save rather than after a rolled-back one.
+   */
+  let cached: LlmConfig = llmConfigSchema.parse({});
 
-  await db.transaction(async (tx) => {
-    await tx.delete(mcpServers);
-    if (parsed.length) {
-      await tx
-        .insert(mcpServers)
-        .values(parsed.map((server, position) => ({ ...server, position })));
-    }
-  });
-  return parsed;
-}
-
-export async function loadEmbeds(): Promise<EmbedConfig[]> {
-  const rows = await db.select().from(embeds).orderBy(asc(embeds.position));
-  return rows.map((row) => embedSchema.parse(row));
-}
-
-/**
- * Replaces the whole set, the same way `saveMcpServers` does and for the same reason: an
- * embed's id is the route its view lives at, so renaming one is a different destination
- * rather than an edited row, and the screen edits the list as a list.
- */
-export async function saveEmbeds(list: EmbedConfig[]): Promise<EmbedConfig[]> {
-  const parsed: EmbedConfig[] = [];
-  for (const embed of list) {
-    // `reasons` rather than letting the ZodError out: this one is read by whoever typed the
-    // row, in the note under the Save button, and a raw issue array is not a sentence. The
-    // row is named because the screen saves the whole list at once and the message has to
-    // say which of them the complaint is about.
-    const result = embedSchema.safeParse(embed);
-    const isInvalid = result.success === false;
-    if (isInvalid) {
-      throw new UserError(`${embed.id || "app"} — ${reasons(result.error.issues)}`);
-    }
-    parsed.push(result.data);
-  }
-  if (new Set(parsed.map((embed) => embed.id)).size !== parsed.length) {
-    throw new UserError("duplicate embed id");
+  /**
+   * Re-reads the row into the cache.
+   *
+   * `reader` is not decoration. The generated settings mutation runs inside a transaction — one
+   * the `onWrite` hook itself causes to exist — and a hook that read through the module-level
+   * `db` took a *different* connection out of the pool, one that cannot see an uncommitted write.
+   * So it faithfully re-read the row as it was before the save, and the cache ran exactly one
+   * write behind: a turn after changing the reasoning effort used the previous effort, and the
+   * new one only arrived when some later, unrelated save refreshed it. Reading through the
+   * mutation's own executor is what makes the write visible.
+   */
+  async function refresh(reader: Reader = db): Promise<LlmConfig> {
+    const [row] = await reader.select().from(settings).where(eq(settings.id, DEFAULT_ID)).limit(1);
+    cached = coerceLlmConfig(row ?? {});
+    return cached;
   }
 
-  await db.transaction(async (tx) => {
-    await tx.delete(embeds);
-    if (parsed.length) {
-      await tx.insert(embeds).values(parsed.map((embed, position) => ({ ...embed, position })));
+  /** The cached row, as of the last refresh. */
+  const current = (): LlmConfig => cached;
+
+  /** The configured MCP servers, in the order they were saved in. */
+  async function loadMcpServers(): Promise<McpServerConfig[]> {
+    const rows = await db.select().from(mcpServers).orderBy(asc(mcpServers.position));
+    return rows.map((row) => mcpServerSchema.parse(row));
+  }
+
+  /**
+   * Replaces the whole set in one transaction.
+   *
+   * The MCP tab edits a list and saves it, and a row's id is the tool namespace the user chose —
+   * so a rename is a delete and an insert, not an update. Diffing that against the table row by
+   * row would be more machinery than deleting and rewriting nine rows is worth.
+   */
+  async function saveMcpServers(list: McpServerConfig[]): Promise<McpServerConfig[]> {
+    const parsed = list.map((server) => mcpServerSchema.parse(server));
+    assertMcpServers(parsed);
+
+    await db.transaction(async (tx) => {
+      await tx.delete(mcpServers);
+      if (parsed.length) {
+        await tx
+          .insert(mcpServers)
+          .values(parsed.map((server, position) => ({ ...server, position })));
+      }
+    });
+    return parsed;
+  }
+
+  /** The configured embeds, in the order they were saved in. */
+  async function loadEmbeds(): Promise<EmbedConfig[]> {
+    const rows = await db.select().from(embeds).orderBy(asc(embeds.position));
+    return rows.map((row) => embedSchema.parse(row));
+  }
+
+  /**
+   * Replaces the whole set, the same way `saveMcpServers` does and for the same reason: an
+   * embed's id is the route its view lives at, so renaming one is a different destination
+   * rather than an edited row, and the screen edits the list as a list.
+   */
+  async function saveEmbeds(list: EmbedConfig[]): Promise<EmbedConfig[]> {
+    const parsed: EmbedConfig[] = [];
+    for (const embed of list) {
+      // `reasons` rather than letting the ZodError out: this one is read by whoever typed the
+      // row, in the note under the Save button, and a raw issue array is not a sentence. The
+      // row is named because the screen saves the whole list at once and the message has to
+      // say which of them the complaint is about.
+      const result = embedSchema.safeParse(embed);
+      const isInvalid = result.success === false;
+      if (isInvalid) {
+        throw new UserError(`${embed.id || "app"} — ${reasons(result.error.issues)}`);
+      }
+      parsed.push(result.data);
     }
-  });
-  return parsed;
+    if (new Set(parsed.map((embed) => embed.id)).size !== parsed.length) {
+      throw new UserError("duplicate embed id");
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.delete(embeds);
+      if (parsed.length) {
+        await tx.insert(embeds).values(parsed.map((embed, position) => ({ ...embed, position })));
+      }
+    });
+    return parsed;
+  }
+
+  return { refresh, current, loadMcpServers, saveMcpServers, loadEmbeds, saveEmbeds };
 }
+
+/** The settings, as `createSettings` builds them. */
+export type Settings = ReturnType<typeof createSettings>;

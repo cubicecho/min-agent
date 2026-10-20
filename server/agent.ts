@@ -48,7 +48,7 @@ import {
   type TurnStats,
 } from "../shared/types.ts";
 import { planFold } from "./compaction.ts";
-import { endpoint, loadLlmConfig } from "./config.ts";
+import { endpoint, type Settings } from "./config.ts";
 import {
   compactionHooks,
   type Gathered,
@@ -81,11 +81,13 @@ export interface TurnDeps {
   mcp: Pick<Mcp, "catalog" | "tools" | "call" | "instructions" | "runHooks"> & ResourceSource;
   /** Where the turn's messages and the chat's own columns are written. */
   store: Pick<Store, "addMessage" | "patchMessage" | "updateSession">;
+  /** The settings the turn is run under, read once at its start. */
+  settings: Pick<Settings, "current">;
 }
 
 /** What the configured endpoint serves, id-sorted, with whatever window it declares. */
-export async function listModels(): Promise<ModelInfo[]> {
-  return listEndpointModels(endpoint());
+export async function listModels(settings: Pick<Settings, "current">): Promise<ModelInfo[]> {
+  return listEndpointModels(endpoint(settings.current()));
 }
 
 const truncateTitle = (title: string) =>
@@ -485,8 +487,8 @@ async function append({ store }: TurnDeps, session: Session, message: StoredMess
  * What is settled about a turn before anything is asked or stored: the model, the window, how
  * tools are discovered and the system prompt. Each is read once and holds for the whole turn.
  */
-async function planTurn({ mcp }: TurnDeps, session: Session, model: string | undefined) {
-  const config = loadLlmConfig();
+async function planTurn({ mcp, settings }: TurnDeps, session: Session, model: string | undefined) {
+  const config = settings.current();
   const chosenModel = model || session.model || config.model;
   if (!chosenModel) {
     throw new Error("No model selected — pick one in Config.");

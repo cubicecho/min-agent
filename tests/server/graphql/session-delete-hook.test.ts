@@ -1,4 +1,5 @@
 import { graphql } from "graphql";
+import { createSettings } from "../../../server/config.ts";
 import { db } from "../../../server/db/client.ts";
 import { createSchema } from "../../../server/graphql/schema.ts";
 import { HOST } from "../../../server/hooks.ts";
@@ -18,7 +19,11 @@ vi.mock("../../../server/db/client.ts", () => import("../db-client.ts"));
 /** The pool's hook runner, which is where a delete reaches the servers. It runs none here. */
 const runHooks = vi.fn(async () => []);
 const store = createStore(db);
-const schema = createSchema({ mcp: { ...createMcp(), runHooks }, store });
+const schema = createSchema({
+  mcp: { ...createMcp(), runHooks },
+  store,
+  settings: createSettings(db),
+});
 
 const remove = (id: string) =>
   graphql({

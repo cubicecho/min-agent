@@ -1,12 +1,13 @@
 import { graphql } from "graphql";
-import { loadLlmConfig, refreshLlmConfig } from "../../../server/config.ts";
+import { createSettings } from "../../../server/config.ts";
 import { db } from "../../../server/db/client.ts";
 import { createSchema } from "../../../server/graphql/schema.ts";
 import { createMcp } from "../../../server/mcp.ts";
 import { createStore } from "../../../server/store.ts";
 import { closeTestDb, resetTestDb } from "../db.ts";
 
-const schema = createSchema({ mcp: createMcp(), store: createStore(db) });
+const settings = createSettings(db);
+const schema = createSchema({ mcp: createMcp(), store: createStore(db), settings });
 
 /**
  * The settings cache, exercised the way it is actually written to: through the generated
@@ -42,7 +43,7 @@ describe("the settings cache", () => {
   beforeEach(async () => {
     await resetTestDb(db);
     await save({ reasoningEffort: "off", model: "", maxToolIterations: 20 });
-    await refreshLlmConfig();
+    await settings.refresh();
   });
 
   /**
@@ -54,15 +55,15 @@ describe("the settings cache", () => {
     const result = await save({ reasoningEffort: "high" });
 
     expect(result.errors).toBeUndefined();
-    expect(loadLlmConfig().reasoningEffort).toBe("high");
+    expect(settings.current().reasoningEffort).toBe("high");
   });
 
   /** And keeps having it, rather than being a read that happened to race the commit. */
   it("holds the value a fresh read of the row would give", async () => {
     await save({ model: "gpt-5", maxToolIterations: 7 });
 
-    expect(loadLlmConfig().model).toBe("gpt-5");
-    expect((await refreshLlmConfig()).maxToolIterations).toBe(7);
+    expect(settings.current().model).toBe("gpt-5");
+    expect((await settings.refresh()).maxToolIterations).toBe(7);
   });
 
   /**
@@ -79,16 +80,16 @@ describe("the settings cache", () => {
 
     expect(result.errors?.[0].message).toMatch(/maxTokens/);
     expect(result.errors?.[0].extensions.code).toBe("BAD_USER_INPUT");
-    expect(loadLlmConfig().reasoningEffort).toBe("high");
-    expect(loadLlmConfig().maxTokens).toBe(4096);
-    expect((await refreshLlmConfig()).maxTokens).toBe(4096);
+    expect(settings.current().reasoningEffort).toBe("high");
+    expect(settings.current().maxTokens).toBe(4096);
+    expect((await settings.refresh()).maxTokens).toBe(4096);
   });
 
   it("leaves the columns the patch did not name alone", async () => {
     await save({ model: "gpt-5" });
     await save({ reasoningEffort: "low" });
 
-    expect(loadLlmConfig().model).toBe("gpt-5");
-    expect(loadLlmConfig().reasoningEffort).toBe("low");
+    expect(settings.current().model).toBe("gpt-5");
+    expect(settings.current().reasoningEffort).toBe("low");
   });
 });

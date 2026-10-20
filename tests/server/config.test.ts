@@ -1,5 +1,10 @@
 import { graphql } from "graphql";
-import { assertLlmConfigPatch, coerceLlmConfig, endpoint } from "../../server/config.ts";
+import {
+  assertLlmConfigPatch,
+  coerceLlmConfig,
+  createSettings,
+  endpoint,
+} from "../../server/config.ts";
 import { db } from "../../server/db/client.ts";
 import { createSchema } from "../../server/graphql/schema.ts";
 import { createMcp } from "../../server/mcp.ts";
@@ -8,7 +13,8 @@ import { llmConfigSchema, modelForTask } from "../../shared/types.ts";
 import { isRecord } from "../helpers.ts";
 import { storedSettings } from "./helpers.ts";
 
-const schema = createSchema({ mcp: createMcp(), store: createStore(db) });
+const settings = createSettings(db);
+const schema = createSchema({ mcp: createMcp(), store: createStore(db), settings });
 
 /**
  * The settings live in Postgres and GraphQL checks their shape, so what is left to test here
@@ -43,7 +49,7 @@ describe("assertLlmConfigPatch", () => {
   /**
    * The regression this guards. The settings mutation is generated from the Drizzle schema, so
    * `maxTokens` was an unbounded `Int` on the way in and a `max(200000)` on the way out. A
-   * larger number saved fine and then killed the next boot — `refreshLlmConfig` runs before the
+   * larger number saved fine and then killed the next boot — the settings `refresh` runs before the
    * server listens — taking down the only screen that could have put it back.
    */
   it("rejects a value the schema could not read back", () => {
@@ -188,21 +194,21 @@ describe("hasApiKey", () => {
   });
 
   afterAll(async () => {
-    await storedSettings({});
+    await storedSettings(settings, {});
   });
 
   it("is false when neither the row nor the environment holds a key", async () => {
-    await storedSettings({});
+    await storedSettings(settings, {});
     expect(await asked()).toEqual({ query: false, health: false });
   });
 
   it("is true for a key in the row", async () => {
-    await storedSettings({ apiKey: "sk-test" });
+    await storedSettings(settings, { apiKey: "sk-test" });
     expect(await asked()).toEqual({ query: true, health: true });
   });
 
   it("is true for a key that is only in the environment", async () => {
-    await storedSettings({});
+    await storedSettings(settings, {});
     process.env.OPENAI_API_KEY = "sk-from-env";
     expect(await asked()).toEqual({ query: true, health: true });
   });

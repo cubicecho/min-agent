@@ -39,7 +39,7 @@ import {
 
 const BASE_URL = "http://box:8080/v1";
 
-/** The settings `loadLlmConfig` answers with. Replaced per test by `configure`. */
+/** The settings the turn is run under. Replaced per test by `configure`. */
 let settings: LlmConfig;
 
 /** What the pool offers, in the pool's own order. Replaced per test by `offer`. */
@@ -74,10 +74,6 @@ const store = {
     updates.push(structuredClone(patch));
   },
 };
-vi.mock("../../server/config.ts", async (original) => ({
-  ...(await original<typeof import("../../server/config.ts")>()),
-  loadLlmConfig: () => settings,
-}));
 
 const { instructionsPrompt, runTurn } = await import("../../server/agent.ts");
 const { RESOURCE_TOOLS } = await import("../../server/mcp-resources.ts");
@@ -277,7 +273,7 @@ async function run(
         onEvent?.(event);
       },
     },
-    { mcp, store },
+    { mcp, store, settings: { current: () => settings } },
   ).then(
     (stats) => ({ stats }),
     (error: unknown) => ({ error: errorOf(error) }),
