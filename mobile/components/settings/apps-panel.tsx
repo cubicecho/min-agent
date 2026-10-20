@@ -13,18 +13,18 @@ import { DialogLayout } from "@/components/dialog-layout.tsx";
 import { ListItem } from "@/components/list-item.tsx";
 import { EmptyState } from "@/components/page.tsx";
 import { QueryState } from "@/components/query-state.tsx";
+import { Section } from "@/components/section.tsx";
 import { Alert } from "@/components/ui/alert.tsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button.tsx";
 import { Form } from "@/components/ui/form.tsx";
 import { ChevronRight, Plus, Trash2 } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
+import { useDescriptionPlacement } from "@/lib/display-settings.ts";
 import { EMBEDS_STALE_TIME } from "@/lib/embeds.ts";
 import { queryKeys } from "@/lib/queries.ts";
 import { useReportDirty } from "./dirty.tsx";
-import { TextField } from "./fields.tsx";
 import { PanelBody } from "./panel-body.tsx";
-import { SettingsSection as Section } from "./settings-section.tsx";
 
 /**
  * The other apps that get a row in the sidebar — a task server, a kanban board.
@@ -109,6 +109,7 @@ function Editor({
   onSave: (value: EmbedConfig) => Promise<unknown>;
   onRemove: () => void;
 }) {
+  const placement = useDescriptionPlacement();
   const form = useAppForm({
     defaultValues: initial,
     // A refused save is reported by the mutation, under the fields; the form only has to
@@ -172,8 +173,12 @@ function Editor({
         contentSlot={
           <Form className="gap-4">
             <form.AppField name="label">
-              {() => (
-                <TextField label="Label" placeholder="Kanban" autoFocus={existing === false} />
+              {(field) => (
+                <field.InputField
+                  label="Label"
+                  placeholder="Kanban"
+                  autoFocus={existing === false}
+                />
               )}
             </form.AppField>
 
@@ -184,8 +189,9 @@ function Editor({
                   value.trim() === "" ? "An app needs an address." : undefined,
               }}
             >
-              {() => (
-                <TextField
+              {(field) => (
+                <field.InputField
+                  descriptionPlacement={placement}
                   label="URL"
                   required
                   description="An address every device that opens min-agent can reach — a LAN address, not localhost, if you use the phone or desktop build."
@@ -198,6 +204,7 @@ function Editor({
             <form.AppField name="icon">
               {() => (
                 <EmbedIconField
+                  descriptionPlacement={placement}
                   label="Icon"
                   description="What the sidebar row shows next to the label."
                 />
@@ -208,7 +215,8 @@ function Editor({
               {(mode) => (
                 <form.AppField name="mode">
                   {(field) => (
-                    <field.OptionSelectField
+                    <field.ComboboxField
+                      descriptionPlacement={placement}
                       label="Opens"
                       options={MODES}
                       description={
@@ -223,8 +231,12 @@ function Editor({
             </form.Subscribe>
 
             <form.AppField name="id">
-              {() => (
-                <TextField label="Id" description="The route its view lives at: /embed/<id>" />
+              {(field) => (
+                <field.InputField
+                  descriptionPlacement={placement}
+                  label="Id"
+                  description="The route its view lives at: /embed/<id>"
+                />
               )}
             </form.AppField>
 
@@ -243,6 +255,7 @@ function Editor({
 }
 
 export function AppsPanel({ active = true }: { active?: boolean }) {
+  const placement = useDescriptionPlacement();
   const queryClient = useQueryClient();
   const embeds = useQuery({
     queryKey: queryKeys.embeds,
@@ -287,6 +300,7 @@ export function AppsPanel({ active = true }: { active?: boolean }) {
       content={
         <>
           <Section
+            descriptionPlacement={placement}
             title="Apps"
             description={
               Platform.OS === "web"

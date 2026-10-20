@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSyncExternalStore } from "react";
+import type { DescriptionPlacement } from "@/components/ui/description-hint.tsx";
 
 /**
  * How much the forms on this device explain themselves.
@@ -72,3 +73,14 @@ const subscribe = (listener: () => void) => {
 /** The settings, in a component, redrawn wherever they are shown when they change. */
 export const useDisplaySettings = () =>
   useSyncExternalStore(subscribe, displaySettings, displaySettings);
+
+/**
+ * Where a field's or a card's description goes on this device: under its label, or folded
+ * behind the button beside it when descriptions are switched off.
+ *
+ * @returns The `descriptionPlacement` to hand cubeui's fields, cards, sections and rows.
+ */
+export function useDescriptionPlacement(): DescriptionPlacement {
+  const { showDescriptions } = useDisplaySettings();
+  return showDescriptions ? "inline" : "popover";
+}

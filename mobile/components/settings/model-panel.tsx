@@ -4,16 +4,17 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { QueryError } from "@/components/query-state.tsx";
+import { Section } from "@/components/section.tsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button.tsx";
 import { FieldRow } from "@/components/ui/form.tsx";
 import { Check } from "@/components/ui/icons";
 import { api } from "@/lib/client.ts";
+import { useDescriptionPlacement } from "@/lib/display-settings.ts";
 import { queryKeys } from "@/lib/queries.ts";
 import { ConfigForm, type ConfigSlice, type Draft } from "./config-form.tsx";
-import { OptionalSelectField, TextField } from "./fields.tsx";
+import { OptionalSelectField } from "./fields.tsx";
 import { SettingsCard } from "./settings-card.tsx";
-import { SettingsSection as Section } from "./settings-section.tsx";
 
 type ModelDraft = Pick<Draft, "baseUrl" | "apiKey" | "model" | "taskModels" | "pricing">;
 
@@ -94,6 +95,7 @@ export function ModelPanel() {
  * button has state and a query of its own.
  */
 function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
+  const placement = useDescriptionPlacement();
   const queryClient = useQueryClient();
   const models = useQuery({ queryKey: queryKeys.models, queryFn: api.models });
   const [endpointBusy, setEndpointBusy] = useState(false);
@@ -161,8 +163,9 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
         contentSlot={
           <>
             <form.AppField name="baseUrl">
-              {() => (
-                <TextField
+              {(field) => (
+                <field.InputField
+                  descriptionPlacement={placement}
                   label="Base URL"
                   description="Ollama :11434/v1, LM Studio :1234/v1, OpenAI https://api.openai.com/v1."
                   placeholder="http://localhost:11434/v1"
@@ -219,7 +222,8 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
           <>
             <form.AppField name="model">
               {(field) => (
-                <field.OptionSelectField
+                <field.ComboboxField
+                  descriptionPlacement={placement}
                   label="Default model"
                   description={
                     models.error
@@ -244,6 +248,7 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
             ) : null}
 
             <Section
+              descriptionPlacement={placement}
               level={4}
               title="Task models"
               description="Side jobs that need not run on the chat model. Each is short and frequent, so a small fast model usually serves them better."

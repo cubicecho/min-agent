@@ -2,8 +2,8 @@ import { voiceBaseUrlFor } from "@shared/types.ts";
 import { View } from "react-native";
 import { SettingRow } from "@/components/setting-row.tsx";
 import { FieldRow } from "@/components/ui/form.tsx";
+import { useDescriptionPlacement } from "@/lib/display-settings.ts";
 import { ConfigForm } from "./config-form.tsx";
-import { TextField } from "./fields.tsx";
 import { SettingsLink } from "./link.tsx";
 import { SettingsCard } from "./settings-card.tsx";
 
@@ -19,6 +19,7 @@ import { SettingsCard } from "./settings-card.tsx";
  * The row at the bottom says so, since this is where anyone would look for it first.
  */
 export function VoicePanel() {
+  const placement = useDescriptionPlacement();
   return (
     <ConfigForm
       tab="voice"
@@ -37,8 +38,9 @@ export function VoicePanel() {
             description="Leave both models blank and voice runs on whatever the device already has: a browser and an Android build both read replies aloud and take dictation with the recogniser they ship with. Naming a model moves that work to the server, which is the only way the desktop build gets a microphone button of its own. A tcp://host:port in place of a model name is a Wyoming server — the voice services Home Assistant speaks to — and the audio base URL and API key are not used for it."
             contentSlot={
               <form.AppField name="voiceBaseUrl">
-                {() => (
-                  <TextField
+                {(field) => (
+                  <field.InputField
+                    descriptionPlacement={placement}
                     label="Audio base URL"
                     description={`Where the transcription and speech endpoints are, when that is not where the chat model is — a local Ollama serves no audio. Blank uses ${voiceBaseUrlFor({ ...view, ...draft }) || "the endpoint under Model"}. The same API key is sent either way.`}
                     placeholder={view.baseUrl || "https://api.openai.com/v1"}
@@ -57,8 +59,9 @@ export function VoicePanel() {
                   contentSlot={
                     <>
                       <form.AppField name="sttModel">
-                        {() => (
-                          <TextField
+                        {(field) => (
+                          <field.InputField
+                            descriptionPlacement={placement}
                             label="Speech to text"
                             description="whisper-1, or tcp://host:10300 for a Wyoming one. Blank uses the device."
                             placeholder="off"
@@ -66,8 +69,9 @@ export function VoicePanel() {
                         )}
                       </form.AppField>
                       <form.AppField name="ttsModel">
-                        {() => (
-                          <TextField
+                        {(field) => (
+                          <field.InputField
+                            descriptionPlacement={placement}
                             label="Text to speech"
                             description="tts-1, or tcp://host:10200 for a Wyoming one. Blank uses the device."
                             placeholder="off"
@@ -79,8 +83,9 @@ export function VoicePanel() {
                 />
 
                 <form.AppField name="ttsVoice">
-                  {() => (
-                    <TextField
+                  {(field) => (
+                    <field.InputField
+                      descriptionPlacement={placement}
                       label="Voice"
                       description="Which voice the speech model uses — a Piper voice name for Wyoming. Blank takes its default."
                       placeholder="alloy"
@@ -100,6 +105,7 @@ export function VoicePanel() {
                 </form.AppField>
 
                 <SettingRow
+                  descriptionPlacement={placement}
                   description="When the microphone button sends what you dictated is set per device, not here."
                   actionSlot={
                     <View className="flex-row">

@@ -20,6 +20,7 @@ import { DialogLayout } from "@/components/dialog-layout.tsx";
 import { ListItem } from "@/components/list-item.tsx";
 import { EmptyState } from "@/components/page.tsx";
 import { QueryState } from "@/components/query-state.tsx";
+import { Section } from "@/components/section.tsx";
 import { Alert } from "@/components/ui/alert.tsx";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button.tsx";
@@ -27,11 +28,10 @@ import { Form } from "@/components/ui/form.tsx";
 import { ChevronRight, Plus, RefreshCw, Trash2, X } from "@/components/ui/icons";
 import { SwitchField as SwitchRow } from "@/components/ui/switch-field";
 import { api } from "@/lib/client.ts";
+import { useDescriptionPlacement } from "@/lib/display-settings.ts";
 import { queryKeys } from "@/lib/queries.ts";
 import { useReportDirty } from "./dirty.tsx";
-import { LongTextField, TextField } from "./fields.tsx";
 import { PanelBody } from "./panel-body.tsx";
-import { SettingsSection as Section } from "./settings-section.tsx";
 
 /**
  * The MCP servers the agent can call tools on.
@@ -257,6 +257,7 @@ function Editor({
   onReconnect: () => void;
   reconnecting: boolean;
 }) {
+  const placement = useDescriptionPlacement();
   const existing = Boolean(state);
   const toolNames = state?.tools.map((tool) => tool.name) ?? [];
   const toolOptions = toolNames.map((tool) => ({ label: tool, value: tool }));
@@ -326,6 +327,7 @@ function Editor({
           <Form className="gap-4">
             {state ? (
               <Section
+                descriptionPlacement={placement}
                 surface="card"
                 title="Connection"
                 level={3}
@@ -388,13 +390,17 @@ function Editor({
             ) : null}
 
             <form.AppField name="label">
-              {() => (
-                <TextField label="Label" placeholder="Filesystem" autoFocus={existing === false} />
+              {(field) => (
+                <field.InputField
+                  label="Label"
+                  placeholder="Filesystem"
+                  autoFocus={existing === false}
+                />
               )}
             </form.AppField>
 
             <form.AppField name="transport">
-              {(field) => <field.OptionSelectField label="Transport" options={TRANSPORTS} />}
+              {(field) => <field.ComboboxField label="Transport" options={TRANSPORTS} />}
             </form.AppField>
 
             <form.Subscribe selector={(store) => store.values.transport}>
@@ -402,11 +408,12 @@ function Editor({
                 transport === "stdio" ? (
                   <>
                     <form.AppField name="command">
-                      {() => <TextField label="Command" placeholder="npx" />}
+                      {(field) => <field.InputField label="Command" placeholder="npx" />}
                     </form.AppField>
                     <form.AppField name="args">
-                      {() => (
-                        <TextField
+                      {(field) => (
+                        <field.InputField
+                          descriptionPlacement={placement}
                           label="Args"
                           description="Separated by spaces."
                           placeholder="-y @modelcontextprotocol/server-filesystem /tmp"
@@ -416,8 +423,8 @@ function Editor({
                   </>
                 ) : (
                   <form.AppField name="url">
-                    {() => (
-                      <TextField
+                    {(field) => (
+                      <field.InputField
                         label="URL"
                         inputMode="url"
                         placeholder="https://example.com/mcp"
@@ -429,8 +436,9 @@ function Editor({
             </form.Subscribe>
 
             <form.AppField name="id">
-              {() => (
-                <TextField
+              {(field) => (
+                <field.InputField
+                  descriptionPlacement={placement}
                   label="Id"
                   description="Prefixes every tool it offers: <id>__<tool>. Letters, digits, _ or -."
                 />
@@ -442,6 +450,7 @@ function Editor({
             </form.AppField>
 
             <Section
+              descriptionPlacement={placement}
               title="Hooks"
               level={3}
               description="This server's tools, called by min-agent at points in a chat rather than by the model. A hook that fails is noted under the reply and never stops the turn."
@@ -480,23 +489,23 @@ function Editor({
                           contentSlot={
                             <>
                               <form.AppField name={`hooks[${index}].id`}>
-                                {() => <TextField label="Id" />}
+                                {(field) => <field.InputField label="Id" />}
                               </form.AppField>
                               <form.AppField name={`hooks[${index}].enabled`}>
                                 {(field) => <field.SwitchField label="Run it" />}
                               </form.AppField>
                               <form.AppField name={`hooks[${index}].on`}>
                                 {(field) => (
-                                  <field.OptionSelectField label="When" options={EVENT_OPTIONS} />
+                                  <field.ComboboxField label="When" options={EVENT_OPTIONS} />
                                 )}
                               </form.AppField>
                               <form.AppField name={`hooks[${index}].tool`}>
                                 {(field) =>
                                   // A server that is not connected yet is typed by hand.
                                   toolOptions.length ? (
-                                    <field.OptionSelectField label="Tool" options={toolOptions} />
+                                    <field.ComboboxField label="Tool" options={toolOptions} />
                                   ) : (
-                                    <TextField
+                                    <field.InputField
                                       label="Tool"
                                       placeholder="The tool's own name, without the id prefix"
                                     />
@@ -507,8 +516,8 @@ function Editor({
                                 name={`hooks[${index}].argsText`}
                                 validators={{ onChange: ({ value }) => argsProblem(value) }}
                               >
-                                {() => (
-                                  <LongTextField
+                                {(field) => (
+                                  <field.TextAreaField
                                     label="Arguments"
                                     description="JSON. {{prompt}}, {{reply}}, {{session.id}}, {{turn.messages}}, {{compacting}} fill in at run time."
                                     rows={4}
@@ -564,6 +573,7 @@ function Editor({
 const POLL = FRESHNESS_DEFAULTS.mcpPollSeconds * MS_PER_SECOND;
 
 export function McpPanel({ active = true }: { active?: boolean }) {
+  const placement = useDescriptionPlacement();
   const queryClient = useQueryClient();
   // The panel stays mounted behind another tab, so the poll is tied to being looked at. The
   // settings shell keeps a slow one of its own running for the dot on the tab.
@@ -609,6 +619,7 @@ export function McpPanel({ active = true }: { active?: boolean }) {
       content={
         <>
           <Section
+            descriptionPlacement={placement}
             title="MCP servers"
             description="Connected servers expose their tools to the agent as <server id>__<tool>."
             actionSlot={
