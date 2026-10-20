@@ -1,8 +1,11 @@
 import { graphql } from "graphql";
 import { loadLlmConfig, refreshLlmConfig } from "../../../server/config.ts";
 import { db } from "../../../server/db/client.ts";
-import { schema } from "../../../server/graphql/schema.ts";
+import { createSchema } from "../../../server/graphql/schema.ts";
+import { createMcp } from "../../../server/mcp.ts";
 import { closeTestDb, resetTestDb } from "../db.ts";
+
+const schema = createSchema({ mcp: createMcp() });
 
 /**
  * The settings cache, exercised the way it is actually written to: through the generated

@@ -1,6 +1,5 @@
 import { resultText } from "@cubicecho/agent-mcp-pool";
 import type { McpPrompt } from "../shared/types.ts";
-import { client, promptServers } from "./mcp.ts";
 
 /**
  * MCP prompts, as things a person picks rather than things the model calls.
@@ -20,9 +19,41 @@ import { client, promptServers } from "./mcp.ts";
  * point and the argument the user typed is rarely the whole of what they meant.
  */
 
-/** The prompts every connected prompt-serving server offers, in configuration order. */
-export async function list(): Promise<McpPrompt[]> {
-  const servers = promptServers();
+/** One prompt as a server lists it: the fields of `prompts/list` the picker reads. */
+interface ListedPrompt {
+  name: string;
+  title?: string | undefined;
+  description?: string | undefined;
+  arguments?:
+    | { name: string; description?: string | undefined; required?: boolean | undefined }[]
+    | undefined;
+}
+
+/** The two calls of an MCP client this module makes. The SDK's `Client` is one. */
+interface PromptClient {
+  listPrompts(): Promise<{ prompts: ListedPrompt[] }>;
+  getPrompt(request: {
+    name: string;
+    arguments: Record<string, string>;
+  }): Promise<{ messages: { role: string; content: unknown }[] }>;
+}
+
+/** The part of the app's MCP servers that prompts are read from. `Mcp` is one. */
+export interface PromptSource {
+  /** The connected servers that offer prompts, in configuration order. */
+  promptServers(): { id: string; label: string }[];
+  /** One server's connected client. */
+  client(id: string): Promise<PromptClient>;
+}
+
+/**
+ * The prompts every connected prompt-serving server offers, in configuration order.
+ *
+ * @param mcp - The servers to ask.
+ * @returns Every prompt, each with the server it came from.
+ */
+export async function list(mcp: PromptSource): Promise<McpPrompt[]> {
+  const servers = mcp.promptServers();
   if (servers.length === 0) {
     return [];
   }
@@ -30,7 +61,7 @@ export async function list(): Promise<McpPrompt[]> {
   const listings = await Promise.all(
     servers.map(async ({ id, label }) => {
       try {
-        const { prompts } = await (await client(id)).listPrompts();
+        const { prompts } = await (await mcp.client(id)).listPrompts();
         return prompts.map((prompt) => ({
           server: id,
           serverLabel: label,
@@ -65,18 +96,25 @@ export async function list(): Promise<McpPrompt[]> {
  * model able to read it as one, where dropping the roles would not. Worth revisiting if a server
  * that leans on multi-message prompts turns up; the fix is a session that can be seeded with
  * messages, which min-agent does not have.
+ *
+ * @param mcp - The servers to ask.
+ * @param server - The id of the server that offers the prompt.
+ * @param name - The prompt's name.
+ * @param args - The prompt's arguments, as typed.
+ * @returns The expansion, as one string.
  */
 export async function get(
+  mcp: PromptSource,
   server: string,
   name: string,
   args: Record<string, string>,
 ): Promise<string> {
-  const isUnknownServer = promptServers().some((offered) => offered.id === server) === false;
+  const isUnknownServer = mcp.promptServers().some((offered) => offered.id === server) === false;
   if (isUnknownServer) {
     throw new Error(`${server} is not a connected MCP server that offers prompts`);
   }
 
-  const { messages } = await (await client(server)).getPrompt({ name, arguments: args });
+  const { messages } = await (await mcp.client(server)).getPrompt({ name, arguments: args });
   if (messages.length === 1) {
     return messageText(messages[0].content);
   }

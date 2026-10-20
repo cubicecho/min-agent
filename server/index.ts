@@ -7,9 +7,9 @@ import { loadMcpServers, refreshLlmConfig } from "./config.ts";
 import { waitForDatabase } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
 import { surfaced } from "./errors.ts";
-import { schema } from "./graphql/schema.ts";
+import { createSchema } from "./graphql/schema.ts";
 import { HttpStatus } from "./http-status.ts";
-import * as mcp from "./mcp.ts";
+import { createMcp } from "./mcp.ts";
 import { displayHost, HOST, PORT, ROOT } from "./paths.ts";
 import { voice } from "./voice.ts";
 
@@ -19,6 +19,10 @@ import { voice } from "./voice.ts";
 await waitForDatabase();
 await runMigrations();
 await refreshLlmConfig();
+
+// The one pool of MCP connections the process runs on, handed to everything that talks to a server.
+const mcp = createMcp();
+const schema = createSchema({ mcp });
 
 const app = express();
 

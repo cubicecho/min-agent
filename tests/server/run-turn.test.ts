@@ -62,7 +62,6 @@ let patches: { row: string; patch: Pick<StoredMessage, "stats" | "followups"> }[
 /** Every `updateSession` patch, in order. */
 let updates: Record<string, unknown>[] = [];
 
-vi.mock("../../server/mcp.ts", () => mcp);
 vi.mock("../../server/store.ts", () => ({
   addMessage: async (_session: string, idx: number, message: StoredMessage) => {
     stored[idx] = structuredClone(message);
@@ -268,15 +267,18 @@ async function run(
   { onEvent, signal }: { onEvent?: (event: StreamEvent) => void; signal?: AbortSignal } = {},
 ) {
   const events: StreamEvent[] = [];
-  const settled: { stats?: TurnStats; error?: Error } = await runTurn({
-    session: chat,
-    prompt,
-    signal,
-    onEvent: (event) => {
-      events.push(structuredClone(event));
-      onEvent?.(event);
+  const settled: { stats?: TurnStats; error?: Error } = await runTurn(
+    {
+      session: chat,
+      prompt,
+      signal,
+      onEvent: (event) => {
+        events.push(structuredClone(event));
+        onEvent?.(event);
+      },
     },
-  }).then(
+    { mcp },
+  ).then(
     (stats) => ({ stats }),
     (error: unknown) => ({ error: errorOf(error) }),
   );

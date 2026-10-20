@@ -41,12 +41,12 @@ const mcp = {
   resourceServers: vi.fn(),
   call: vi.fn(),
   runHooks: vi.fn(),
+  client: vi.fn(),
 };
 
 /** Every `updateSession` patch, in order. */
 let updates: Record<string, unknown>[] = [];
 
-vi.mock("../../server/mcp.ts", () => mcp);
 vi.mock("../../server/store.ts", () => ({
   addMessage: async (_session: string, idx: number) => `row-${idx}`,
   patchMessage: async () => {},
@@ -187,7 +187,7 @@ const transcript = (contextTokens: number): StoredMessage[] => [
 ];
 
 const run = (chat: Session, prompt = "and now?") =>
-  runTurn({ session: chat, prompt, onEvent: () => {} });
+  runTurn({ session: chat, prompt, onEvent: () => {} }, { mcp });
 
 /** What `beforeCompact` was told, once per time it ran. */
 const compactHooks = () =>

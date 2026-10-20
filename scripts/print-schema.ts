@@ -10,7 +10,10 @@ import { ROOT } from "../server/paths.ts";
  * read; this makes one. It needs no database — the tables describe themselves — so it runs in
  * CI and on a fresh clone. Run it whenever the tables change; `npm run codegen` does it first.
  */
-const { schema } = await import("../server/graphql/schema.ts");
+const { createSchema } = await import("../server/graphql/schema.ts");
+const { createMcp } = await import("../server/mcp.ts");
+// A pool that is never synced dials nothing: only the types are read.
+const schema = createSchema({ mcp: createMcp() });
 const file = path.join(ROOT, "schema.graphql");
 fs.writeFileSync(file, printSchema(schema), "utf8");
 console.log(`wrote ${path.relative(ROOT, file)}`);

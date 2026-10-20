@@ -1,9 +1,12 @@
 import { graphql } from "graphql";
 import { assertLlmConfigPatch, coerceLlmConfig, endpoint } from "../../server/config.ts";
-import { schema } from "../../server/graphql/schema.ts";
+import { createSchema } from "../../server/graphql/schema.ts";
+import { createMcp } from "../../server/mcp.ts";
 import { llmConfigSchema, modelForTask } from "../../shared/types.ts";
 import { isRecord } from "../helpers.ts";
 import { storedSettings } from "./helpers.ts";
+
+const schema = createSchema({ mcp: createMcp() });
 
 /**
  * The settings live in Postgres and GraphQL checks their shape, so what is left to test here

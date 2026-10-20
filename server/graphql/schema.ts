@@ -27,89 +27,11 @@ import { db } from "../db/client.ts";
 import { settings } from "../db/schema.ts";
 import { surfaced } from "../errors.ts";
 import { sessionDeleted } from "../hooks.ts";
-import * as mcp from "../mcp.ts";
+import type { Mcp } from "../mcp.ts";
 import * as mcpPrompts from "../mcp-prompts.ts";
 import { settingsSpec } from "../spec.ts";
 import { truncateSession } from "../store.ts";
 import { runTurnEvents, type TurnArgs } from "../turns.ts";
-
-/**
- * The CRUD half of the API is generated from the Drizzle schema — sessions, messages and the
- * settings row all get their queries, filters and mutations for free, and stay in step with the
- * tables by construction. Only what is not a row edit is written by hand below: listing the
- * models a server reports, the live state of the MCP connections, and running a turn.
- */
-const { entities } = buildSchema(db, {
-  /**
-   * Lets a `UserError` reach the client with its own message, and leaves everything else to
-   * the default — which replaces it with a flat `Internal server error`, because a driver
-   * message names tables, columns, constraints and the values that violated them.
-   *
-   * Returning nothing falls through to that default. Without this, the bounds `before` checks
-   * below were thrown, masked, and shown as "Internal server error" in the toast — the check
-   * ran, and the person who typed 300000 was told nothing about which field or which limit.
-   *
-   * graphql-yoga masks a second time, over every field including the hand-written ones. See
-   * `maskedErrors` in `index.ts`.
-   */
-  onError: surfaced,
-  // `sessions` → type `Session`, queries `sessions` (list) and `sessionsSingle`.
-  typeNameMapper: "singularize",
-  defaults: {
-    // The sidebar is a most-recent-first list, and a transcript is only ever read in order.
-    // Declared here once rather than by every client, and it reaches the `messages` relation
-    // field too — a relation is ordered by the default of the table it reads.
-    sessions: { orderBy: { updatedAt: "desc" } },
-    messages: { orderBy: { idx: "asc" } },
-    // The sidebar draws them in this order, and it reads the generated query directly.
-    embeds: { orderBy: { position: "asc" } },
-  },
-  features: {
-    // A message is written by the turn that produced it, and the MCP list is saved as a set
-    // (see `saveMcpServers`) — a hand-made row in either would claim something that never
-    // happened. The settings row is a singleton `ensureSchema` creates and nothing deletes.
-    insert: (table) => table === "sessions",
-    update: (table) => table === "sessions" || table === "settings",
-    delete: (table) => table === "sessions",
-  },
-  exclude: {
-    // The key never needs to travel back to the browser; the UI only ever writes it.
-    columns: { settings: ["apiKey"] },
-  },
-  mapColumnType: (column) => (column.columnType === "PgTimestamp" ? GraphQLDateTime : undefined),
-  onWrite: {
-    // `loadLlmConfig()` is read synchronously all through a turn, so the copy it reads has to
-    // be renewed by whatever wrote the row — including the generated mutation, which knows
-    // nothing about the cache.
-    settings: {
-      // The generated input carries the column types and no range at all, so this is where
-      // `llmConfigSchema`'s bounds are applied to a write. Throwing rolls the mutation back.
-      before: ({ args }) => {
-        assertLlmConfigPatch(args?.set);
-      },
-      // Through `tx`, never through `db`. The hook runs inside the mutation's transaction, so
-      // a read on any other connection sees the row as it was before the write — which is how
-      // the cache came to run one save behind.
-      after: async ({ tx }) => {
-        await refreshLlmConfig(tx);
-      },
-    },
-    // Deleting a chat is the generated `deleteSessionSingle`, which never passes through
-    // `store.ts`, so this is the one place that sees it happen. `rows` are the deleted rows as
-    // the database returned them. Not awaited: a memory server forgetting a session is its own
-    // business, and a slow one must not hold the sidebar's delete open.
-    sessions: {
-      after: ({ operation, rows }) => {
-        if (operation !== "delete") {
-          return;
-        }
-        for (const row of rows as { id: string }[]) {
-          void sessionDeleted(row.id);
-        }
-      },
-    },
-  },
-});
 
 const McpToolType = new GraphQLObjectType({
   name: "McpTool",
@@ -165,18 +87,6 @@ const McpServerInput = new GraphQLInputObjectType({
     hooks: { type: GraphQLJSON },
   },
 });
-
-/**
- * The generated object type for the `embeds` table, reused as what `saveEmbeds` hands back —
- * so a save and the `embeds` query return the same type and one fragment covers both.
- *
- * Read through a `Record` because `entities.types` is keyed by the *generated* type name,
- * which `typeNameMapper: "singularize"` makes `Embed`, while the declared type of that object
- * spells the key `Embeds`. Indexing it as declared compiles and is `undefined` at runtime.
- */
-const EmbedType = (entities.types as unknown as Record<string, GraphQLObjectType>).Embed;
-
-const embedList = new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(EmbedType)));
 
 const EmbedModeEnum = new GraphQLEnumType({
   name: "EmbedMode",
@@ -288,163 +198,270 @@ const McpPromptType = new GraphQLObjectType({
 
 const mcpList = new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(McpServerStateType)));
 
-export const schema = new GraphQLSchema({
-  query: new GraphQLObjectType({
-    name: "Query",
-    fields: {
-      ...entities.queries,
-      models: {
-        type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(ModelInfoType))),
-        description: "Models the configured OpenAI-compatible server reports, id-sorted.",
-        resolve: () => listModels(),
+/** What the schema's resolvers talk to. `server/index.ts` hands in the real ones. */
+export interface SchemaDeps {
+  /** The MCP servers: their state, their prompts, and the pool a turn runs on. */
+  mcp: Mcp;
+}
+
+/**
+ * Builds the API: the generated CRUD over the tables, and the fields written by hand.
+ *
+ * @param deps - What the resolvers talk to.
+ * @returns The schema.
+ */
+export function createSchema({ mcp }: SchemaDeps): GraphQLSchema {
+  /**
+   * The CRUD half of the API is generated from the Drizzle schema — sessions, messages and the
+   * settings row all get their queries, filters and mutations for free, and stay in step with the
+   * tables by construction. Only what is not a row edit is written by hand below: listing the
+   * models a server reports, the live state of the MCP connections, and running a turn.
+   */
+  const { entities } = buildSchema(db, {
+    /**
+     * Lets a `UserError` reach the client with its own message, and leaves everything else to
+     * the default — which replaces it with a flat `Internal server error`, because a driver
+     * message names tables, columns, constraints and the values that violated them.
+     *
+     * Returning nothing falls through to that default. Without this, the bounds `before` checks
+     * below were thrown, masked, and shown as "Internal server error" in the toast — the check
+     * ran, and the person who typed 300000 was told nothing about which field or which limit.
+     *
+     * graphql-yoga masks a second time, over every field including the hand-written ones. See
+     * `maskedErrors` in `index.ts`.
+     */
+    onError: surfaced,
+    // `sessions` → type `Session`, queries `sessions` (list) and `sessionsSingle`.
+    typeNameMapper: "singularize",
+    defaults: {
+      // The sidebar is a most-recent-first list, and a transcript is only ever read in order.
+      // Declared here once rather than by every client, and it reaches the `messages` relation
+      // field too — a relation is ordered by the default of the table it reads.
+      sessions: { orderBy: { updatedAt: "desc" } },
+      messages: { orderBy: { idx: "asc" } },
+      // The sidebar draws them in this order, and it reads the generated query directly.
+      embeds: { orderBy: { position: "asc" } },
+    },
+    features: {
+      // A message is written by the turn that produced it, and the MCP list is saved as a set
+      // (see `saveMcpServers`) — a hand-made row in either would claim something that never
+      // happened. The settings row is a singleton `ensureSchema` creates and nothing deletes.
+      insert: (table) => table === "sessions",
+      update: (table) => table === "sessions" || table === "settings",
+      delete: (table) => table === "sessions",
+    },
+    exclude: {
+      // The key never needs to travel back to the browser; the UI only ever writes it.
+      columns: { settings: ["apiKey"] },
+    },
+    mapColumnType: (column) => (column.columnType === "PgTimestamp" ? GraphQLDateTime : undefined),
+    onWrite: {
+      // `loadLlmConfig()` is read synchronously all through a turn, so the copy it reads has to
+      // be renewed by whatever wrote the row — including the generated mutation, which knows
+      // nothing about the cache.
+      settings: {
+        // The generated input carries the column types and no range at all, so this is where
+        // `llmConfigSchema`'s bounds are applied to a write. Throwing rolls the mutation back.
+        before: ({ args }) => {
+          assertLlmConfigPatch(args?.set);
+        },
+        // Through `tx`, never through `db`. The hook runs inside the mutation's transaction, so
+        // a read on any other connection sees the row as it was before the write — which is how
+        // the cache came to run one save behind.
+        after: async ({ tx }) => {
+          await refreshLlmConfig(tx);
+        },
       },
-      mcpStatus: {
-        type: mcpList,
-        description: "Every configured MCP server, with its live connection state and tools.",
-        resolve: () => mcp.state(),
+      // Deleting a chat is the generated `deleteSessionSingle`, which never passes through
+      // `store.ts`, so this is the one place that sees it happen. `rows` are the deleted rows as
+      // the database returned them. Not awaited: a memory server forgetting a session is its own
+      // business, and a slow one must not hold the sidebar's delete open.
+      sessions: {
+        after: ({ operation, rows }) => {
+          if (operation !== "delete") {
+            return;
+          }
+          for (const row of rows as { id: string }[]) {
+            void sessionDeleted(mcp, row.id);
+          }
+        },
       },
-      mcpPrompts: {
-        type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(McpPromptType))),
-        description:
-          "The prompts the connected servers offer, for a picker. Empty when none of them does; " +
-          "a server that cannot be listed is omitted rather than failing the query.",
-        resolve: () => mcpPrompts.list(),
-      },
-      mcpPrompt: {
-        type: new GraphQLNonNull(GraphQLString),
-        description:
-          "One prompt expanded with the given arguments, flattened to the single string a " +
-          "composer draft is. A multi-message prompt comes back with its roles labelled.",
-        args: {
-          server: { type: new GraphQLNonNull(GraphQLString) },
-          name: { type: new GraphQLNonNull(GraphQLString) },
+    },
+  });
+
+  /**
+   * The generated object type for the `embeds` table, reused as what `saveEmbeds` hands back —
+   * so a save and the `embeds` query return the same type and one fragment covers both.
+   *
+   * Read through a `Record` because `entities.types` is keyed by the *generated* type name,
+   * which `typeNameMapper: "singularize"` makes `Embed`, while the declared type of that object
+   * spells the key `Embeds`. Indexing it as declared compiles and is `undefined` at runtime.
+   */
+  const EmbedType = (entities.types as unknown as Record<string, GraphQLObjectType>).Embed;
+
+  const embedList = new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(EmbedType)));
+
+  return new GraphQLSchema({
+    query: new GraphQLObjectType({
+      name: "Query",
+      fields: {
+        ...entities.queries,
+        models: {
+          type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(ModelInfoType))),
+          description: "Models the configured OpenAI-compatible server reports, id-sorted.",
+          resolve: () => listModels(),
+        },
+        mcpStatus: {
+          type: mcpList,
+          description: "Every configured MCP server, with its live connection state and tools.",
+          resolve: () => mcp.state(),
+        },
+        mcpPrompts: {
+          type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(McpPromptType))),
+          description:
+            "The prompts the connected servers offer, for a picker. Empty when none of them does; " +
+            "a server that cannot be listed is omitted rather than failing the query.",
+          resolve: () => mcpPrompts.list(mcp),
+        },
+        mcpPrompt: {
+          type: new GraphQLNonNull(GraphQLString),
+          description:
+            "One prompt expanded with the given arguments, flattened to the single string a " +
+            "composer draft is. A multi-message prompt comes back with its roles labelled.",
           args: {
-            type: GraphQLJSON,
-            description: "The prompt's arguments by name. Absent is the same as none.",
+            server: { type: new GraphQLNonNull(GraphQLString) },
+            name: { type: new GraphQLNonNull(GraphQLString) },
+            args: {
+              type: GraphQLJSON,
+              description: "The prompt's arguments by name. Absent is the same as none.",
+            },
+          },
+          resolve: (_root, { server, name, args }) =>
+            mcpPrompts.get(mcp, server, name, (args ?? {}) as Record<string, string>),
+        },
+        health: {
+          type: new GraphQLNonNull(HealthType),
+          description: "Answers only once the settings are loaded and the schema is up.",
+          resolve: () => {
+            const config = loadLlmConfig();
+            return {
+              ok: true,
+              baseUrl: config.baseUrl,
+              model: config.model,
+              hasApiKey: hasApiKey(config),
+            };
           },
         },
-        resolve: (_root, { server, name, args }) =>
-          mcpPrompts.get(server, name, (args ?? {}) as Record<string, string>),
-      },
-      health: {
-        type: new GraphQLNonNull(HealthType),
-        description: "Answers only once the settings are loaded and the schema is up.",
-        resolve: () => {
-          const config = loadLlmConfig();
-          return {
-            ok: true,
-            baseUrl: config.baseUrl,
-            model: config.model,
-            hasApiKey: hasApiKey(config),
-          };
+        hasApiKey: {
+          type: new GraphQLNonNull(GraphQLBoolean),
+          description:
+            "Whether a key is set, without saying what it is. The Config tab shows a filled " +
+            "placeholder rather than an empty box; the key itself is excluded from `Setting`.",
+          resolve: () => hasApiKey(),
+        },
+        spec: {
+          type: new GraphQLNonNull(GraphQLJSON),
+          description:
+            "The saved settings as an agent spec: a `cubicecho.agent/1` document another host on " +
+            "`@cubicecho/agent-core` can read. The API key is never part of it.",
+          resolve: () => settingsSpec(loadLlmConfig()),
         },
       },
-      hasApiKey: {
-        type: new GraphQLNonNull(GraphQLBoolean),
-        description:
-          "Whether a key is set, without saying what it is. The Config tab shows a filled " +
-          "placeholder rather than an empty box; the key itself is excluded from `Setting`.",
-        resolve: () => hasApiKey(),
-      },
-      spec: {
-        type: new GraphQLNonNull(GraphQLJSON),
-        description:
-          "The saved settings as an agent spec: a `cubicecho.agent/1` document another host on " +
-          "`@cubicecho/agent-core` can read. The API key is never part of it.",
-        resolve: () => settingsSpec(loadLlmConfig()),
-      },
-    },
-  }),
-  mutation: new GraphQLObjectType({
-    name: "Mutation",
-    fields: {
-      ...entities.mutations,
-      setApiKey: {
-        type: new GraphQLNonNull(GraphQLBoolean),
-        description:
-          "Writes the API key. Separate from the settings update because the key is " +
-          "write-only: it is excluded from `Setting` so it can never be read back out. An " +
-          "empty string clears it and falls back to $OPENAI_API_KEY.",
-        args: { apiKey: { type: new GraphQLNonNull(GraphQLString) } },
-        resolve: async (_source, args: { apiKey: string }) => {
-          await db.update(settings).set({ apiKey: args.apiKey }).where(eq(settings.id, "default"));
-          await refreshLlmConfig();
-          return true;
-        },
-      },
-      saveMcpServers: {
-        type: mcpList,
-        description:
-          "Replaces the configured set and reconnects. The list is edited and saved whole — a " +
-          "server's id is the namespace its tools live under, so renaming one is a different " +
-          "server, not an edited row.",
-        args: {
-          servers: {
-            type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(McpServerInput))),
+    }),
+    mutation: new GraphQLObjectType({
+      name: "Mutation",
+      fields: {
+        ...entities.mutations,
+        setApiKey: {
+          type: new GraphQLNonNull(GraphQLBoolean),
+          description:
+            "Writes the API key. Separate from the settings update because the key is " +
+            "write-only: it is excluded from `Setting` so it can never be read back out. An " +
+            "empty string clears it and falls back to $OPENAI_API_KEY.",
+          args: { apiKey: { type: new GraphQLNonNull(GraphQLString) } },
+          resolve: async (_source, args: { apiKey: string }) => {
+            await db
+              .update(settings)
+              .set({ apiKey: args.apiKey })
+              .where(eq(settings.id, "default"));
+            await refreshLlmConfig();
+            return true;
           },
         },
-        resolve: async (_source, args: { servers: McpServerConfig[] }) => {
-          const saved = await saveMcpServers(args.servers);
-          await mcp.sync(saved);
-          return mcp.state();
-        },
-      },
-      reconnectMcpServer: {
-        type: mcpList,
-        description: "Tears down one server's connection and dials it again.",
-        args: { id: { type: new GraphQLNonNull(GraphQLString) } },
-        resolve: async (_source, args: { id: string }) => {
-          await mcp.reconnect(args.id, await loadMcpServers());
-          return mcp.state();
-        },
-      },
-      truncateSession: {
-        type: new GraphQLNonNull(GraphQLInt),
-        description:
-          "Forgets every message from `fromIdx` on, and answers with how many are left. The " +
-          "only write that removes a message: retrying a reply and editing a question both " +
-          "mean going again from a point, and what follows that point is an answer to " +
-          "something no longer being asked. A suffix only, so `idx` stays dense.",
-        args: {
-          id: { type: new GraphQLNonNull(GraphQLString) },
-          fromIdx: { type: new GraphQLNonNull(GraphQLInt) },
-        },
-        resolve: (_source, args: { id: string; fromIdx: number }) =>
-          truncateSession(args.id, args.fromIdx),
-      },
-      saveEmbeds: {
-        type: embedList,
-        description:
-          "Replaces the configured embeds. Saved whole rather than row by row: an embed's id " +
-          "is the route its view lives at, so a rename is a new destination and the screen " +
-          "edits the list as a list.",
-        args: {
-          embeds: { type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(EmbedInput))) },
-        },
-        resolve: (_source, args: { embeds: EmbedConfig[] }) => saveEmbeds(args.embeds),
-      },
-    },
-  }),
-  subscription: new GraphQLObjectType({
-    name: "Subscription",
-    fields: {
-      turn: {
-        type: new GraphQLNonNull(TurnEventType),
-        description:
-          "Runs one turn and streams what it says. Subscribing starts the turn; ending the " +
-          "subscription stops it, keeping whatever it had already written.",
-        args: {
-          sessionId: { type: new GraphQLNonNull(GraphQLString) },
-          prompt: { type: new GraphQLNonNull(GraphQLString) },
-          model: {
-            type: GraphQLString,
-            description: "Overrides the session's model for this turn.",
+        saveMcpServers: {
+          type: mcpList,
+          description:
+            "Replaces the configured set and reconnects. The list is edited and saved whole — a " +
+            "server's id is the namespace its tools live under, so renaming one is a different " +
+            "server, not an edited row.",
+          args: {
+            servers: {
+              type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(McpServerInput))),
+            },
+          },
+          resolve: async (_source, args: { servers: McpServerConfig[] }) => {
+            const saved = await saveMcpServers(args.servers);
+            await mcp.sync(saved);
+            return mcp.state();
           },
         },
-        subscribe: (_source, args: TurnArgs) => runTurnEvents(args),
-        resolve: (event: unknown) => event,
+        reconnectMcpServer: {
+          type: mcpList,
+          description: "Tears down one server's connection and dials it again.",
+          args: { id: { type: new GraphQLNonNull(GraphQLString) } },
+          resolve: async (_source, args: { id: string }) => {
+            await mcp.reconnect(args.id, await loadMcpServers());
+            return mcp.state();
+          },
+        },
+        truncateSession: {
+          type: new GraphQLNonNull(GraphQLInt),
+          description:
+            "Forgets every message from `fromIdx` on, and answers with how many are left. The " +
+            "only write that removes a message: retrying a reply and editing a question both " +
+            "mean going again from a point, and what follows that point is an answer to " +
+            "something no longer being asked. A suffix only, so `idx` stays dense.",
+          args: {
+            id: { type: new GraphQLNonNull(GraphQLString) },
+            fromIdx: { type: new GraphQLNonNull(GraphQLInt) },
+          },
+          resolve: (_source, args: { id: string; fromIdx: number }) =>
+            truncateSession(args.id, args.fromIdx),
+        },
+        saveEmbeds: {
+          type: embedList,
+          description:
+            "Replaces the configured embeds. Saved whole rather than row by row: an embed's id " +
+            "is the route its view lives at, so a rename is a new destination and the screen " +
+            "edits the list as a list.",
+          args: {
+            embeds: { type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(EmbedInput))) },
+          },
+          resolve: (_source, args: { embeds: EmbedConfig[] }) => saveEmbeds(args.embeds),
+        },
       },
-    },
-  }),
-  types: [...Object.values(entities.types), ...Object.values(entities.inputs)],
-});
+    }),
+    subscription: new GraphQLObjectType({
+      name: "Subscription",
+      fields: {
+        turn: {
+          type: new GraphQLNonNull(TurnEventType),
+          description:
+            "Runs one turn and streams what it says. Subscribing starts the turn; ending the " +
+            "subscription stops it, keeping whatever it had already written.",
+          args: {
+            sessionId: { type: new GraphQLNonNull(GraphQLString) },
+            prompt: { type: new GraphQLNonNull(GraphQLString) },
+            model: {
+              type: GraphQLString,
+              description: "Overrides the session's model for this turn.",
+            },
+          },
+          subscribe: (_source, args: TurnArgs) => runTurnEvents(args, { mcp }),
+          resolve: (event: unknown) => event,
+        },
+      },
+    }),
+    types: [...Object.values(entities.types), ...Object.values(entities.inputs)],
+  });
+}

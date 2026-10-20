@@ -32,6 +32,7 @@ const mcp = {
   resourceServers: vi.fn(),
   call: vi.fn(),
   runHooks: vi.fn(),
+  client: vi.fn(),
 };
 
 /** Every row `addMessage` was handed, as it was at that moment. */
@@ -39,7 +40,6 @@ let stored: StoredMessage[] = [];
 /** Every `updateSession` patch, in order. */
 let updates: Record<string, unknown>[] = [];
 
-vi.mock("../../server/mcp.ts", () => mcp);
 vi.mock("../../server/store.ts", () => ({
   addMessage: async (_session: string, idx: number, message: StoredMessage) => {
     stored[idx] = structuredClone(message);
@@ -224,11 +224,14 @@ const reads = (count: number, from = 0, name = "fs__read") => [
 
 async function run(chat: Session, prompt: string) {
   const events: StreamEvent[] = [];
-  const stats = await runTurn({
-    session: chat,
-    prompt,
-    onEvent: (event) => events.push(structuredClone(event)),
-  });
+  const stats = await runTurn(
+    {
+      session: chat,
+      prompt,
+      onEvent: (event) => events.push(structuredClone(event)),
+    },
+    { mcp },
+  );
   return { events, stats };
 }
 

@@ -6,11 +6,14 @@ import {
 } from "@cubicecho/agent-core/spec";
 import { graphql } from "graphql";
 import { coerceLlmConfig } from "../../server/config.ts";
-import { schema } from "../../server/graphql/schema.ts";
+import { createSchema } from "../../server/graphql/schema.ts";
+import { createMcp } from "../../server/mcp.ts";
 import { SPEC_EXTENSION, settingsSpec } from "../../server/spec.ts";
 import { SpecDocument } from "../../shared/gql/graphql.ts";
 import { type LlmConfig, llmConfigSchema } from "../../shared/types.ts";
 import { isRecord } from "../helpers.ts";
+
+const schema = createSchema({ mcp: createMcp() });
 
 /**
  * The settings row on its way out as an agent spec, and what has to be true of the document

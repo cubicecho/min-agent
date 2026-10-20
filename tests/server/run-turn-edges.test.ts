@@ -54,7 +54,6 @@ let log: string[] = [];
 /** Called as each row is written, before the write resolves. */
 let onStore: (message: StoredMessage) => void = () => {};
 
-vi.mock("../../server/mcp.ts", () => mcp);
 vi.mock("../../server/store.ts", () => ({
   addMessage: async (_session: string, idx: number, message: StoredMessage) => {
     stored[idx] = structuredClone(message);
@@ -196,21 +195,24 @@ async function run(
   { onEvent, signal }: { onEvent?: (event: StreamEvent) => void; signal?: AbortSignal } = {},
 ) {
   const events: StreamEvent[] = [];
-  const settled: { stats?: TurnStats; error?: Error } = await runTurn({
-    session: chat,
-    prompt,
-    signal,
-    onEvent: (event) => {
-      events.push(structuredClone(event));
-      if (event.type === "tool_use") {
-        log.push(`tool_use ${event.id}`);
-      }
-      if (event.type === "tool_result") {
-        log.push(`tool_result ${event.toolUseId}`);
-      }
-      onEvent?.(event);
+  const settled: { stats?: TurnStats; error?: Error } = await runTurn(
+    {
+      session: chat,
+      prompt,
+      signal,
+      onEvent: (event) => {
+        events.push(structuredClone(event));
+        if (event.type === "tool_use") {
+          log.push(`tool_use ${event.id}`);
+        }
+        if (event.type === "tool_result") {
+          log.push(`tool_result ${event.toolUseId}`);
+        }
+        onEvent?.(event);
+      },
     },
-  }).then(
+    { mcp },
+  ).then(
     (stats) => ({ stats }),
     (error: unknown) => ({ error: errorOf(error) }),
   );

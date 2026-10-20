@@ -1,6 +1,6 @@
 import { messageOf } from "../shared/errors.ts";
 import type { HookNote, StreamEvent, TurnStats } from "../shared/types.ts";
-import { runTurn } from "./agent.ts";
+import { runTurn, type TurnDeps } from "./agent.ts";
 import { getSession } from "./store.ts";
 
 /**
@@ -50,8 +50,12 @@ export interface TurnArgs {
  * Ending the stream — the reader hitting stop, or the connection dropping — runs the `finally`
  * below, which aborts the turn. What it had already streamed is kept: `runTurn` writes the
  * partial answer before it rethrows.
+ *
+ * @param args - The chat, the question and the model to ask.
+ * @param deps - What the turn talks to.
+ * @returns The turn's events, numbered from 1.
  */
-export async function* runTurnEvents(args: TurnArgs): AsyncGenerator<TurnEvent> {
+export async function* runTurnEvents(args: TurnArgs, deps: TurnDeps): AsyncGenerator<TurnEvent> {
   const session = await getSession(args.sessionId);
   if (!session) {
     throw new Error("session not found");
@@ -68,13 +72,16 @@ export async function* runTurnEvents(args: TurnArgs): AsyncGenerator<TurnEvent> 
     wake = null;
   };
 
-  const turn = runTurn({
-    session,
-    prompt: args.prompt,
-    model: args.model ?? undefined,
-    onEvent: push,
-    signal: controller.signal,
-  })
+  const turn = runTurn(
+    {
+      session,
+      prompt: args.prompt,
+      model: args.model ?? undefined,
+      onEvent: push,
+      signal: controller.signal,
+    },
+    deps,
+  )
     .catch((error: unknown) => {
       // A turn the reader stopped is not a failure, and the reader already knows.
       if (controller.signal.aborted) {
