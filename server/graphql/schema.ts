@@ -12,7 +12,7 @@ import {
   GraphQLString,
 } from "graphql";
 import { GraphQLJSON } from "graphql-scalars";
-import type { EmbedConfig, McpServerConfig } from "../../shared/types.ts";
+import type { McpServerConfig } from "../../shared/types.ts";
 import { listModels } from "../agent.ts";
 import { assertLlmConfigPatch, hasApiKey, type Settings } from "../config.ts";
 import type { Db } from "../db/client.ts";
@@ -77,24 +77,6 @@ const McpServerInput = new GraphQLInputObjectType({
     headers: { type: GraphQLJSON },
     hiddenTools: { type: new GraphQLList(new GraphQLNonNull(GraphQLString)) },
     hooks: { type: GraphQLJSON },
-  },
-});
-
-const EmbedModeEnum = new GraphQLEnumType({
-  name: "EmbedMode",
-  values: { iframe: { value: "iframe" }, external: { value: "external" } },
-});
-
-const EmbedInput = new GraphQLInputObjectType({
-  name: "EmbedInput",
-  description: "One row of the embed list. Reads come from the generated `embeds` query.",
-  fields: {
-    id: { type: new GraphQLNonNull(GraphQLString) },
-    label: { type: GraphQLString },
-    url: { type: GraphQLString },
-    icon: { type: GraphQLString },
-    mode: { type: EmbedModeEnum },
-    enabled: { type: GraphQLBoolean },
   },
 });
 
@@ -198,7 +180,7 @@ export interface SchemaDeps {
   mcp: Mcp;
   /** The chats and their messages. */
   store: Store;
-  /** The settings row, cached, and the MCP servers and embeds saved beside it. */
+  /** The settings row, cached, and the MCP servers saved beside it. */
   settings: Settings;
 }
 
@@ -237,8 +219,6 @@ export function createSchema({ db, mcp, store, settings: config }: SchemaDeps): 
       // field too — a relation is ordered by the default of the table it reads.
       sessions: { orderBy: { updatedAt: "desc" } },
       messages: { orderBy: { idx: "asc" } },
-      // The sidebar draws them in this order, and it reads the generated query directly.
-      embeds: { orderBy: { position: "asc" } },
     },
     features: {
       // A message is written by the turn that produced it, and the MCP list is saved as a set
@@ -286,18 +266,6 @@ export function createSchema({ db, mcp, store, settings: config }: SchemaDeps): 
       },
     },
   });
-
-  /**
-   * The generated object type for the `embeds` table, reused as what `saveEmbeds` hands back —
-   * so a save and the `embeds` query return the same type and one fragment covers both.
-   *
-   * Read through a `Record` because `entities.types` is keyed by the *generated* type name,
-   * which `typeNameMapper: "singularize"` makes `Embed`, while the declared type of that object
-   * spells the key `Embeds`. Indexing it as declared compiles and is `undefined` at runtime.
-   */
-  const EmbedType = (entities.types as unknown as Record<string, GraphQLObjectType>).Embed;
-
-  const embedList = new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(EmbedType)));
 
   return new GraphQLSchema({
     query: new GraphQLObjectType({
@@ -425,17 +393,6 @@ export function createSchema({ db, mcp, store, settings: config }: SchemaDeps): 
           },
           resolve: (_source, args: { id: string; fromIdx: number }) =>
             store.truncateSession(args.id, args.fromIdx),
-        },
-        saveEmbeds: {
-          type: embedList,
-          description:
-            "Replaces the configured embeds. Saved whole rather than row by row: an embed's id " +
-            "is the route its view lives at, so a rename is a new destination and the screen " +
-            "edits the list as a list.",
-          args: {
-            embeds: { type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(EmbedInput))) },
-          },
-          resolve: (_source, args: { embeds: EmbedConfig[] }) => config.saveEmbeds(args.embeds),
         },
       },
     }),

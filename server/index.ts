@@ -49,8 +49,8 @@ const yoga = createYoga({
    * `Unexpected error.` — the right default, since a thrown `Error` is as likely to be a
    * dropped connection as a validated field, and its message and stack are the server's
    * business. But it took the hand-written resolvers' messages with it: a duplicate MCP
-   * server id or an embed with no URL was refused, correctly, and the note under the Save
-   * button said only that something had gone wrong.
+   * server id was refused, correctly, and the note under the Save button said only that
+   * something had gone wrong.
    *
    * So a `UserError` — the ones written to be read by whoever caused them — is surfaced, and
    * everything else still goes through `maskError` untouched. The generated resolvers mask

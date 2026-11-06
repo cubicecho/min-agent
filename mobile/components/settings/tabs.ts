@@ -1,6 +1,5 @@
 import {
   Cpu,
-  LayoutDashboard,
   LinkIcon,
   Mic,
   Server,
@@ -13,7 +12,7 @@ import {
  *
  * Model, Agent and Voice are three forms over one settings row — see `config-form.tsx` — and
  * they lead because nothing further down has anything to show until the first of them is
- * filled in. The four after them each store their settings somewhere else.
+ * filled in. The three after them each store their settings somewhere else.
  *
  * A table rather than a list written out in the screen, because two other places need it:
  * the tab row itself, and `SettingsLink`, which sends someone who is stuck to the panel that
@@ -24,7 +23,6 @@ export const SETTINGS_TABS = [
   { key: "agent", label: "Agent", icon: SlidersHorizontal },
   { key: "voice", label: "Voice", icon: Mic },
   { key: "mcp", label: "MCP", icon: Server },
-  { key: "apps", label: "Apps", icon: LayoutDashboard },
   { key: "server", label: "Server", icon: LinkIcon },
   { key: "device", label: "Device", icon: Smartphone },
 ] as const satisfies readonly { key: string; label: string; icon: typeof Cpu }[];

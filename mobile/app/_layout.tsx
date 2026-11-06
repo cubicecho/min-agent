@@ -1,6 +1,5 @@
 import { SETTINGS_STALE_TIME } from "@shared/client/queries.ts";
-import { type EmbedConfig, embedTitle } from "@shared/types.ts";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   DarkTheme,
   type ErrorBoundaryProps,
@@ -12,21 +11,18 @@ import {
 } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { Linking, Platform, Text, View } from "react-native";
+import { Platform, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import "../global.css";
 import { MessageSquare } from "@/components/app/app-icons";
-import { EMBED_ICON } from "@/components/apps/embed-icon.ts";
 import { useNewChat } from "@/components/chat/session-list.tsx";
 import { RouteError } from "@/components/route-error.tsx";
 import { BarNavItem, Sidebar, SidebarNavItem, SidebarSection } from "@/components/sidebar.tsx";
 import { SidebarLayout } from "@/components/split-layout.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Plus, Settings } from "@/components/ui/icons";
-import { api } from "@/lib/client.ts";
 import { loadDisplaySettings } from "@/lib/display-settings.ts";
-import { EMBEDS_STALE_TIME, visibleEmbeds } from "@/lib/embeds.ts";
 import { useShortcut } from "@/lib/keys.ts";
 import { useBottomInset } from "@/lib/layout.ts";
 import { queryKeys } from "@/lib/queries.ts";
@@ -68,18 +64,13 @@ const MAIN = cn("min-h-0 min-w-0", Platform.select({ web: "h-full", default: "fl
 
 const Brand = () => <Text className="px-1 font-semibold text-foreground text-lg">min-agent</Text>;
 
-/** An app set to `external` is not a place in this app: its row hands the URL to the browser. */
-const openExternally = (embed: EmbedConfig) => Linking.openURL(embed.url);
-
 /**
  * The frame every screen sits in: cubeui's rail beside the page on a wide window, and its bar
  * over the page on a narrow one. Which of the two is drawn is a breakpoint in the stylesheet,
  * so nothing here opens, closes or measures the window.
  *
  * The places are listed twice, once as rows for the rail and once as icons for the bar,
- * because the two are different components with one prop list. The configured apps are rows
- * in the database rather than routes, so both lists are built from the query: an `iframe` app
- * goes to `embed/[id]`, and an `external` one leaves for the browser.
+ * because the two are different components with one prop list.
  */
 function Shell() {
   const router = useRouter();
@@ -96,25 +87,6 @@ function Shell() {
   const newChat = useNewChat((id) => router.navigate(`/chat/${id}`));
   useShortcut("mod+n", () => newChat.mutate());
   useShortcut("mod+,", () => router.navigate("/settings"));
-
-  const embeds = useQuery({
-    queryKey: queryKeys.embeds,
-    queryFn: api.embeds,
-    staleTime: EMBEDS_STALE_TIME,
-  });
-  // Worked out once for the rail and the bar, which draw the same places with different rows.
-  const apps = visibleEmbeds(embeds.data).map((embed) => {
-    const Icon = EMBED_ICON[embed.icon];
-    const href = `/embed/${embed.id}` as const;
-    return {
-      embed,
-      label: embedTitle(embed),
-      iconSlot: <Icon />,
-      href,
-      active: pathname === href,
-      isExternal: embed.mode === "external",
-    };
-  });
 
   const onChats = pathname === "/" || pathname.startsWith("/chat/");
   const onSettings = pathname === "/settings";
@@ -159,25 +131,6 @@ function Shell() {
                     </Link>
                   }
                 />
-                {apps.length > 0 ? (
-                  <SidebarSection
-                    title="Apps"
-                    contentSlot={apps.map(({ embed, label, iconSlot, href, active, isExternal }) =>
-                      isExternal ? (
-                        <SidebarNavItem
-                          key={embed.id}
-                          label={label}
-                          iconSlot={iconSlot}
-                          onPress={() => openExternally(embed)}
-                        />
-                      ) : (
-                        <Link key={embed.id} href={href} asChild>
-                          <SidebarNavItem label={label} iconSlot={iconSlot} active={active} />
-                        </Link>
-                      ),
-                    )}
-                  />
-                ) : null}
               </View>
             }
             footerSlot={
@@ -194,26 +147,6 @@ function Shell() {
             <Link href="/" asChild>
               <BarNavItem label="Chats" iconSlot={<MessageSquare />} active={onChats} />
             </Link>
-            {apps.map(({ embed, label, iconSlot, href, active, isExternal }) =>
-              isExternal ? (
-                // Always a link in the bar, so the address is its `href` on the web; the
-                // press is what a device, which has no `href`, goes by.
-                <BarNavItem
-                  key={embed.id}
-                  label={label}
-                  iconSlot={iconSlot}
-                  href={embed.url}
-                  onPress={(event) => {
-                    event.preventDefault();
-                    openExternally(embed);
-                  }}
-                />
-              ) : (
-                <Link key={embed.id} href={href} asChild>
-                  <BarNavItem label={label} iconSlot={iconSlot} active={active} />
-                </Link>
-              ),
-            )}
             <Link href="/settings" asChild>
               <BarNavItem label="Settings" iconSlot={<Settings />} active={onSettings} />
             </Link>

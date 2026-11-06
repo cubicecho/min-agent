@@ -2,15 +2,13 @@ import { type Endpoint, NO_KEY, resolveApiKey } from "@cubicecho/agent-core";
 import { validateHooks } from "@cubicecho/agent-mcp-pool";
 import { asc, eq } from "drizzle-orm";
 import {
-  type EmbedConfig,
-  embedSchema,
   type LlmConfig,
   llmConfigSchema,
   type McpServerConfig,
   mcpServerSchema,
 } from "../shared/types.ts";
 import type { Db } from "./db/client.ts";
-import { embeds, mcpServers, settings } from "./db/schema.ts";
+import { mcpServers, settings } from "./db/schema.ts";
 import { UserError } from "./errors.ts";
 
 /** The singleton settings row. There is exactly one, created by `ensureSchema`. */
@@ -147,7 +145,7 @@ export function assertMcpServers(list: McpServerConfig[]) {
 /**
  * Builds the settings over a database: `server/index.ts` hands it the process's, a test its own.
  *
- * @param db - The database the settings row, the MCP servers and the embeds are kept in.
+ * @param db - The database the settings row, and the MCP servers are kept in.
  * @returns The settings. The cache holds the defaults until the first `refresh`.
  */
 export function createSettings(db: Db) {
@@ -216,45 +214,7 @@ export function createSettings(db: Db) {
     return parsed;
   }
 
-  /** The configured embeds, in the order they were saved in. */
-  async function loadEmbeds(): Promise<EmbedConfig[]> {
-    const rows = await db.select().from(embeds).orderBy(asc(embeds.position));
-    return rows.map((row) => embedSchema.parse(row));
-  }
-
-  /**
-   * Replaces the whole set, the same way `saveMcpServers` does and for the same reason: an
-   * embed's id is the route its view lives at, so renaming one is a different destination
-   * rather than an edited row, and the screen edits the list as a list.
-   */
-  async function saveEmbeds(list: EmbedConfig[]): Promise<EmbedConfig[]> {
-    const parsed: EmbedConfig[] = [];
-    for (const embed of list) {
-      // `reasons` rather than letting the ZodError out: this one is read by whoever typed the
-      // row, in the note under the Save button, and a raw issue array is not a sentence. The
-      // row is named because the screen saves the whole list at once and the message has to
-      // say which of them the complaint is about.
-      const result = embedSchema.safeParse(embed);
-      const isInvalid = result.success === false;
-      if (isInvalid) {
-        throw new UserError(`${embed.id || "app"} — ${reasons(result.error.issues)}`);
-      }
-      parsed.push(result.data);
-    }
-    if (new Set(parsed.map((embed) => embed.id)).size !== parsed.length) {
-      throw new UserError("duplicate embed id");
-    }
-
-    await db.transaction(async (tx) => {
-      await tx.delete(embeds);
-      if (parsed.length) {
-        await tx.insert(embeds).values(parsed.map((embed, position) => ({ ...embed, position })));
-      }
-    });
-    return parsed;
-  }
-
-  return { refresh, current, loadMcpServers, saveMcpServers, loadEmbeds, saveEmbeds };
+  return { refresh, current, loadMcpServers, saveMcpServers };
 }
 
 /** The settings, as `createSettings` builds them. */

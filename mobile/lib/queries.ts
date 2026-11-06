@@ -7,7 +7,6 @@ import type { QueryClient } from "@tanstack/react-query";
 export const queryKeys = {
   config: ["config"],
   models: ["models"],
-  embeds: ["embeds"],
   mcp: ["mcp"],
   mcpPrompts: ["mcp-prompts"],
   sessions: ["sessions"],
