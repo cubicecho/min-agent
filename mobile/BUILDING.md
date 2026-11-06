@@ -136,15 +136,37 @@ looks right now. Only a binary with the same fingerprint takes an update, so a
 phone on an older APK keeps its last compatible JavaScript until the new APK is
 installed.
 
-A build is triggered with `--no-wait` and the job exits: it does not hold a
-runner in the EAS queue, the build page is linked from the run summary, and the
-APK downloads from there once EAS finishes. On expo.dev the project is under the
-**cubicecho** account, and its builds are under **Builds** in the project menu:
-they are `preview` builds, internal distribution, which the overview's
-development and production cards do not count. On the build path a green run means
-EAS accepted the job; on the update path it means the update is already live.
-Until `EXPO_TOKEN` exists the workflow skips with a warning rather than failing —
-nothing is red just because the secret has not been added yet.
+A build is waited for. The run holds its runner until EAS says the build
+finished or failed — which can be hours when EAS's queue is long, so
+the job allows close to six — and links the build page from the run summary in
+the meantime. Holding a runner that long is free because the repo is public. So
+a green run means what it says: on the build path the binary exists and is on
+the Releases page, and on the update path the update is already live. A red
+run on the build path means EAS failed the build (the error is annotated on the
+run), and nothing was recorded. Builds used to be started with `--no-wait`,
+which turned the run green the moment EAS accepted the job: from 4 to 20 October
+ten builds in a row of one runtime failed behind green runs, and with no
+finished binary for that runtime no update could ship either.
+
+One build per runtime at a time. If a build with this commit's fingerprint is
+already queued or running on the channel, the run waits on that one instead of
+queueing another, then publishes this commit as an update on top of it. Runs on
+a channel also take turns (a `concurrency` group per channel, never cancelled
+mid-run), so pushes that land during a build queue behind it. GitHub keeps only
+the newest of them waiting, and that one ships the newest commit, as an update,
+once the build is done. **force_build** skips the finished builds, not one that
+is still running.
+
+On expo.dev the project is under the **cubicecho** account, and its builds are
+under **Builds** in the project menu: they are `preview` builds, internal
+distribution, which the overview's development and production cards do not
+count. Until `EXPO_TOKEN` exists the workflow skips with a warning rather than
+failing — nothing is red just because the secret has not been added yet.
+
+To try the workflow without waiting for a push, run it from the Actions tab on
+`preview`. Without **force_build** it does what a push would: an update when a
+finished build has the fingerprint, and a build when none does. With it, it
+always does a real build, which counts against the EAS plan.
 
 Version numbers are EAS's job (`cli.appVersionSource` is `remote`, with
 `autoIncrement` on `preview` and `production`), so `versionCode` climbs on its
@@ -165,16 +187,25 @@ for it to fetch: one serves its own JavaScript and the other is a page you can r
 ## Where it shows up
 
 Every ship lands on the repo's Releases page, one release per **binary** — a
-channel plus a native fingerprint. A build creates it, and every update later
-published against that same fingerprint appends a line to it, which is what a
-phone actually runs: one APK plus the newest update its runtime accepts. So the
-list stays one row per native runtime rather than one row per merge.
+channel plus a native fingerprint. A build creates it once EAS has finished it,
+and every update later published against that same fingerprint appends a line
+to it, which is what a phone actually runs: one APK plus the newest update its
+runtime accepts. So the list stays one row per native runtime rather than one
+row per merge.
+
+A preview release carries its APK as an asset, `min-agent-preview-<version>-<build>.apk`.
+EAS deletes an internal build's download two weeks after the build, long before
+the binary stops being what phones run, and a release asset on a public repo
+downloads without a login. If copying it fails, the run warns, the release links
+to EAS instead, and the next ship on that fingerprint tries again. A production
+AAB is not attached: nobody installs one by hand.
 
 | you want to know               | look at                                          |
 | ------------------------------ | ------------------------------------------------ |
 | what production runs           | the newest release *without* a pre-release badge  |
 | what you have installed        | the newest release *with* one — `preview` is always flagged, so "Latest" stays on production |
 | what shipped since that binary | the update list inside that release, newest first |
+| the APK to install             | the asset on that release                         |
 
 ## The icon
 
