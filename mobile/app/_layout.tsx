@@ -16,25 +16,17 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import "../global.css";
 import { MessageSquare } from "@/components/app/app-icons";
-import { SidebarHeader } from "@/components/app/sidebar-header.tsx";
-import { useNewChat } from "@/components/chat/session-list.tsx";
+import { ChatsSidebar, useNewChat } from "@/components/chat/session-list.tsx";
 import { RouteError } from "@/components/route-error.tsx";
-import {
-  BarNavItem,
-  Sidebar,
-  SidebarCollapseButton,
-  SidebarNavItem,
-  SidebarSection,
-} from "@/components/sidebar.tsx";
+import { BarNavItem, SidebarNavItem } from "@/components/sidebar.tsx";
 import { SidebarLayout } from "@/components/split-layout.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Plus, Settings } from "@/components/ui/icons";
 import { loadDisplaySettings } from "@/lib/display-settings.ts";
 import { useShortcut } from "@/lib/keys.ts";
-import { useBottomInset } from "@/lib/layout.ts";
+import { useBottomInset, useWide } from "@/lib/layout.ts";
 import { queryKeys } from "@/lib/queries.ts";
 import { loadServerUrl } from "@/lib/server-url.ts";
-import { loadSidebarState, setSidebarCollapsed, useSidebarCollapsed } from "@/lib/sidebar-state.ts";
 import { colors, pinDarkAppearance } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 import { loadVoiceSettings } from "@/lib/voice-settings.ts";
@@ -73,13 +65,13 @@ const MAIN = cn("min-h-0 min-w-0", Platform.select({ web: "h-full", default: "fl
 const Brand = () => <Text className="px-1 font-semibold text-foreground text-lg">min-agent</Text>;
 
 /**
- * The frame every screen sits in: cubeui's rail beside the page on a wide window, and its bar
- * over the page on a narrow one. Which of the two is drawn is a breakpoint in the stylesheet,
- * so nothing here opens, closes or measures the window. The rail can be folded to its icons,
- * and that choice is kept on the device by `lib/sidebar-state.ts`.
+ * The frame every screen sits in: on a wide window a sidebar beside the page, with the chats
+ * in it, and on a narrow one cubeui's bar over the page. Which of the two is drawn is a
+ * breakpoint in the stylesheet, so nothing here opens or closes.
  *
- * The places are listed twice, once as rows for the rail and once as icons for the bar,
- * because the two are different components with one prop list.
+ * The sidebar is the one place the window is measured: below the breakpoint there is no
+ * sidebar to fill, and the chat list is a screen of its own at `/` (see `ChatsView`), so the
+ * list is not mounted twice, once of them hidden.
  */
 function Shell() {
   const router = useRouter();
@@ -96,11 +88,11 @@ function Shell() {
   const newChat = useNewChat((id) => router.navigate(`/chat/${id}`));
   useShortcut("mod+n", () => newChat.mutate());
   useShortcut("mod+,", () => router.navigate("/settings"));
-  const collapsed = useSidebarCollapsed();
-  useShortcut("mod+b", () => setSidebarCollapsed(!collapsed));
 
+  const wide = useWide();
   const onChats = pathname === "/" || pathname.startsWith("/chat/");
   const onSettings = pathname === "/settings";
+  const activeChat = pathname.startsWith("/chat/") ? pathname.slice("/chat/".length) : undefined;
 
   return (
     /*
@@ -118,31 +110,17 @@ function Shell() {
         divider="none"
         sidebarHideBelow="md"
         sidebarSlot={
-          <Sidebar
-            label="min-agent"
-            collapsed={collapsed}
-            onCollapsedChange={setSidebarCollapsed}
-            headerSlot={<SidebarHeader brandSlot={<Brand />} newChat={newChat} />}
-            contentSlot={
-              <View role="navigation" aria-label="Main">
-                <SidebarSection
-                  contentSlot={
-                    <Link href="/" asChild>
-                      <SidebarNavItem label="Chats" iconSlot={<MessageSquare />} active={onChats} />
-                    </Link>
-                  }
-                />
-              </View>
-            }
-            footerSlot={
-              <>
+          wide ? (
+            <ChatsSidebar
+              activeId={activeChat}
+              brandSlot={<Brand />}
+              footerSlot={
                 <Link href="/settings" asChild>
                   <SidebarNavItem label="Settings" iconSlot={<Settings />} active={onSettings} />
                 </Link>
-                <SidebarCollapseButton />
-              </>
-            }
-          />
+              }
+            />
+          ) : undefined
         }
         brandSlot={<Brand />}
         navLabel="Main"
@@ -187,18 +165,14 @@ function Shell() {
 
 export default function RootLayout() {
   // Nothing may render until the stored server address is in memory, or the first
-  // queries fire at the default address and fail. Whether the sidebar is folded is wanted before
-  // the first frame too, or a folded one paints open first. The dictation and display settings are
-  // read in the same breath — they are wanted before the first press of the microphone, not before
-  // the first frame, but one await is simpler than two lifetimes.
+  // queries fire at the default address and fail. The dictation and display settings are read in the
+  // same breath — they are wanted before the first press of the microphone, not before the first
+  // frame, but one await is simpler than two lifetimes.
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    Promise.all([
-      loadServerUrl(),
-      loadVoiceSettings(),
-      loadDisplaySettings(),
-      loadSidebarState(),
-    ]).finally(() => setReady(true));
+    Promise.all([loadServerUrl(), loadVoiceSettings(), loadDisplaySettings()]).finally(() =>
+      setReady(true),
+    );
   }, []);
 
   const isLoading = ready === false;

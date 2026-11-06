@@ -13,7 +13,7 @@ import { ArrowDown, MessageSquare } from "@/components/app/app-icons";
 import { Composer } from "@/components/chat/composer.tsx";
 import { MessageView } from "@/components/chat/message-view.tsx";
 import { PromptPicker, useMcpPrompts } from "@/components/chat/prompt-picker.tsx";
-import { SessionsPanel, SessionsScreen } from "@/components/chat/session-list.tsx";
+import { SessionsScreen } from "@/components/chat/session-list.tsx";
 import { ContextMeter, LiveMeter, MUTED, TokensDialog } from "@/components/chat/token-readouts.tsx";
 import { useTurn } from "@/components/chat/use-turn.ts";
 import { Combobox } from "@/components/combobox.tsx";
@@ -21,7 +21,6 @@ import { HeaderContentFooter } from "@/components/header-content-footer.tsx";
 import { EmptyState } from "@/components/page.tsx";
 import { PageHeader } from "@/components/page-header.tsx";
 import { SettingsLink } from "@/components/settings/link.tsx";
-import { SplitLayout } from "@/components/split-layout.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { api } from "@/lib/client.ts";
 import { useWide } from "@/lib/layout.ts";
@@ -33,33 +32,19 @@ import { useVoiceSettings } from "@/lib/voice-settings.ts";
 /**
  * Chats, in the two arrangements the window has room for.
  *
- * Wide, it is the desktop shape: the chat takes the space and the sessions sit in a panel on
- * the right, so switching between them never leaves the conversation. Narrow, there is
- * only room for one at a time, so the list and the chat are the separate screens they
- * have always been — the list at `/`, a conversation at `/chat/[id]`.
- *
- * Both routes render this, which is what lets the panel stay put while the route under it
- * changes.
+ * Wide, the chats are listed in the app's sidebar (`ChatsSidebar`), so this is only the
+ * conversation, across the whole of the page. Narrow, there is no sidebar and only room for one
+ * thing at a time, so the list and the chat are the separate screens they have always been —
+ * the list at `/`, a conversation at `/chat/[id]`.
  */
 export function ChatsView({ sessionId }: { sessionId?: string }) {
   const wide = useWide();
 
   const isNarrow = wide === false;
-  if (isNarrow) {
-    return sessionId ? <ChatPane sessionId={sessionId} /> : <SessionsScreen />;
+  if (isNarrow && !sessionId) {
+    return <SessionsScreen />;
   }
-
-  return (
-    <SplitLayout
-      className="h-full flex-1 bg-background"
-      // The panel is a rail with a width of its own; the chat has whatever is left.
-      secondWidth="auto"
-      stackBelow="never"
-      divider="none"
-      firstSlot={<ChatPane sessionId={sessionId} />}
-      secondSlot={<SessionsPanel activeId={sessionId} />}
-    />
-  );
+  return <ChatPane sessionId={sessionId} />;
 }
 
 function ChatPane({ sessionId }: { sessionId?: string }) {
