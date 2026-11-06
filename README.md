@@ -898,6 +898,7 @@ rather than failing quietly.
 | `⌘`/`Ctrl` + `N` | New chat |
 | `⌘`/`Ctrl` + `K` | Focus the session search |
 | `⌘`/`Ctrl` + `,` | Settings |
+| `⌘`/`Ctrl` + `B` | Fold the sidebar to its icons, or open it again |
 | `Esc` | Close a dialog or a select sheet; give up a rename |
 
 Browser and desktop only. The Electron build is the web build, and a phone has no keyboard to
@@ -915,9 +916,9 @@ should hand the key back when it goes. Chords fire wherever the caret is — `�
 message is exactly when you want it — and so does Escape; a bare key would not, and is ignored
 while a text box has focus.
 
-New chat and Settings are bound in the sidebar rather than in the list, because the nav is the
-one thing mounted on every route and they would otherwise stop working the moment you opened
-Settings. Escape closing a modal is not bound here at all: react-native-web's `Modal` already
+New chat, Settings and the sidebar fold are bound in the sidebar rather than in the list, because
+the nav is the one thing mounted on every route and they would otherwise stop working the moment
+you opened Settings. Escape closing a modal is not bound here at all: react-native-web's `Modal` already
 turns it into `onRequestClose`, which cubeui's `Dialog` passes through.
 
 One caveat: a browser will not give up `⌘N`, so that one only reaches us in Electron.
@@ -996,8 +997,8 @@ registry) and vendored as source — they are replaced by the next install, so t
 here and Biome is told to leave them alone. The colours come the same way:
 `mobile/cubeui-tokens.css` is generated, and `global.css` only imports it.
 
-What the app owns sits in folders under `components/`: `app/` for its form hook and the icons
-cubeui does not ship, `chat/` and `settings/` for the screens. A screen is put together
+What the app owns sits in folders under `components/`: `app/` for its form hook, the sidebar
+header and the icons cubeui does not ship, `chat/` and `settings/` for the screens. A screen is put together
 from cubeui's shells — `PageLayout`, `HeaderContentFooter`, `CardLayout`, `DialogLayout`,
 `Sidebar` — which take their parts as named props rather than as children: words as `title` and
 `description`, elements as props ending in `Slot` (`contentSlot`, `actionSlot`, `footerSlot`). A
@@ -1011,8 +1012,13 @@ at the top, Chats, and Settings at the foot. Below that the sidebar is not
 drawn and the same destinations become a bar of icons across the top, each still announced by
 name — a nav you can see and press on a phone, where a closed drawer is neither.
 
-There is no drawer and nothing to fold: the sidebar holds no state, so it is one width or it is
-the bar.
+There is still no drawer. What the sidebar can do is fold: the chevron at its foot, or
+`⌘`/`Ctrl` + `B`, narrows it to a rail of icons, each named and tooltipped by its row's label,
+with New chat as an icon button at the top and the brand left out. The same press opens it again.
+The sidebar itself holds no state; whether it is folded is kept on the device, beside the display
+settings, in `mobile/lib/sidebar-state.ts`, and read before the first frame so a folded sidebar
+never paints open first. It is not a server setting, because how much room the nav may take is
+about the screen it is on. The bar on a narrow window does not fold, and is the same either way.
 
 ### One settings page
 
