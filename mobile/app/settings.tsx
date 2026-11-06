@@ -8,7 +8,6 @@ import { TITLE_ROW } from "@/components/app/title-row.ts";
 import { HeaderContentFooter, PROSE_COLUMN } from "@/components/header-content-footer.tsx";
 import { PageHeader } from "@/components/page-header.tsx";
 import { AgentPanel } from "@/components/settings/agent-panel.tsx";
-import { AppsPanel } from "@/components/settings/apps-panel.tsx";
 import { DevicePanel } from "@/components/settings/device-panel.tsx";
 import { DirtyProvider, useDirtyPanels } from "@/components/settings/dirty.tsx";
 import { McpPanel } from "@/components/settings/mcp-panel.tsx";
@@ -27,7 +26,7 @@ import { cn } from "@/lib/utils.ts";
  * These were four sibling screens in the nav, which put the four things you configure at
  * the same level as the one thing you use — and the sidebar is the app's nav, not its
  * preferences pane. They are panels now: one destination, one row of tabs, and a sidebar
- * that is chats and apps again.
+ * that is chats again.
  *
  * The tabs themselves are `components/settings/tabs.ts`, which `SettingsLink` reads too, so
  * a message that sends someone here names the panel the way its tab does.
@@ -81,7 +80,6 @@ const PANELS: Record<SettingsTab, (props: PanelProps) => React.JSX.Element | nul
   agent: AgentPanel,
   voice: VoicePanel,
   mcp: McpPanel,
-  apps: AppsPanel,
   server: ServerPanel,
   device: DevicePanel,
 };

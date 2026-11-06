@@ -60,10 +60,10 @@ describe("userErrorIn", () => {
   /** How GraphQL execution hands it over: located, with the throw kept on `originalError`. */
   it("finds one under a GraphQLError", () => {
     const wrapped = new GraphQLError("Internal server error", {
-      originalError: new UserError("duplicate embed id"),
+      originalError: new UserError("duplicate server id"),
     });
 
-    expect(userErrorIn(wrapped)?.message).toBe("duplicate embed id");
+    expect(userErrorIn(wrapped)?.message).toBe("duplicate server id");
   });
 
   /** And under both wrappings at once, which is what the generated resolvers produce. */

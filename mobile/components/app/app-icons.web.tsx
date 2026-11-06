@@ -3,19 +3,12 @@
  * web, so there is nothing to wrap: the components are lucide's own, under the same names.
  */
 export {
-  Activity,
   ArrowDown,
   BookOpen,
-  Box,
   Clipboard,
-  Columns2,
   CornerDownLeft,
   Cpu,
-  Database,
-  ExternalLink,
   Globe,
-  LayoutDashboard,
-  LayoutGrid,
   Link as LinkIcon,
   List,
   Menu,
@@ -28,8 +21,6 @@ export {
   Server,
   SlidersHorizontal,
   Smartphone,
-  SquareCheck,
-  SquareKanban,
   Terminal,
   Volume2,
   VolumeX,

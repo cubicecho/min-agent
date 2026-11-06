@@ -36,15 +36,14 @@ import { PanelBody } from "./panel-body.tsx";
 /**
  * The MCP servers the agent can call tools on.
  *
- * The screen is a list and the editing happens in a dialog over it, for the reason the apps
- * list is: what you come here to read is which servers are connected and what they are
- * offering, and eight form fields per server said none of that until you had scrolled past
+ * The screen is a list and the editing happens in a dialog over it, because what you come
+ * here to read is which servers are connected and what they are offering, and eight form fields per server said none of that until you had scrolled past
  * them. A row is now the answer — connected, how many tools, pointed where — and the form is
  * behind it.
  *
  * Every edit goes through the dialog and its Save — the switch that connects a server, its
  * hooks and which of its tools the model is offered included. The mutation replaces the whole
- * set, the way `saveEmbeds` does.
+ * set.
  */
 
 const STATUS_VARIANT: Record<McpStatus, BadgeVariant> = {
