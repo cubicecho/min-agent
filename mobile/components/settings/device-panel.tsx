@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button.tsx";
 import { Form } from "@/components/ui/form.tsx";
 import { CircleCheck, Download, RefreshCw } from "@/components/ui/icons";
 import { setDisplaySettings, useDisplaySettings } from "@/lib/display-settings.ts";
+import { UPDATABLE } from "@/lib/updates.ts";
 import { setVoiceSettings, useVoiceSettings } from "@/lib/voice-settings.ts";
 import { useReportDirty } from "./dirty.tsx";
 import { PanelBody } from "./panel-body.tsx";
@@ -38,15 +39,6 @@ type Progress =
   | { kind: "none" }
   | { kind: "ready" }
   | { kind: "failed"; detail: string };
-
-/**
- * Whether there is anything for the update button to do.
- *
- * A Metro-attached build serves its own JavaScript and `checkForUpdateAsync` refuses outright
- * there; a browser has the page's own reload. Neither is a failure worth a red badge, so the
- * card says which one it is and drops the button rather than offering one that throws.
- */
-const updatable = Platform.OS !== "web" && Updates.isEnabled && __DEV__ === false;
 
 /** Enough of an update's id to tell two apart at a glance. */
 const SHORT_ID_CHARS = 8;
@@ -197,15 +189,15 @@ export function DevicePanel() {
 
           <SettingsCard
             title="Updates"
-            description="This app installs its JavaScript over the air: a change that does not touch the native side is published as an update and picked up on the next launch. This is how to pick one up without waiting for that."
+            description="This app installs its JavaScript over the air: a change that does not touch the native side is published as an update. The app looks for one when it starts and when it comes back to the screen, downloads it in the background, and offers a restart once it is ready. This is how to look right now."
             contentClassName="flex flex-col gap-3"
             contentSlot={
               <>
                 <Running />
-                {updatable ? null : (
+                {UPDATABLE ? null : (
                   <Text className="text-muted-foreground text-sm">
                     {Platform.OS === "web"
-                      ? "A browser reloads the page instead; there is nothing to fetch here."
+                      ? "In a browser the page loads whatever the server has, and the desktop build changes with a new release of it, so there is nothing to fetch here."
                       : "This build is attached to Metro, which serves its own JavaScript. Updates apply to installed builds."}
                   </Text>
                 )}
@@ -225,7 +217,7 @@ export function DevicePanel() {
               </>
             }
             footerActionsSlot={
-              updatable ? (
+              UPDATABLE ? (
                 <>
                   {progress.kind === "ready" ? (
                     <Button
