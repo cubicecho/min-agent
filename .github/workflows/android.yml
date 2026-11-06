@@ -12,10 +12,17 @@ name: Android
 # fresh debug-signed app. Setup (`eas init`, the EXPO_TOKEN secret, the one-time
 # keystore) and what an update can and cannot change are in mobile/BUILDING.md.
 #
+# A build is waited for, not just started. The run stays on the runner until
+# EAS says the build finished or failed, so a green run means a binary exists and
+# a red one means it doesn't. Starting builds with --no-wait made every run green
+# the moment EAS accepted the job: from 4 to 20 October ten builds of one runtime
+# errored in a row, each behind a green run, and with no finished binary for that
+# runtime nothing could ship as an update either.
+#
 # Either way the result is recorded as a GitHub Release, so the Releases page —
 # not a run summary buried in the Actions tab — is where you look to see what is
-# out. One release per binary: a build creates it, and every update that ships
-# on top of that same binary appends a line to it.
+# out. One release per binary: a build creates it once EAS has finished it, and
+# every update that ships on top of that same binary appends a line to it.
 
 on:
   workflow_dispatch:
@@ -44,14 +51,20 @@ on:
       # reader and the usage formatting are all bundled into the app.
       - 'shared/**'
       - '.github/workflows/android.yml'
+      - '.github/scripts/android-build.mjs'
       - '.github/scripts/android-release.mjs'
 
-# EAS builds queue and cost money; two for the same branch is one wasted. An
-# update published by a run this cancels is harmless — the next run publishes a
-# newer one to the same channel, and an update group lands whole or not at all.
+# One run at a time per channel, whatever the branch: every run on a channel
+# writes the same release and publishes to the same update stream. Not cancelled
+# in progress, because a run may be hours into waiting on a build, and it is the
+# only thing that will notice that build fail or record it once it finishes.
+# Cancelling it would not stop the EAS build either, just leave it unwatched.
+# GitHub keeps one pending run per group and replaces it with each newer push, so
+# a burst of merges during a build collapses into one run that ships the newest
+# commit — as an update, since by then the build it waited behind has finished.
 concurrency:
-  group: android-${{ github.ref }}
-  cancel-in-progress: true
+  group: android-${{ inputs.profile || 'preview' }}
+  cancel-in-progress: false
 
 jobs:
   # `secrets` isn't readable from a job-level `if`, so the token check gets its
@@ -78,6 +91,13 @@ jobs:
     needs: guard
     if: needs.guard.outputs.configured == 'true'
     runs-on: ubuntu-latest
+    # Long enough for the slowest build EAS has given this project — on 6 October
+    # four sat in EAS's queue for close to three hours each — plus the
+    # minutes either side of the wait. The wait gives up at WAIT_MINUTES, below
+    # this, so it can say why rather than be killed mid-poll. Holding a runner
+    # this long costs nothing: the repo is public, so its Actions minutes are
+    # free.
+    timeout-minutes: 345
     # Creating a release, and the tag under it, is a write to `contents`. The
     # default token is read-only.
     permissions:
@@ -126,48 +146,33 @@ jobs:
 
       # If a finished build on this channel already carries this fingerprint,
       # the APK people have installed can run this commit's JavaScript, and the
-      # JavaScript is all that changed — publish, don't rebuild. Filtered by
-      # --channel as well as by the hash, so a production AAB can never stand in
-      # for the preview APK the testers are actually on.
-      - name: Decide — update or build
+      # JavaScript is all that changed — publish, don't rebuild. If one is still
+      # queued or building, wait on that instead of queueing a second. Only with
+      # neither does this commit start a build. Every status is fetched, not just
+      # finished ones, so the script can tell those cases apart; the rules are in
+      # android-build.mjs. Filtered by --channel as well as by the hash, so a
+      # production AAB can never stand in for the preview APK the testers are
+      # actually on.
+      - name: Decide — update, wait or build
         id: decide
+        env:
+          FORCE_BUILD: ${{ inputs.force_build }}
         run: |
           eas build:list \
             --platform android \
             --channel "$PROFILE" \
-            --status finished \
             --fingerprint-hash "${{ steps.fingerprint.outputs.hash }}" \
-            --limit 1 \
+            --limit 50 \
             --json \
             --non-interactive \
             > builds.json
-          COUNT=$(node -e 'process.stdout.write(String([].concat(JSON.parse(require("node:fs").readFileSync("builds.json", "utf8"))).length))')
-          if [ "$COUNT" -gt 0 ] && [ "${{ inputs.force_build }}" != 'true' ]; then
-            echo 'action=update' >> "$GITHUB_OUTPUT"
-          else
-            echo 'action=build' >> "$GITHUB_OUTPUT"
-          fi
+          node ../.github/scripts/android-build.mjs decide
 
-      # --environment is required from SDK 55 on. Nothing under mobile/ reads
-      # process.env at runtime — the server address is typed into the app and
-      # lives on the phone — so it only picks which EAS environment's variables
-      # are visible while the app config is evaluated.
-      - name: Publish an update
-        if: steps.decide.outputs.action == 'update'
-        run: |
-          eas update \
-            --platform android \
-            --channel "$PROFILE" \
-            --environment "$PROFILE" \
-            --message "${{ github.ref_name }} ${{ github.sha }}" \
-            --non-interactive \
-            --json \
-            > update.json
-
-      # --no-wait returns as soon as EAS accepts the job, so the runner isn't
-      # sitting in the build queue on the clock. The APK lands on the build page
-      # linked in the summary below.
+      # --no-wait only so the id comes back now and the next step can show the
+      # build page while it waits; that step, not this one, decides whether the
+      # build worked.
       - name: Build on EAS
+        id: build
         if: steps.decide.outputs.action == 'build'
         run: |
           eas build \
@@ -178,18 +183,57 @@ jobs:
             --json \
             --message "${{ github.ref_name }} ${{ github.sha }}" \
             > build.json
+          ID=$(node -e 'process.stdout.write([].concat(JSON.parse(require("node:fs").readFileSync("build.json", "utf8")))[0].id)')
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+
+      # Holds the runner until EAS is done, and fails the run unless the build
+      # finished. Everything after it is skipped on a failure, so nothing is
+      # recorded for a binary that doesn't exist.
+      - name: Wait for the build
+        id: wait
+        if: steps.decide.outputs.action == 'build' || steps.decide.outputs.action == 'wait'
+        env:
+          WAIT_MINUTES: 300
+        run: |
+          node ../.github/scripts/android-build.mjs wait \
+            "${{ steps.build.outputs.id || steps.decide.outputs.build_id }}"
+
+      # --environment is required from SDK 55 on. Nothing under mobile/ reads
+      # process.env at runtime — the server address is typed into the app and
+      # lives on the phone — so it only picks which EAS environment's variables
+      # are visible while the app config is evaluated.
+      #
+      # A build this run waited on but didn't start came from an earlier commit,
+      # so it carries that commit's JavaScript; this commit's ships on top of it
+      # the same way it would have had the build already been finished.
+      - name: Publish an update
+        id: update
+        if: >-
+          steps.decide.outputs.action == 'update' ||
+          (steps.decide.outputs.action == 'wait' && steps.wait.outputs.commit != github.sha)
+        run: |
+          eas update \
+            --platform android \
+            --channel "$PROFILE" \
+            --environment "$PROFILE" \
+            --message "${{ github.ref_name }} ${{ github.sha }}" \
+            --non-interactive \
+            --json \
+            > update.json
 
       # Both lanes end in the same place: a GitHub Release — one per binary
       # (channel plus fingerprint), with every update published against that
       # same fingerprint appended to it. That is the repo's standing answer to
       # "what is on my phone right now?", which a per-run summary page can never
       # be, since it describes one push and then scrolls away. The script writes
-      # this run's summary as well, so nothing is lost.
+      # this run's summary as well, so nothing is lost. It runs only when every
+      # step above succeeded: a release is a claim that something shipped. A
+      # build this run waited on and didn't follow with an update is recorded as
+      # a build, whoever started it.
       - name: Record the release
-        if: always() && steps.decide.outputs.action != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          ACTION: ${{ steps.decide.outputs.action }}
+          ACTION: ${{ steps.update.outcome == 'success' && 'update' || 'build' }}
           FINGERPRINT: ${{ steps.fingerprint.outputs.hash }}
         run: |
           COMMIT_SUBJECT="$(git log -1 --pretty=%s)" \
