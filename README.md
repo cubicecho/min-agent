@@ -19,7 +19,6 @@ Everything below the quick start is reference — read it when you want that pie
 - [Voice](#voice) — speaking a message and having replies read back, on the device, through a model, or through a Wyoming server
 - [Keyboard shortcuts](#keyboard-shortcuts) — what the desktop and browser builds bind
 - [The session list](#the-session-list) — grouping, renaming, deleting and finding a chat
-- [Other apps in the sidebar](#other-apps-in-the-sidebar) — framing a kanban board or a task server beside the chat
 - [Android and Windows](#android-and-windows) — the same front end, off the browser, and where the APK comes from
 
 ## Stack
@@ -176,12 +175,11 @@ to change to use packages that expect otherwise.
 
 ## The database
 
-Five tables, created by the migrations in `drizzle/`, which `runMigrations()` applies on boot:
+Four tables, created by the migrations in `drizzle/`, which `runMigrations()` applies on boot:
 
 ```
 settings      one row, id 'default' — Settings → Agent
 mcp_servers   one row per server, ordered by position — Settings → MCP
-embeds        one row per app in the sidebar, ordered by position — Settings → Apps
 sessions      one per chat: title, dates, token totals, compaction and pruning state
 messages      one per message, ordered by (session_id, idx), cascade-deleted with the session
 ```
@@ -253,8 +251,7 @@ Both transports are supported. A stdio server is a command and its arguments —
 
 Tools are exposed to the model as `<server id>__<tool name>`, so ids must be unique and short.
 
-The panel is a list, and editing happens in a dialog over it — the same shape as
-[Apps](#other-apps-in-the-sidebar), for the same reason. What you come here to read is which
+The panel is a list, and editing happens in a dialog over it. What you come here to read is which
 servers answered and what they are offering; a row says that in one line (where it points, its
 status, how many tools), and a broken one gives its second line over to the error instead of
 repeating an address you already typed. The eight fields behind it are for the once you write
@@ -957,51 +954,6 @@ being filtered is already in memory, and a round trip per keystroke would be slo
 scanning it replaced. The model pickers filter the same way, through `Combobox`'s
 `searchable`: an Ollama box with forty tags on it is a list to type into rather than scroll.
 
-## Other apps in the sidebar
-
-The other things you run — a kanban board, a task server — can have a row in min-agent's nav
-without being part of min-agent. **Settings → Apps** is a list of addresses; each one becomes a
-sidebar item, and opening it puts that server's own UI in an iframe filling the content area.
-
-```
-Label    what the sidebar row says
-URL      an absolute http/https address
-Icon     a glyph, picked from a grid of the dozen on offer
-Opens    "In a frame", or "In the browser"
-```
-
-Nothing is proxied, re-skinned or shared. The framed app talks to its own server, keeps its own
-session, and behaves exactly as it does in its own tab — min-agent knows its address and nothing
-else. That is the point: two apps, one window, no integration to keep in step.
-
-Three things follow from it, and each is why something in the UI looks the way it does.
-
-**A server can refuse to be framed, invisibly.** `X-Frame-Options: DENY` and a `frame-ancestors`
-CSP are enforced by the browser, and a blocked frame is a blank rectangle with no event for the
-page to catch — there is no way to detect it and say so. So every embed view carries **Open in
-the browser** in its header whether or not anything has gone wrong, and any app that will not
-frame can be switched to `external` mode, where its sidebar row hands the URL straight to the
-browser and never routes into min-agent at all.
-
-**The URL is stored once, for every device.** The list is a table in Postgres like the settings
-and the MCP servers, so the browser, the Android app and the desktop build all read the same
-rows — and `http://localhost:3000` means a different machine on each of them. Use the address
-the app is reachable at from the LAN.
-
-**Android has no frame to put anything in.** There is no WebView compiled into the build, so
-every app opens in the browser there regardless of its mode; the embed view says so rather than
-showing an empty screen.
-
-`javascript:` and `data:` URLs are rejected on the way into the database (`embedSchema` in
-`shared/types.ts`). An iframe `src` and `Linking.openURL` are both places the browser is told to
-go, and a script URL in either would run in min-agent's own origin.
-
-The sidebar rows are not routes. There is one `embed/[id]` screen behind all of them, and the
-shell in `mobile/app/_layout.tsx` draws a `SidebarNavItem` per row from the query, because these
-come from the database and not from the file tree. The icon names stored with them are the ones
-the app had when it drew Feather; `mobile/components/apps/embed-icon.ts` maps each to a lucide
-glyph, and `trello`, which lucide does not carry, is drawn as a kanban board.
-
 ## Android and Windows
 
 `mobile/` is the front end — Expo (React Native) with expo-router and NativeWind — and it ships
@@ -1045,8 +997,8 @@ registry) and vendored as source — they are replaced by the next install, so t
 here and Biome is told to leave them alone. The colours come the same way:
 `mobile/cubeui-tokens.css` is generated, and `global.css` only imports it.
 
-What the app owns sits in folders under `components/`: `app/` for its form hook and the icons
-cubeui does not ship, `apps/`, `chat/` and `settings/` for the screens. A screen is put together
+What the app owns sits in folders under `components/`: `app/` for its form hook, the sidebar
+header and the icons cubeui does not ship, `chat/` and `settings/` for the screens. A screen is put together
 from cubeui's shells — `PageLayout`, `HeaderContentFooter`, `CardLayout`, `DialogLayout`,
 `Sidebar` — which take their parts as named props rather than as children: words as `title` and
 `description`, elements as props ending in `Slot` (`contentSlot`, `actionSlot`, `footerSlot`). A
@@ -1056,8 +1008,7 @@ cubeui's TanStack Form hook with this app's extra fields bound to it.
 ### A sidebar, not a hamburger
 
 The nav is cubeui's `SidebarLayout`. At 768px and up it is a sidebar beside the content: New chat
-at the top, Chats, a row per configured app (see [Other apps in the
-sidebar](#other-apps-in-the-sidebar)), and Settings at the foot. Below that the sidebar is not
+at the top, Chats, and Settings at the foot. Below that the sidebar is not
 drawn and the same destinations become a bar of icons across the top, each still announced by
 name — a nav you can see and press on a phone, where a closed drawer is neither.
 
@@ -1072,13 +1023,15 @@ about the screen it is on. The bar on a narrow window does not fold, and is the 
 ### One settings page
 
 There is one thing to configure and one row that opens it. `mobile/app/settings.tsx` is a tab
-bar over four panels in `mobile/components/settings/`:
+bar over six panels in `mobile/components/settings/`:
 
 ```
-Agent    the model, the key, the prompt, the limits, task models, pricing
+Model    the endpoint, the key, the models, task models, pricing
+Agent    the limits, the tools, the system prompt, the agent spec
+Voice    where speech runs, its models, playback
 MCP      the servers, their transports and their live status
-Apps     the other apps that get a sidebar row
 Server   which min-agent server this build talks to
+Device   dictation, descriptions and updates, kept on this device
 ```
 
 These were four sibling entries in the nav, which put the four things you set up once at the
@@ -1111,8 +1064,8 @@ now that a draft can outlive the tab it was typed in. Dirty is measured against 
 back the way it was is not a change.
 
 The tab table is `mobile/components/settings/tabs.ts`, and `SettingsLink` reads it too. Every
-place that reports something unconfigured — no model picked, the server not answering, an
-`/embed/<id>` with no row behind it — carries a button to the panel that fixes it rather than
+place that reports something unconfigured — no model picked, the server not answering —
+carries a button to the panel that fixes it rather than
 naming a screen and leaving you to find it. That is also the guard against the copy going
 stale: a link names its panel the way the tab does, from the one table.
 

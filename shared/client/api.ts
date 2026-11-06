@@ -2,8 +2,6 @@ import {
   ConfigDocument,
   CreateSessionDocument,
   DeleteSessionDocument,
-  type EmbedInput,
-  EmbedsDocument,
   McpPromptDocument,
   McpPromptsDocument,
   type McpServerInput,
@@ -13,7 +11,6 @@ import {
   ReconnectMcpServerDocument,
   RenameSessionDocument,
   SaveConfigDocument,
-  SaveEmbedsDocument,
   SaveMcpServersDocument,
   SessionDetailDocument,
   type SessionDetailQuery,
@@ -27,7 +24,6 @@ import {
 } from "../gql/graphql.ts";
 import { toStored } from "../messages.ts";
 import type {
-  EmbedConfig,
   LlmConfig,
   LlmConfigView,
   McpPrompt,
@@ -268,16 +264,6 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
      */
     mcpPrompt: async (server: string, name: string, args: Record<string, string>) =>
       (await request(McpPromptDocument, { server, name, args })).mcpPrompt,
-
-    /**
-     * The other apps given a place in the sidebar. `mode` is a GraphQL enum, which is a string
-     * on the wire and differs from `EmbedConfig["mode"]` only in the TypeScript spelling.
-     */
-    embeds: async () => (await request(EmbedsDocument)).embeds as EmbedConfig[],
-
-    saveEmbeds: async (list: EmbedConfig[]) =>
-      (await request(SaveEmbedsDocument, { embeds: list as EmbedInput[] }))
-        .saveEmbeds as EmbedConfig[],
   };
 
   /**

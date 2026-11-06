@@ -202,14 +202,6 @@ export interface FreshnessSettings {
    * underneath the running server, which a reload settles.
    */
   settingsStaleMinutes: number;
-  /**
-   * How long the embed list stays fresh.
-   *
-   * The sidebar reads it on every render of every screen, and it only changes when someone
-   * saves the Apps panel — which invalidates the query by hand. Long, for the same reason the
-   * settings are: this is a list of rows a person typed, not something that moves on its own.
-   */
-  embedsStaleMinutes: number;
   /** How often the MCP panel asks after the servers while it is the one on screen. */
   mcpPollSeconds: number;
   /**
@@ -224,7 +216,6 @@ export interface FreshnessSettings {
 
 export const FRESHNESS_DEFAULTS: Readonly<FreshnessSettings> = Object.freeze({
   settingsStaleMinutes: 5,
-  embedsStaleMinutes: 5,
   mcpPollSeconds: 5,
   mcpWatchSeconds: 30,
 });
