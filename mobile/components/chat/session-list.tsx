@@ -6,10 +6,8 @@ import { useRef, useState } from "react";
 import { View } from "react-native";
 import { useAppForm } from "@/components/app/app-form.tsx";
 import { MessageSquare } from "@/components/app/app-icons";
-import { CardLayout } from "@/components/card-layout.tsx";
 import { ConfirmButton } from "@/components/confirm-button.tsx";
 import { DialogLayout } from "@/components/dialog-layout.tsx";
-import { List as RowList } from "@/components/list.tsx";
 import { ListItem } from "@/components/list-item.tsx";
 import { EmptyState } from "@/components/page.tsx";
 import { PageLayout } from "@/components/page-layout.tsx";
@@ -409,20 +407,15 @@ export function SessionsScreen() {
           <View className="gap-4 pb-4">
             <ListState list={list} />
             {list.groups.map((group) => (
-              // A card per group rather than one card with headings inside it: the heading
-              // belongs to the rows under it, and a border drawn around both says so.
-              <CardLayout
+              // The sidebar's own section, so the list reads the same at every width: a muted
+              // title over rows with no card around them and no rule between them.
+              <SidebarSection
                 key={group.bucket}
                 title={group.label}
                 level={2}
-                contentSlot={
-                  <RowList
-                    label={group.label}
-                    contentSlot={group.sessions.map((item) => (
-                      <SessionRow key={item.id} list={list} item={item} bucket={group.bucket} />
-                    ))}
-                  />
-                }
+                contentSlot={group.sessions.map((item) => (
+                  <SessionRow key={item.id} list={list} item={item} bucket={group.bucket} />
+                ))}
               />
             ))}
           </View>
