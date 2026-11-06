@@ -898,7 +898,6 @@ rather than failing quietly.
 | `⌘`/`Ctrl` + `N` | New chat |
 | `⌘`/`Ctrl` + `K` | Focus the session search |
 | `⌘`/`Ctrl` + `,` | Settings |
-| `⌘`/`Ctrl` + `B` | Fold the sidebar to its icons, or open it again |
 | `Esc` | Close a dialog or a select sheet; give up a rename |
 
 Browser and desktop only. The Electron build is the web build, and a phone has no keyboard to
@@ -916,8 +915,8 @@ should hand the key back when it goes. Chords fire wherever the caret is — `�
 message is exactly when you want it — and so does Escape; a bare key would not, and is ignored
 while a text box has focus.
 
-New chat, Settings and the sidebar fold are bound in the sidebar rather than in the list, because
-the nav is the one thing mounted on every route and they would otherwise stop working the moment
+New chat and Settings are bound in the shell rather than in the list, because
+the shell is the one thing mounted on every route and they would otherwise stop working the moment
 you opened Settings. Escape closing a modal is not bound here at all: react-native-web's `Modal` already
 turns it into `onRequestClose`, which cubeui's `Dialog` passes through.
 
@@ -931,8 +930,8 @@ them is the one you are looking for. Under a heading a row only says what the he
 a clock today, a weekday earlier in the week, a date once it is older than that.
 
 The buckets are `groupSessions` in `shared/client/sessions.ts`, next to `matchSessions`, so the
-rule is testable from the root runner and the panel and the narrow screen — which render the
-same list twice — cannot drift apart. Days are counted between midnights rather than in elapsed
+rule is testable from the root runner and the sidebar and the narrow screen — which render the
+same list in two arrangements — cannot drift apart. Days are counted between midnights rather than in elapsed
 hours: at nine in the morning something from eleven last night is yesterday, not fourteen hours
 ago. The difference is rounded, because the two midnights can be 23 or 25 hours apart when the
 clocks change and a chat should not slide into the wrong day over it.
@@ -997,8 +996,8 @@ registry) and vendored as source — they are replaced by the next install, so t
 here and Biome is told to leave them alone. The colours come the same way:
 `mobile/cubeui-tokens.css` is generated, and `global.css` only imports it.
 
-What the app owns sits in folders under `components/`: `app/` for its form hook, the sidebar
-header and the icons cubeui does not ship, `chat/` and `settings/` for the screens. A screen is put together
+What the app owns sits in folders under `components/`: `app/` for its form hook and the icons
+cubeui does not ship, `chat/` and `settings/` for the screens. A screen is put together
 from cubeui's shells — `PageLayout`, `HeaderContentFooter`, `CardLayout`, `DialogLayout`,
 `Sidebar` — which take their parts as named props rather than as children: words as `title` and
 `description`, elements as props ending in `Slot` (`contentSlot`, `actionSlot`, `footerSlot`). A
@@ -1007,18 +1006,19 @@ cubeui's TanStack Form hook with this app's extra fields bound to it.
 
 ### A sidebar, not a hamburger
 
-The nav is cubeui's `SidebarLayout`. At 768px and up it is a sidebar beside the content: New chat
-at the top, Chats, and Settings at the foot. Below that the sidebar is not
-drawn and the same destinations become a bar of icons across the top, each still announced by
-name — a nav you can see and press on a phone, where a closed drawer is neither.
+The nav is cubeui's `SidebarLayout`. At 768px and up it is a sidebar beside the content, and the
+chats are in it: the brand, New chat and the search box at the top, the chats under them —
+grouped by day, and the only part that scrolls — and Settings at the foot. It is `ChatsSidebar`
+in `mobile/components/chat/session-list.tsx`, 320px wide rather than the rail's default 256,
+because a row is a title and two buttons rather than a link.
 
-There is still no drawer. What the sidebar can do is fold: the chevron at its foot, or
-`⌘`/`Ctrl` + `B`, narrows it to a rail of icons, each named and tooltipped by its row's label,
-with New chat as an icon button at the top and the brand left out. The same press opens it again.
-The sidebar itself holds no state; whether it is folded is kept on the device, beside the display
-settings, in `mobile/lib/sidebar-state.ts`, and read before the first frame so a folded sidebar
-never paints open first. It is not a server setting, because how much room the nav may take is
-about the screen it is on. The bar on a narrow window does not fold, and is the same either way.
+Below 768px there is no sidebar. Chats and Settings become a bar of icons across the top, each
+still announced by name — a nav you can see and press on a phone, where a closed drawer is
+neither — and the list is a screen of its own at `/` (see [One chats view, two
+widths](#one-chats-view-two-widths)). The shell only mounts the sidebar on a wide window, so the
+list is never mounted twice with one copy hidden, which would leave two search boxes claiming `⌘K`.
+
+There is no drawer and nothing to fold: the sidebar is one width, or it is the bar.
 
 ### One settings page
 
@@ -1071,17 +1071,17 @@ stale: a link names its panel the way the tab does, from the one table.
 
 ### One chats view, two widths
 
-A wide screen has room for the conversation on the left and the session list in a panel on the
-right; a phone has never had room for both. `mobile/components/chat/chat-view.tsx` is both: above
-768px (`useWide()` in `mobile/lib/layout.ts`) it renders the chat and the panel side by side,
-and below it the list and the chat go back to being separate screens at `/` and `/chat/[id]`.
+A wide screen has room for the session list and the conversation side by side; a phone has never
+had room for both. Above 768px (`useWide()` in `mobile/lib/layout.ts`) the list is the sidebar's
+body and `mobile/components/chat/chat-view.tsx` is only the conversation, across the rest of the
+window. Below it the list and the chat go back to being separate screens at `/` and `/chat/[id]`.
 
 The split is a JavaScript branch rather than a `md:` class because it decides *which panes
 exist*, not how one is styled — and `useWindowDimensions` re-renders on rotation and on a
 dragged browser window, so a resize moves the layout rather than leaving it at whatever
-width the app started at. Both routes render `ChatsView`, which is what lets the panel stay
-put while the route beneath it changes; switching chats from the panel `replace`s rather
-than `push`es, so an afternoon of browsing does not pile up on the back stack.
+width the app started at. The sidebar sits in the shell rather than in either
+route, which is what lets it stay put while the route beside it changes; switching chats from
+the sidebar `replace`s rather than `push`es, so an afternoon of browsing does not pile up on the back stack.
 
 Enter sends in the browser, and Shift+Enter breaks the line. The box is cubeui's `Textarea`,
 which grows with its text from one line to seven and takes the send as `onSubmitEditing` — an
