@@ -17,10 +17,17 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import "../global.css";
 import { MessageSquare } from "@/components/app/app-icons";
+import { SidebarHeader } from "@/components/app/sidebar-header.tsx";
 import { EMBED_ICON } from "@/components/apps/embed-icon.ts";
 import { useNewChat } from "@/components/chat/session-list.tsx";
 import { RouteError } from "@/components/route-error.tsx";
-import { BarNavItem, Sidebar, SidebarNavItem, SidebarSection } from "@/components/sidebar.tsx";
+import {
+  BarNavItem,
+  Sidebar,
+  SidebarCollapseButton,
+  SidebarNavItem,
+  SidebarSection,
+} from "@/components/sidebar.tsx";
 import { SidebarLayout } from "@/components/split-layout.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Plus, Settings } from "@/components/ui/icons";
@@ -31,6 +38,7 @@ import { useShortcut } from "@/lib/keys.ts";
 import { useBottomInset } from "@/lib/layout.ts";
 import { queryKeys } from "@/lib/queries.ts";
 import { loadServerUrl } from "@/lib/server-url.ts";
+import { loadSidebarState, setSidebarCollapsed, useSidebarCollapsed } from "@/lib/sidebar-state.ts";
 import { colors, pinDarkAppearance } from "@/lib/theme.ts";
 import { cn } from "@/lib/utils.ts";
 import { loadVoiceSettings } from "@/lib/voice-settings.ts";
@@ -74,7 +82,8 @@ const openExternally = (embed: EmbedConfig) => Linking.openURL(embed.url);
 /**
  * The frame every screen sits in: cubeui's rail beside the page on a wide window, and its bar
  * over the page on a narrow one. Which of the two is drawn is a breakpoint in the stylesheet,
- * so nothing here opens, closes or measures the window.
+ * so nothing here opens, closes or measures the window. The rail can be folded to its icons,
+ * and that choice is kept on the device by `lib/sidebar-state.ts`.
  *
  * The places are listed twice, once as rows for the rail and once as icons for the bar,
  * because the two are different components with one prop list. The configured apps are rows
@@ -88,7 +97,7 @@ function Shell() {
   const bottom = useBottomInset();
 
   /*
-    The two shortcuts that are about the app rather than about a screen live here, because
+    The shortcuts that are about the app rather than about a screen live here, because
     the frame is the one thing mounted on every route — bound in the session list they would
     stop working the moment you opened Settings. They are web-only, like everything in
     `lib/keys.ts`; a phone has no keyboard to press them with.
@@ -96,6 +105,8 @@ function Shell() {
   const newChat = useNewChat((id) => router.navigate(`/chat/${id}`));
   useShortcut("mod+n", () => newChat.mutate());
   useShortcut("mod+,", () => router.navigate("/settings"));
+  const collapsed = useSidebarCollapsed();
+  useShortcut("mod+b", () => setSidebarCollapsed(!collapsed));
 
   const embeds = useQuery({
     queryKey: queryKeys.embeds,
@@ -137,19 +148,9 @@ function Shell() {
         sidebarSlot={
           <Sidebar
             label="min-agent"
-            headerSlot={
-              <>
-                <Brand />
-                <Button
-                  size="sm"
-                  className="w-full gap-2"
-                  disabled={newChat.isPending}
-                  onPress={() => newChat.mutate()}
-                  iconSlot={<Plus className="size-4" />}
-                  content="New chat"
-                />
-              </>
-            }
+            collapsed={collapsed}
+            onCollapsedChange={setSidebarCollapsed}
+            headerSlot={<SidebarHeader brandSlot={<Brand />} newChat={newChat} />}
             contentSlot={
               <View role="navigation" aria-label="Main">
                 <SidebarSection
@@ -181,9 +182,12 @@ function Shell() {
               </View>
             }
             footerSlot={
-              <Link href="/settings" asChild>
-                <SidebarNavItem label="Settings" iconSlot={<Settings />} active={onSettings} />
-              </Link>
+              <>
+                <Link href="/settings" asChild>
+                  <SidebarNavItem label="Settings" iconSlot={<Settings />} active={onSettings} />
+                </Link>
+                <SidebarCollapseButton />
+              </>
             }
           />
         }
@@ -250,14 +254,18 @@ function Shell() {
 
 export default function RootLayout() {
   // Nothing may render until the stored server address is in memory, or the first
-  // queries fire at the default address and fail. The dictation and display settings are read in the
-  // same breath — they are wanted before the first press of the microphone, not before the
-  // first frame, but one await is simpler than two lifetimes.
+  // queries fire at the default address and fail. Whether the sidebar is folded is wanted before
+  // the first frame too, or a folded one paints open first. The dictation and display settings are
+  // read in the same breath — they are wanted before the first press of the microphone, not before
+  // the first frame, but one await is simpler than two lifetimes.
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    Promise.all([loadServerUrl(), loadVoiceSettings(), loadDisplaySettings()]).finally(() =>
-      setReady(true),
-    );
+    Promise.all([
+      loadServerUrl(),
+      loadVoiceSettings(),
+      loadDisplaySettings(),
+      loadSidebarState(),
+    ]).finally(() => setReady(true));
   }, []);
 
   const isLoading = ready === false;
