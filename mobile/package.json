@@ -9,7 +9,8 @@
     "apk": "eas build --platform android --profile preview",
     "web": "expo start --web",
     "export:web": "expo export --platform web --output-dir dist",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@cubicecho/agent-mcp-pool": "^3.3.0",
@@ -61,6 +62,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "@types/react": "^19.2.18",
+    "patch-package": "^8.0.1",
     "typescript": "^7.0.2"
   },
   "overrides": {
