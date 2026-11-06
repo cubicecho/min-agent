@@ -20,11 +20,17 @@ export type SwitchFieldProps = {
   labelClassName?: string | undefined;
 };
 
-/** The caption's type, shared so the two halves cannot drift on it. */
-export const SWITCH_FIELD_LABEL_CLASS = "text-sm text-foreground/60";
+/**
+ * The caption's type, shared so the two halves cannot drift on it. Full ink, as every other field
+ * label: a grey caption read as disabled, and as quiet as the description under it.
+ */
+export const SWITCH_FIELD_LABEL_CLASS = "text-sm text-foreground";
 
-/** The line under it. Not muted with the caption: it is what explains a disabled switch. */
-export const SWITCH_FIELD_DESCRIPTION_CLASS = "font-normal text-foreground/60 text-xs";
+/**
+ * The line under it: `FieldDescription`'s type, which it cannot be on the web, where it sits
+ * inside the `<label>`. Not muted with the caption: it is what explains a disabled switch.
+ */
+export const SWITCH_FIELD_DESCRIPTION_CLASS = "font-normal text-foreground/60 text-sm";
 
 /** The ids the caption and the description carry, from the switch's own. */
 export const switchFieldIds = (id: string) => ({

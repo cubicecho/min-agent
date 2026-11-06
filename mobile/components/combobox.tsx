@@ -466,14 +466,19 @@ function SearchMenu({
           {...trigger}
           className={cn(
             "h-auto min-h-10 w-full justify-between gap-2 bg-background px-3 py-1.5 font-normal",
+            // It looks like a field, so it behaves like one: no hover fill, and focus turns its
+            // border `active`, as the select trigger beside it does — not a button's fill.
+            "hover:bg-background focus-visible:bg-background focus-visible:border-active",
             Platform.select({
-              web: "whitespace-normal aria-invalid:border-negative disabled:cursor-not-allowed",
+              web: "whitespace-normal aria-invalid:border-negative aria-invalid:focus-visible:border-active disabled:cursor-not-allowed",
               default: "",
             }),
             className,
           )}
           content={triggerSlot}
-          trailingSlot={<ChevronsUpDown className="size-4 shrink-0 opacity-50" aria-hidden />}
+          trailingSlot={
+            <ChevronsUpDown className="size-4 shrink-0 text-foreground/60" aria-hidden />
+          }
         />
       </PopoverTrigger>
       <PopoverContent
@@ -484,8 +489,8 @@ function SearchMenu({
         className={cn(
           Platform.select({
             // As wide as the trigger, so the list does not open narrower than what opened it.
-            web: "w-[var(--radix-popover-trigger-width)] p-0",
-            default: "w-80 max-w-full p-0",
+            web: "w-[var(--radix-popover-trigger-width)] gap-0 p-0",
+            default: "w-80 max-w-full gap-0 p-0",
           }),
           contentClassName,
         )}

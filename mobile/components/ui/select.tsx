@@ -95,7 +95,8 @@ function SelectTrigger({ className, onBlur, disabled, children, ...aria }: Selec
       className={cn(
         SELECT_TRIGGER_CLASS,
         isInvalid(aria["aria-invalid"]) && FIELD_INVALID_CLASS,
-        isDisabled && "opacity-50",
+        // A quiet fill as well as the fade, so a disabled value does not read as a placeholder.
+        isDisabled && "bg-foreground/10 opacity-50",
         className,
       )}
     >

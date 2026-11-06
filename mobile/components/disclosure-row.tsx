@@ -96,7 +96,18 @@ export function DisclosureRow({
             >
               {title}
             </Text>
-            {meta}
+            {/* Quieter than the title, as ListItem's meta is: left bare, a string took the title's
+                semibold and "atlas 12 tools" read as one name. A node keeps its own look. */}
+            {typeof meta === "string" || typeof meta === "number" ? (
+              <Text
+                testID="disclosure-row-meta"
+                className="shrink-0 font-normal text-foreground/60 text-xs tabular-nums"
+              >
+                {meta}
+              </Text>
+            ) : (
+              meta
+            )}
           </ItemTitle>
           {description ? <ItemDescription>{description}</ItemDescription> : null}
         </ItemContent>
@@ -108,7 +119,8 @@ export function DisclosureRow({
         <ItemFooter
           nativeID={contentId}
           className={cn(
-            "min-w-0 flex-col items-stretch gap-2 border-foreground/10 border-t pt-3",
+            // No rule: the row's own outline and the gap already set the opened body apart.
+            "min-w-0 flex-col items-stretch gap-2 pt-3",
             contentClassName,
           )}
         >

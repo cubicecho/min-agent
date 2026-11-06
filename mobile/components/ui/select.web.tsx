@@ -11,6 +11,7 @@ import {
   SELECT_TRIGGER_CLASS,
   SELECT_TRIGGER_TEXT_CLASS,
 } from "@/components/ui/select-base";
+import { FrameFocusGuard } from "@/lib/frame-focus-guard";
 import { cn } from "@/lib/utils";
 
 // Each part's props are radix's, with `className` re-declared: radix types it `className?: string`,
@@ -79,7 +80,7 @@ function SelectTrigger({
       className={cn(
         SELECT_TRIGGER_CLASS,
         SELECT_TRIGGER_TEXT_CLASS,
-        "flex focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-negative aria-invalid:focus:border-active focus:border-active data-[placeholder]:text-foreground/60 data-[size=sm]:h-8 [&>span]:line-clamp-1",
+        "flex focus:outline-none disabled:cursor-not-allowed disabled:bg-foreground/10 disabled:opacity-50 aria-invalid:border-negative aria-invalid:focus:border-active focus:border-active data-[placeholder]:text-foreground/60 data-[size=sm]:h-8 [&>span]:line-clamp-1",
         className,
       )}
     >
@@ -125,6 +126,8 @@ function SelectContent({
           {children}
         </SelectPrimitive.Viewport>
         <SelectScrollDownButton />
+        {/* A framed app focusing itself would blur the window, which closes the list at once. */}
+        <FrameFocusGuard />
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>
   );

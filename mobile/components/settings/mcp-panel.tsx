@@ -17,6 +17,7 @@ import { useAppForm } from "@/components/app/app-form.tsx";
 import { Globe, Server, Terminal } from "@/components/app/app-icons";
 import { ConfirmButton } from "@/components/confirm-button.tsx";
 import { DialogLayout } from "@/components/dialog-layout.tsx";
+import { List as RowList } from "@/components/list.tsx";
 import { ListItem } from "@/components/list-item.tsx";
 import { EmptyState } from "@/components/page.tsx";
 import { QueryState } from "@/components/query-state.tsx";
@@ -32,6 +33,7 @@ import { useDescriptionPlacement } from "@/lib/display-settings.ts";
 import { queryKeys } from "@/lib/queries.ts";
 import { useReportDirty } from "./dirty.tsx";
 import { PanelBody } from "./panel-body.tsx";
+import { SettingsCard } from "./settings-card.tsx";
 
 /**
  * The MCP servers the agent can call tools on.
@@ -190,7 +192,6 @@ function Row({ state, onOpen }: { state: McpServerState; onOpen: () => void }) {
 
   return (
     <ListItem
-      className="border border-border bg-card"
       leadingSlot={
         <Glyph
           className={config.enabled ? "size-4 text-foreground" : "size-4 text-muted-foreground"}
@@ -572,7 +573,6 @@ function Editor({
 const POLL = FRESHNESS_DEFAULTS.mcpPollSeconds * MS_PER_SECOND;
 
 export function McpPanel({ active = true }: { active?: boolean }) {
-  const placement = useDescriptionPlacement();
   const queryClient = useQueryClient();
   // The panel stays mounted behind another tab, so the poll is tied to being looked at. The
   // settings shell keeps a slow one of its own running for the dot on the tab.
@@ -617,8 +617,7 @@ export function McpPanel({ active = true }: { active?: boolean }) {
     <PanelBody
       content={
         <>
-          <Section
-            descriptionPlacement={placement}
+          <SettingsCard
             title="MCP servers"
             description="Connected servers expose their tools to the agent as <server id>__<tool>."
             actionSlot={
@@ -631,7 +630,6 @@ export function McpPanel({ active = true }: { active?: boolean }) {
                 />
               ) : undefined
             }
-            contentClassName="flex flex-col gap-2"
             contentSlot={
               <>
                 {/* The dialog reports its own failures; this is for the ones nothing is open to catch. */}
@@ -648,19 +646,22 @@ export function McpPanel({ active = true }: { active?: boolean }) {
                   count={list.length}
                   emptySlot={
                     <EmptyState
+                      compact
                       iconSlot={<Server />}
-                      title="No servers yet"
-                      description="Add one to give the agent some tools."
+                      title="No servers yet. Add one to give the agent some tools."
                     />
                   }
                 />
-                {list.map((state, index) => (
-                  <Row
-                    key={state.config.id}
-                    state={state}
-                    onOpen={() => setEditing({ index, value: state.config })}
-                  />
-                ))}
+                <RowList
+                  label="MCP servers"
+                  contentSlot={list.map((state, index) => (
+                    <Row
+                      key={state.config.id}
+                      state={state}
+                      onOpen={() => setEditing({ index, value: state.config })}
+                    />
+                  ))}
+                />
               </>
             }
           />

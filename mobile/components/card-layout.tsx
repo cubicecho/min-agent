@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { Children } from "react";
+import { Children, isValidElement } from "react";
 import { Platform, View } from "react-native";
+import { hasRows, List } from "@/components/list";
 import {
   Card,
   CardContent,
@@ -49,7 +50,11 @@ export type CardLayoutProps = {
   iconSlot?: SlotNode | undefined;
   /** The header's far end: an add button, a menu, a switch. */
   actionSlot?: SlotNode | undefined;
-  /** Shown instead of `contentSlot` when there is nothing in it — an empty list, no results. */
+  /**
+   * Shown instead of `contentSlot` when there is nothing in it: no element (`[]`, `null`, `false`),
+   * or a `List` with no rows. A body of any other element is drawn as it is, even one that turns
+   * out to render nothing — pass `emptySlot` the case, or decide it yourself.
+   */
   emptySlot?: SlotNode | undefined;
   /**
    * Whether the body is still being fetched. On, a skeleton stands in for it and `emptySlot` is not
@@ -62,10 +67,31 @@ export type CardLayoutProps = {
   /**
    * The footer's start. A timestamp, a note, a destructive action held away from the rest. Words
    * come in a `<Text>` of the caller's, as in every slot.
+   *
+   * Several elements — a fragment, an array — sit together in one row with a small gap, and wrap
+   * on a narrow card; `footerActionsSlot` stays at the far end. There is no row of your own to add.
    */
   footerSlot?: SlotNode | undefined;
   /** The footer's end. The buttons. Given alone, the footer is simply right-aligned. */
   footerActionsSlot?: SlotNode | undefined;
+  /**
+   * Wraps the header, the body and the footer together, inside the card. Its use is a form: with
+   * the fields and the submit button under one `<form>`, Enter in a field submits it and the
+   * footer's submit button is a real one, where a `<form>` around the body alone leaves the button
+   * outside it.
+   *
+   * A function, called rather than mounted, so the fields keep their state across renders. The
+   * element it returns takes `className`, which keeps the parts laid out as the card lays them.
+   *
+   * ```tsx
+   * wrapperSlot={(parts, { className }) => (
+   *   <FormElement onSubmit={() => form.handleSubmit()} className={className}>
+   *     {parts}
+   *   </FormElement>
+   * )}
+   * ```
+   */
+  wrapperSlot?: ((parts: SlotNode, wrapper: { className: string }) => SlotNode) | undefined;
   className?: string | undefined;
   headerClassName?: string | undefined;
   /** On the title itself: its size, a `line-through`. */
@@ -125,6 +151,43 @@ const HEADER_ACTION = cn(
 const ACTIONS = "min-w-0 shrink flex-row flex-wrap items-center justify-end gap-2";
 
 /**
+ * What `wrapperSlot`'s element takes: the column the card itself is, so the header, body and
+ * footer inside it stack and stretch as they did with nothing between them and the card. `gap-0`
+ * because `FormElement` spaces its children for fields, and these are the card's own parts.
+ */
+const WRAPPER = Platform.select({ web: "flex min-w-0 flex-col gap-0", default: "min-w-0 gap-0" });
+
+/**
+ * The `footerSlot` row: `ACTIONS` held at the start. Its elements were once placed straight into
+ * the footer, and with `footerActionsSlot` beside them the footer's `justify-between` spread
+ * *every* child, so a second one landed mid-footer rather than beside the first. Grouped here,
+ * they sit together at `ACTIONS`' `gap-2`, and the footer splits between this row and that one.
+ */
+const FOOTER_START = "min-w-0 shrink flex-row flex-wrap items-center gap-2";
+
+/**
+ * Whether a body holds nothing to draw: no element at all, or one `List` with no rows.
+ *
+ * Elements rather than a truth test: `{items.map(…)}` on an empty array is an empty array, not
+ * null, and it is the shape a card is nearly always handed. A `List` is the one element looked
+ * into, because it is the other shape a card is handed — `<List contentSlot={items.map(…)} />` —
+ * and it draws nothing when it has no rows. Anything else is taken to draw something.
+ */
+function isEmptyBody(slot: SlotNode): boolean {
+  const parts = Children.toArray(slot).filter((part) => isValidElement(part));
+  if (parts.length === 0) {
+    return true;
+  }
+  const [only] = parts;
+  return (
+    parts.length === 1 &&
+    isValidElement<{ contentSlot?: SlotNode }>(only) &&
+    only.type === List &&
+    hasRows(only.props.contentSlot) === false
+  );
+}
+
+/**
  * A card with its slots already placed.
  *
  * The shape is the one every card in these apps arrives at on its own — an icon and a title, a
@@ -152,15 +215,14 @@ export function CardLayout({
   loading = false,
   footerSlot,
   footerActionsSlot,
+  wrapperSlot,
   className,
   headerClassName,
   titleClassName,
   contentClassName,
   footerClassName,
 }: CardLayoutProps) {
-  // `Children.count` rather than a truth test: `{items.map(…)}` on an empty array is an empty
-  // array, not null, and it is the shape a card is nearly always handed.
-  const isEmpty = Children.count(contentSlot) === 0;
+  const isEmpty = isEmptyBody(contentSlot);
   const settled = isEmpty && emptySlot ? emptySlot : contentSlot;
   const body = loading ? <CardLayoutSkeleton /> : settled;
 
@@ -175,8 +237,8 @@ export function CardLayout({
     descriptionPlacement === "popover" &&
     Boolean(body || hasFooter);
 
-  return (
-    <Card testID="card-layout" className={className}>
+  const parts = (
+    <>
       {hasHeader ? (
         <CardHeader className={cn(HEADER, hasText === false && "justify-end", headerClassName)}>
           {hasText ? (
@@ -227,7 +289,7 @@ export function CardLayout({
       {body ? (
         // `CardContent` is `pt-0` because a header above it brings the top padding. With no
         // header the body is the first thing in the card and sat on its top edge.
-        <CardContent className={cn("min-w-0", hasHeader === false && "pt-6", contentClassName)}>
+        <CardContent className={cn("min-w-0", hasHeader === false && "pt-4", contentClassName)}>
           {body}
         </CardContent>
       ) : null}
@@ -238,14 +300,21 @@ export function CardLayout({
             footerSlot && footerActionsSlot && "justify-between",
             !footerSlot && "justify-end",
             // The same, for a footer with neither a header nor a body over it.
-            hasHeader === false && !body && "pt-6",
+            hasHeader === false && !body && "pt-4",
             footerClassName,
           )}
         >
-          {footerSlot}
+          {footerSlot ? <View className={FOOTER_START}>{footerSlot}</View> : null}
           {footerActionsSlot ? <View className={ACTIONS}>{footerActionsSlot}</View> : null}
         </CardFooter>
       ) : null}
+    </>
+  );
+
+  return (
+    <Card testID="card-layout" className={className}>
+      {/* Inside the card, so its border, background and accent stripe stay the card's own. */}
+      {wrapperSlot ? wrapperSlot(parts, { className: WRAPPER }) : parts}
     </Card>
   );
 }

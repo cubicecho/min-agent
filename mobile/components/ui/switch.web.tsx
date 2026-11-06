@@ -60,7 +60,7 @@ function Switch({
       aria-label={ariaLabel ?? accessibilityLabel}
       className={cn(
         SWITCH_TRACK_CLASS,
-        "peer group/switch inline-flex cursor-pointer transition-colors focus-visible:outline-none data-[state=unchecked]:focus-visible:bg-hover data-[state=checked]:focus-visible:bg-active/90 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-negative data-[state=checked]:bg-active data-[state=unchecked]:bg-foreground/50 data-[size=sm]:h-4 data-[size=sm]:w-7",
+        "peer group/switch inline-flex cursor-pointer transition-colors focus-visible:outline-none data-[state=unchecked]:focus-visible:bg-hover data-[state=checked]:focus-visible:bg-hover disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-negative data-[state=checked]:bg-active data-[state=unchecked]:bg-foreground/50 data-[size=sm]:h-4 data-[size=sm]:w-7",
         refuses && "cursor-not-allowed opacity-50",
         className,
       )}

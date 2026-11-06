@@ -6,13 +6,14 @@ import { useRef, useState } from "react";
 import { View } from "react-native";
 import { useAppForm } from "@/components/app/app-form.tsx";
 import { MessageSquare } from "@/components/app/app-icons";
+import { CardLayout } from "@/components/card-layout.tsx";
 import { ConfirmButton } from "@/components/confirm-button.tsx";
 import { DialogLayout } from "@/components/dialog-layout.tsx";
+import { List as RowList } from "@/components/list.tsx";
 import { ListItem } from "@/components/list-item.tsx";
 import { EmptyState } from "@/components/page.tsx";
 import { PageLayout } from "@/components/page-layout.tsx";
 import { QueryState } from "@/components/query-state.tsx";
-import { Section } from "@/components/section.tsx";
 import { SettingsLink } from "@/components/settings/link.tsx";
 import { Sidebar, SidebarSection } from "@/components/sidebar.tsx";
 import { Alert } from "@/components/ui/alert.tsx";
@@ -24,7 +25,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { api } from "@/lib/client.ts";
 import { useShortcut } from "@/lib/keys.ts";
 import { invalidateSession, queryKeys } from "@/lib/queries.ts";
-import { cn, type SlotNode } from "@/lib/utils.ts";
+import type { SlotNode } from "@/lib/utils.ts";
 
 /**
  * How much of a timestamp a row still has to say, given the heading it is already under.
@@ -316,7 +317,8 @@ function SessionRow({
       description={when(item.updatedAt, bucket)}
       onPress={() => list.open(item.id)}
       actionSlot={<RowActions list={list} id={item.id} title={item.title} />}
-      className={cn(active && "bg-sidebar-accent", className)}
+      selected={active}
+      className={className}
     />
   );
 }
@@ -409,22 +411,17 @@ export function SessionsScreen() {
             {list.groups.map((group) => (
               // A card per group rather than one card with headings inside it: the heading
               // belongs to the rows under it, and a border drawn around both says so.
-              <Section
+              <CardLayout
                 key={group.bucket}
                 title={group.label}
                 level={2}
                 contentSlot={
-                  <View className="overflow-hidden rounded-xl border border-border">
-                    {group.sessions.map((item, index) => (
-                      <SessionRow
-                        key={item.id}
-                        list={list}
-                        item={item}
-                        bucket={group.bucket}
-                        className={cn("rounded-none", index > 0 && "border-border border-t")}
-                      />
+                  <RowList
+                    label={group.label}
+                    contentSlot={group.sessions.map((item) => (
+                      <SessionRow key={item.id} list={list} item={item} bucket={group.bucket} />
                     ))}
-                  </View>
+                  />
                 }
               />
             ))}
