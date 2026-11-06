@@ -16,6 +16,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import "../global.css";
 import { MessageSquare } from "@/components/app/app-icons";
+import { UpdateBanner } from "@/components/app/update-banner.tsx";
 import { ChatsSidebar, useNewChat } from "@/components/chat/session-list.tsx";
 import { RouteError } from "@/components/route-error.tsx";
 import { BarNavItem, SidebarNavItem } from "@/components/sidebar.tsx";
@@ -148,8 +149,10 @@ function Shell() {
           // `role="main"` is what react-native-web turns into a <main>. It does not scroll:
           // each screen divides the height it is given between its own header and body.
           // cubeui's panes are block boxes on the web, where `flex-1` claims nothing, so the
-          // height is asked for outright there.
+          // height is asked for outright there. The update banner sits over every screen and
+          // draws nothing until there is an update waiting, which is only ever on Android.
           <View role="main" className={MAIN}>
+            <UpdateBanner />
             <Stack
               screenOptions={{
                 headerShown: false,

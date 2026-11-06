@@ -264,3 +264,20 @@ export interface LayoutSettings {
 export const LAYOUT_DEFAULTS: Readonly<LayoutSettings> = Object.freeze({
   wideWidthPx: 768,
 });
+
+export interface UpdateSettings {
+  /**
+   * How long an installed build waits between looking for an over-the-air update when it comes
+   * back to the screen.
+   *
+   * Android keeps an app alive for days, and the check expo-updates makes by itself only runs on
+   * a cold start, so without this a published update could sit unnoticed for as long as the app
+   * stayed open. Not every return to the screen, though: switching to another app and back is
+   * not a reason to ask the update server again.
+   */
+  foregroundCheckMinutes: number;
+}
+
+export const UPDATE_DEFAULTS: Readonly<UpdateSettings> = Object.freeze({
+  foregroundCheckMinutes: 15,
+});

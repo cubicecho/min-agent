@@ -120,15 +120,28 @@ Whether shipping means an update or a build is the fingerprint's call.
 native dependencies and the config plugins. If a finished build on the channel
 already carries this commit's fingerprint, then the APK on your phone can run
 this commit's JavaScript and only the JavaScript changed — so the run publishes
-an over-the-air update, live in seconds. If the hash moved, the native runtime
+an over-the-air update, on the server in seconds. If the hash moved, the native runtime
 moved with it, and only a new binary will do.
 
 So: a screen, a component, anything under `shared/` — an update. Adding a
 dependency with native code, changing a config plugin, bumping the SDK — a build.
 
+A phone picks an update up by itself. expo-updates looks for one when the app
+starts from cold, and the app looks again whenever it comes back to the screen,
+at most every 15 minutes (`UPDATE_DEFAULTS` in `shared/defaults.ts`,
+`mobile/lib/updates.ts`). Either way the update downloads in the background and
+an **Update ready** banner offers a restart; nothing restarts on its own, because
+a restart throws away whatever is half-typed. **Settings → Device → Updates**
+looks right now. Only a binary with the same fingerprint takes an update, so a
+phone on an older APK keeps its last compatible JavaScript until the new APK is
+installed.
+
 A build is triggered with `--no-wait` and the job exits: it does not hold a
 runner in the EAS queue, the build page is linked from the run summary, and the
-APK downloads from there once EAS finishes. On the build path a green run means
+APK downloads from there once EAS finishes. On expo.dev the project is under the
+**cubicecho** account, and its builds are under **Builds** in the project menu:
+they are `preview` builds, internal distribution, which the overview's
+development and production cards do not count. On the build path a green run means
 EAS accepted the job; on the update path it means the update is already live.
 Until `EXPO_TOKEN` exists the workflow skips with a warning rather than failing —
 nothing is red just because the secret has not been added yet.
