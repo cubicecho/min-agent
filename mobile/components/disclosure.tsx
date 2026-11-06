@@ -99,7 +99,7 @@ export function Disclosure({
           {...(Platform.OS === "web" && shown ? { "aria-controls": contentId } : {})}
           onPress={toggle}
           className={cn(
-            "min-w-0 flex-1 flex-row items-start gap-1.5 rounded-sm",
+            "min-w-0 flex-1 flex-row items-start gap-2 rounded-sm",
             Platform.select({
               web: "text-left focus-visible:bg-hover focus-visible:outline-none",
               default: undefined,
@@ -136,7 +136,9 @@ export function Disclosure({
         <View
           testID="disclosure-content"
           nativeID={contentId}
-          className={cn("min-w-0 gap-2", contentClassName)}
+          // Indented to the title (the 16px chevron and its 8px gap), so the body reads as the
+          // title's and not as the next thing on the page.
+          className={cn("min-w-0 gap-2 pl-6", contentClassName)}
         >
           {contentSlot}
         </View>

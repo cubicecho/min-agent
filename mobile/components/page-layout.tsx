@@ -101,7 +101,9 @@ export function PageLayout({
       // Room under the header's rule and between the blocks a page stacks; a page that wants
       // its rows flush says so with `py-0` or `gap-0`, merged after.
       contentClassName={cn("gap-4 py-4", contentClassName)}
-      footerClassName={footerClassName}
+      // A pinned footer over a scrolling body gets the boundary the header has, and room in it:
+      // bare, it read as one more row flush to the bottom edge. The caller's classes after.
+      footerClassName={cn("border-t border-foreground/10 py-3", footerClassName)}
       headerSlot={
         <PageHeader
           title={title}

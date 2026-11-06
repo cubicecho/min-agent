@@ -8,6 +8,7 @@ import {
   ITEM_FOOTER_CLASS,
   ITEM_HEADER_CLASS,
   ITEM_SELECTED_CLASS,
+  ITEM_SELECTED_DESCRIPTION_CLASS,
   ITEM_SEPARATOR_CLASS,
   ITEM_TITLE_CLASS,
   ITEM_TITLE_TEXT,
@@ -97,6 +98,9 @@ type ItemProps = ViewProps & {
   selected?: boolean | undefined;
 };
 
+/** Whether the row the part is in is the chosen one, so its description can take its ink. */
+const ItemSelectedContext = React.createContext(false);
+
 /** One row: media, content and actions side by side. */
 function Item({
   className,
@@ -112,10 +116,16 @@ function Item({
     // one child with these props merged in — so the cast is the honest way to say neither side's
     // typing describes it (`Button` does the same).
     return (
-      <Slot className={classes} {...(props as unknown as React.HTMLAttributes<HTMLElement>)} />
+      <ItemSelectedContext.Provider value={selected}>
+        <Slot className={classes} {...(props as unknown as React.HTMLAttributes<HTMLElement>)} />
+      </ItemSelectedContext.Provider>
     );
   }
-  return <View testID="item" className={classes} {...props} />;
+  return (
+    <ItemSelectedContext.Provider value={selected}>
+      <View testID="item" className={classes} {...props} />
+    </ItemSelectedContext.Provider>
+  );
 }
 
 type ItemMediaProps = ViewProps & { variant?: ItemMediaVariant | null | undefined };
@@ -154,8 +164,13 @@ function ItemTitle({ className, children, ...props }: ViewProps) {
 
 /** The muted line under the item's title. */
 function ItemDescription({ className, ...props }: TextProps) {
+  const selected = React.useContext(ItemSelectedContext);
   return (
-    <Text testID="item-description" className={cn(ITEM_DESCRIPTION_CLASS, className)} {...props} />
+    <Text
+      testID="item-description"
+      className={cn(ITEM_DESCRIPTION_CLASS, selected && ITEM_SELECTED_DESCRIPTION_CLASS, className)}
+      {...props}
+    />
   );
 }
 

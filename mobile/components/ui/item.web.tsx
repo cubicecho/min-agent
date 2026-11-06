@@ -89,7 +89,7 @@ function Item({
         ITEM_WEB,
         itemVariants({ variant, size }),
         selected && ITEM_SELECTED_CLASS,
-        selected && "[a]:hover:bg-active/40 [a]:focus-visible:bg-active/40",
+        selected && "[a]:hover:bg-active/40 [a]:focus-visible:bg-hover",
         className,
       )}
       {...props}
@@ -158,6 +158,9 @@ function ItemDescription({ className, ...props }: React.ComponentProps<"p">) {
       data-slot="item-description"
       className={cn(
         ITEM_DESCRIPTION_CLASS,
+        // ITEM_SELECTED_DESCRIPTION_CLASS on the chosen row, which says so with `data-selected`:
+        // read here rather than through context so the part stays a plain `<p>`.
+        "in-data-selected:text-foreground",
         "text-balance [&>a]:underline [&>a]:underline-offset-4 [&>a:hover]:text-info",
         className,
       )}

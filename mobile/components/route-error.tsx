@@ -81,8 +81,15 @@ export function RouteError({
       <View className="rounded-full bg-negative/10 p-4">
         <CircleAlert className="h-7 w-7 text-negative" />
       </View>
-      <View className="max-w-sm items-center">
-        <Text testID="route-error-title" className="font-semibold text-foreground">
+      {/* One width for the text and the details under it, not two centred columns. The title is
+          the screen's heading: `role`/`aria-level` because an `<h1>` has no native counterpart. */}
+      <View className="max-w-md items-center">
+        <Text
+          testID="route-error-title"
+          role="heading"
+          aria-level={1}
+          className="font-semibold text-foreground"
+        >
           {title}
         </Text>
         <Text className="mt-1 text-center text-sm text-foreground/60">{summary}</Text>

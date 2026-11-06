@@ -47,7 +47,7 @@ export function SwitchField({
         aria-describedby={description ? descriptionId : undefined}
       />
       {description ? (
-        <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex min-w-0 flex-col gap-1">
           <span id={labelId} className={caption}>
             {label}
           </span>

@@ -37,7 +37,7 @@ export function SwitchField({
       <Pressable
         disabled={disabled}
         onPress={() => onCheckedChange(!checked)}
-        className="min-w-0 shrink gap-0.5"
+        className="min-w-0 shrink gap-1"
       >
         <Label
           htmlFor={id}

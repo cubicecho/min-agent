@@ -1,7 +1,8 @@
 import { Children, Fragment, isValidElement, type ReactElement } from "react";
 import { ScrollView, View } from "react-native";
 import { EmptyState, type EmptyStateProps } from "@/components/empty-state";
-import { PageHeader, type PageHeaderProps } from "@/components/page-header";
+import { PAGE_COLUMN, PROSE_COLUMN } from "@/components/header-content-footer";
+import { PageHeader, type PageHeaderProps, PageInsetContext } from "@/components/page-header";
 import { cn, type SlotNode } from "@/lib/utils";
 
 type PageProps = {
@@ -15,7 +16,7 @@ type PageProps = {
   fill?: boolean;
   /** Whether the page itself scrolls. Off for views with an inner scroll area. */
   scroll?: boolean;
-  /** `narrow` constrains content to `max-w-2xl` — a settings or detail form. */
+  /** `narrow` is the prose column (`max-w-3xl`), PageLayout's own — a settings or detail form. */
   width?: "narrow";
 };
 
@@ -24,17 +25,26 @@ type PageProps = {
  * not to.
  */
 export function Page({ className, contentSlot, fill = false, scroll = true, width }: PageProps) {
-  const content = cn("container mx-auto px-4 py-6", width === "narrow" && "max-w-2xl", className);
+  // PageLayout's named columns, not `container`, whose width snapped at every breakpoint; and a
+  // `gap-4` between what the page holds, which its header's doc always told callers to rely on.
+  const content = cn(width === "narrow" ? PROSE_COLUMN : PAGE_COLUMN, "gap-4 px-4 py-4", className);
   const outer = fill ? "h-full min-h-0" : "flex-1";
 
+  // The page insets its content, so a PageHeader in it does not inset itself again.
   if (scroll === false) {
-    return <View className={cn(outer, "flex-col", content)}>{contentSlot}</View>;
+    return (
+      <PageInsetContext.Provider value={true}>
+        <View className={cn(outer, "flex-col", content)}>{contentSlot}</View>
+      </PageInsetContext.Provider>
+    );
   }
 
   return (
-    <ScrollView className={outer} contentContainerClassName={content}>
-      {contentSlot}
-    </ScrollView>
+    <PageInsetContext.Provider value={true}>
+      <ScrollView className={outer} contentContainerClassName={content}>
+        {contentSlot}
+      </ScrollView>
+    </PageInsetContext.Provider>
   );
 }
 

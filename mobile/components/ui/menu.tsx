@@ -173,8 +173,11 @@ function MenuItem({
       )}
     >
       {/* Colour does not inherit on native, so the row's ink reaches the icon through the
-          context and the label through its own class. */}
-      <IconClassContext.Provider value={cn("size-4 shrink-0", ink)}>
+          context and the label through its own class. The icon is quieter than the label
+          except on a destructive row, where both are `negative`. */}
+      <IconClassContext.Provider
+        value={cn("size-4 shrink-0", destructive ? ink : "text-foreground/60")}
+      >
         {iconSlot}
         <Text numberOfLines={1} className={cn(MENU_ITEM_TEXT_CLASS, ink)}>
           {label}
@@ -246,7 +249,8 @@ function ToggleRow({
       onPress={onPress}
       className={cn(MENU_ITEM_CLASS, "active:bg-hover", disabled && "opacity-50", className)}
     >
-      <IconClassContext.Provider value={cn("size-4 shrink-0", ink)}>
+      {/* The icon quieter than the label, as MenuItem's. */}
+      <IconClassContext.Provider value="size-4 shrink-0 text-foreground/60">
         {iconSlot}
         <Text numberOfLines={1} className={cn(MENU_ITEM_TEXT_CLASS, ink)}>
           {label}
