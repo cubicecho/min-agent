@@ -1106,6 +1106,22 @@ path — which is exactly why this survived a working web export.
 1.30.1 is the newest version whose round trip is intact, and it satisfies `@expo/metro-config`'s
 `^1.30.1`. The pin is scoped to `react-native-css` so Tailwind keeps its own copy.
 
+### A patched react-native-css
+
+`mobile/patches/react-native-css+3.1.0-rc.0.patch` is applied by `patch-package` from the mobile
+`postinstall`. Without it, every opacity class (`text-foreground/60`, `border-foreground/50`,
+`bg-foreground/10`) has no colour on device, and React Native draws an unset text, icon or border
+colour as black: black bar icons, black input borders, rules that should be faint.
+
+Tailwind writes `/50` as `color-mix(in oklab, var(--foreground) 50%, transparent)`. The compiler
+leaves the missing second percentage `undefined`, Metro injects the stylesheet as JSON, which makes
+it `null`, and the runtime's `colorMix` gave up on any argument left over. The patch drops the empty
+arguments first. The web never runs that function, because the browser mixes the colour itself.
+
+cubeui carries the same patch and a test that fails without it (`scripts/native-color-mix.test.mjs`
+there). 3.1.0-rc.1 still has the bug. When an upgrade fixes it, delete the patch. patch-package
+warns on install if a version bump leaves it behind.
+
 ### A scoped NativeWind Babel plugin
 
 `mobile/babel.config.js` does not use `nativewind/babel` as-is. It wraps the preset's import
