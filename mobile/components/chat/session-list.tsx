@@ -25,6 +25,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { api } from "@/lib/client.ts";
 import { useShortcut } from "@/lib/keys.ts";
 import { invalidateSession, queryKeys } from "@/lib/queries.ts";
+import type { SlotNode } from "@/lib/utils.ts";
 
 /**
  * How much of a timestamp a row still has to say, given the heading it is already under.
@@ -46,9 +47,9 @@ const when = (iso: string, bucket: Bucket) =>
 /**
  * Starting a chat and landing in it.
  *
- * Split out of the list because the sidebar starts one too — it is what ⌘N is bound to, and
- * the sidebar is the one thing on screen on every route — and both want the list behind them
- * to be right by the time the new chat is open.
+ * Split out of the list because the shell starts one too — it is what ⌘N and the narrow bar's
+ * button are bound to, and the shell is the one thing on screen on every route — and both want
+ * the list behind them to be right by the time the new chat is open.
  */
 export function useNewChat(go: (id: string) => void) {
   const queryClient = useQueryClient();
@@ -62,8 +63,8 @@ export function useNewChat(go: (id: string) => void) {
 }
 
 /**
- * The list takes two shapes — a panel beside the chat on a wide screen, a screen of its
- * own on a narrow one — but it is the same list either way, so the queries, the mutations
+ * The list takes two shapes — the sidebar's body on a wide screen, a screen of its own on a
+ * narrow one — but it is the same list either way, so the queries, the mutations
  * and the row state live here and only the arrangement differs below.
  */
 function useSessions(activeId?: string) {
@@ -77,7 +78,7 @@ function useSessions(activeId?: string) {
   const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null);
 
   // Coming from the list, a chat is somewhere to go back from. Switching between chats in
-  // the side panel is not, and pushing there would pile the whole afternoon onto the stack.
+  // the sidebar is not, and pushing there would pile the whole afternoon onto the stack.
   const go = (id: string) =>
     activeId ? router.replace(`/chat/${id}`) : router.push(`/chat/${id}`);
 
@@ -242,7 +243,7 @@ function RowActions({ list, id, title }: { list: List; id: string; title: string
   );
 }
 
-/** The button that starts a chat, in both arrangements. */
+/** The button that starts a chat on the narrow list screen, in its header and its empty state. */
 function NewChatButton({ list }: { list: List }) {
   const { newChat } = list;
   return (
@@ -322,31 +323,54 @@ function SessionRow({
   );
 }
 
-/** The right-hand panel on a wide screen: the chat keeps the room, this keeps its rail. */
-export function SessionsPanel({ activeId }: { activeId?: string }) {
+export type ChatsSidebarProps = {
+  /** The chat on screen, whose row is drawn as the current one. */
+  activeId?: string | undefined;
+  /** The app's name, over New chat. */
+  brandSlot: SlotNode;
+  /** The rows pinned to the foot, under the list: Settings. */
+  footerSlot: SlotNode;
+};
+
+/**
+ * The wide window's sidebar, with the chats in it: the brand, New chat and the search box stay
+ * put at the top, the chats scroll under them, and the footer stays at the foot.
+ *
+ * The list is the sidebar's whole body rather than a panel on the far side of the chat, so
+ * there is one column to look down for everything there is to open.
+ */
+export function ChatsSidebar({ activeId, brandSlot, footerSlot }: ChatsSidebarProps) {
   const list = useSessions(activeId);
+  const { newChat } = list;
 
   return (
     <>
       <Sidebar
-        side="end"
-        label="Sessions"
+        label="min-agent"
         // Wider than the rail's default: a row here is a title and two buttons, not a link.
         className="w-80"
-        headerSlot={<Search list={list} />}
+        headerSlot={
+          <>
+            {brandSlot}
+            <Button
+              size="sm"
+              className="w-full gap-2"
+              disabled={newChat.isPending}
+              onPress={() => newChat.mutate()}
+              iconSlot={<Plus aria-hidden className="size-4" />}
+              content="New chat"
+            />
+            <Search list={list} />
+          </>
+        }
         contentSlot={
           <>
-            <SidebarSection
-              title="Sessions"
-              level={2}
-              actionSlot={<NewChatButton list={list} />}
-              status={<ListState list={list} compact />}
-            />
+            <SidebarSection status={<ListState list={list} compact />} />
             {list.groups.map((group) => (
               <SidebarSection
                 key={group.bucket}
                 title={group.label}
-                level={3}
+                level={2}
                 contentSlot={group.sessions.map((item) => (
                   <SessionRow
                     key={item.id}
@@ -361,6 +385,7 @@ export function SessionsPanel({ activeId }: { activeId?: string }) {
             ))}
           </>
         }
+        footerSlot={footerSlot}
       />
       <RenameDialog list={list} />
     </>
