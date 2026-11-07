@@ -165,7 +165,7 @@ function TabsTrigger({
   // A quiet tab lifts to full ink under the pointer, as the web half's does; the colour is on each
   // `Text`, which only the pressable's `group` reaches. Web only: a device has no pointer.
   const color = active
-    ? "text-active-foreground group-focus-visible/tab:text-foreground"
+    ? "text-foreground"
     : cn(
         "text-foreground/60",
         Platform.select({ web: "group-hover:text-foreground", default: "" }),
@@ -182,8 +182,8 @@ function TabsTrigger({
 
   const styling = cn(
     TABS_TRIGGER_CLASS,
-    // Focused, the active tab looks hovered, as every focused thing does.
-    active ? "group/tab bg-active focus-visible:bg-hover" : "group hover:bg-hover",
+    // The active tab is the chosen tint, a step further under the pointer and focused.
+    active ? "bg-active/40 hover:bg-active/60 focus-visible:bg-active/60" : "group hover:bg-hover",
     disabled && "opacity-50",
     className,
   );

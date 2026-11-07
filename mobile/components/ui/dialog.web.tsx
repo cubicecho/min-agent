@@ -108,7 +108,6 @@ function DialogContent({
   showCloseButton = true,
   onEscapeKeyDown,
   onInteractOutside,
-  "aria-describedby": describedBy,
   role,
   children,
   ...props
@@ -118,13 +117,14 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        // `aria-describedby` stays in `props`, so it is spread only when the caller wrote it: radix
+        // links its own `DialogDescription`, and an `undefined` written here would unlink it.
         {...props}
         {...(onEscapeKeyDown === undefined ? {} : { onEscapeKeyDown })}
         {...(onInteractOutside === undefined ? {} : { onInteractOutside })}
         // Spread only when given: radix sets its own `role="dialog"` and an explicit `undefined`
         // would land after it and take the role away.
         {...(role === undefined ? {} : { role })}
-        aria-describedby={describedBy}
         className={cn(
           DIALOG_CONTENT_CLASS,
           // Native gets its gutter from the backdrop's padding; here the card is fixed in the
