@@ -4,7 +4,7 @@ import * as Updates from "expo-updates";
 import { useEffect, useState } from "react";
 import { Platform, Text } from "react-native";
 import { useAppForm } from "@/components/app/app-form.tsx";
-import { DescriptionList, PropertyRow } from "@/components/description-list.tsx";
+import { PropertyList, PropertyRow } from "@/components/property-list.tsx";
 import { Alert } from "@/components/ui/alert.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Form } from "@/components/ui/form.tsx";
@@ -48,7 +48,7 @@ function Running() {
   const built = Updates.createdAt;
   const id = Updates.updateId;
   return (
-    <DescriptionList
+    <PropertyList
       contentSlot={
         <>
           <PropertyRow label="Channel" value={Updates.channel || "None"} />

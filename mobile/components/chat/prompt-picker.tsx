@@ -4,9 +4,9 @@ import { useState } from "react";
 import { View } from "react-native";
 import { CornerDownLeft } from "@/components/app/app-icons";
 import { DialogLayout } from "@/components/dialog-layout.tsx";
+import { EmptyState } from "@/components/empty-state.tsx";
 import { ListItem } from "@/components/list-item.tsx";
-import { EmptyState } from "@/components/page.tsx";
-import { QueryState } from "@/components/query-state.tsx";
+import { LoadState } from "@/components/load-state.tsx";
 import { Alert } from "@/components/ui/alert.tsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button.tsx";
@@ -133,7 +133,7 @@ export function PromptPicker({
             ))
           ) : (
             <>
-              <QueryState
+              <LoadState
                 query={prompts}
                 what="prompts"
                 count={prompts.data?.length ?? 0}

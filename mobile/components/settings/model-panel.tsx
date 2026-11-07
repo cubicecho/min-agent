@@ -3,7 +3,7 @@ import { MODEL_TASKS } from "@shared/model-tasks.ts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Text, View } from "react-native";
-import { QueryError } from "@/components/query-state.tsx";
+import { LoadError } from "@/components/load-state.tsx";
 import { Section } from "@/components/section.tsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button.tsx";
@@ -239,7 +239,7 @@ function ModelFields({ form, draft, view }: ConfigSlice<ModelDraft>) {
               )}
             </form.AppField>
             {models.error && endpointPending === false ? (
-              <QueryError
+              <LoadError
                 compact
                 error={models.error}
                 what="the model list"
