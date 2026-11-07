@@ -6,8 +6,8 @@ import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { useAppForm } from "@/components/app/app-form.tsx";
 import { Save } from "@/components/app/app-icons";
-import { StickyHeaderContentFooter } from "@/components/header-content-footer.tsx";
-import { QueryState } from "@/components/query-state.tsx";
+import { HeaderContentFooter } from "@/components/header-content-footer.tsx";
+import { LoadState } from "@/components/load-state.tsx";
 import { Alert } from "@/components/ui/alert.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { api } from "@/lib/client.ts";
@@ -128,11 +128,12 @@ export function ConfigForm<T extends Partial<Draft>>(props: ConfigFormProps<T>) 
     return <Loaded {...props} view={config.data} />;
   }
   return (
-    <StickyHeaderContentFooter
+    <HeaderContentFooter
+      scroll
       width="prose"
-      className="flex-1"
+      className="h-full flex-1"
       contentClassName="py-4"
-      contentSlot={<QueryState query={config} what="the settings" count={1} />}
+      contentSlot={<LoadState query={config} what="the settings" count={1} />}
     />
   );
 }
@@ -221,9 +222,10 @@ function Loaded<T extends Partial<Draft>>({
     ) : null;
 
   return (
-    <StickyHeaderContentFooter
+    <HeaderContentFooter
+      scroll
       width="prose"
-      className="flex-1"
+      className="h-full flex-1"
       // The body is a block on the web, where a slot wraps a caller's nodes; the cards want a column.
       contentClassName="flex flex-col gap-4 py-4"
       contentSlot={content({ form, draft, view, dirty })}

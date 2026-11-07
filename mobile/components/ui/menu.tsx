@@ -240,6 +240,9 @@ function ToggleRow({
   className,
 }: ToggleRowProps) {
   const ink = "text-foreground";
+  // The quiet icon and trailing text, lifted to `foreground` on a row that is on: muted on the
+  // chosen tint is under 4.5:1.
+  const quiet = checked ? "text-foreground" : "text-foreground/60";
   return (
     <Pressable
       role={toggleRole(kind)}
@@ -247,16 +250,22 @@ function ToggleRow({
       disabled={disabled}
       aria-disabled={disabled}
       onPress={onPress}
-      className={cn(MENU_ITEM_CLASS, "active:bg-hover", disabled && "opacity-50", className)}
+      className={cn(
+        MENU_ITEM_CLASS,
+        // On, the row is the chosen tint, a step further while pressed.
+        checked ? "bg-active/40 active:bg-active/60" : "active:bg-hover",
+        disabled && "opacity-50",
+        className,
+      )}
     >
       {/* The icon quieter than the label, as MenuItem's. */}
-      <IconClassContext.Provider value="size-4 shrink-0 text-foreground/60">
+      <IconClassContext.Provider value={cn("size-4 shrink-0", quiet)}>
         {iconSlot}
         <Text numberOfLines={1} className={cn(MENU_ITEM_TEXT_CLASS, ink)}>
           {label}
         </Text>
         {typeof trailing === "string" ? (
-          <Text className={MENU_TRAILING_CLASS}>{trailing}</Text>
+          <Text className={cn(MENU_TRAILING_CLASS, quiet)}>{trailing}</Text>
         ) : (
           trailing
         )}

@@ -8,7 +8,7 @@ import { type ComponentType, memo, type ReactNode, useMemo, useState } from "rea
 import { ScrollView, Text, View } from "react-native";
 import { Cpu, Volume2, Wrench, Zap } from "@/components/app/app-icons";
 import { MarkdownBody } from "@/components/chat/markdown.tsx";
-import { DisclosureRow } from "@/components/disclosure-row.tsx";
+import { CollapsibleRow } from "@/components/collapsible-row.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { CopyButton } from "@/components/ui/copy-button";
 import { CircleAlert, Pencil, RefreshCw, Square } from "@/components/ui/icons";
@@ -86,7 +86,7 @@ function Details({
   const [open, setOpen] = useState(Boolean(defaultOpen));
 
   return (
-    <DisclosureRow
+    <CollapsibleRow
       open={open}
       onOpenChange={setOpen}
       badgesSlot={
@@ -102,8 +102,10 @@ function Details({
       // Only while closed: once the row is open the whole of it is right underneath.
       description={open === false && summary ? summary : undefined}
       contentSlot={content}
+      // A row of its own in the transcript, not one of a list, so it keeps the frame the row
+      // no longer draws: the tones below recolour or dash that border.
       className={cn(
-        "bg-card",
+        "rounded-md border border-foreground/10 bg-card",
         tone === "error" && "border-destructive/40",
         tone === "dashed" && "border-dashed",
       )}

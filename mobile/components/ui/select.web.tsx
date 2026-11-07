@@ -142,7 +142,9 @@ function SelectItem({ className, children, ...props }: Props<typeof SelectPrimit
       className={cn(
         SELECT_ITEM_CLASS,
         SELECT_ITEM_TEXT_CLASS,
-        "focus:bg-hover focus:text-foreground relative flex cursor-default select-none outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+        // The chosen option is the chosen tint, a step further when highlighted: radix highlights
+        // the option under the pointer by focusing it.
+        "focus:bg-hover focus:text-foreground data-[state=checked]:bg-active/40 data-[state=checked]:focus:bg-active/60 relative flex cursor-default select-none outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
         className,
       )}
     >

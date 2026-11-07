@@ -13,9 +13,9 @@ import { CHAT_DEFAULTS } from "@shared/defaults.ts";
 import type { LlmConfig, TokenUsage, TurnStats } from "@shared/types.ts";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
-import { DescriptionList, PropertyRow } from "@/components/description-list.tsx";
 import { DialogLayout } from "@/components/dialog-layout.tsx";
-import { EmptyState } from "@/components/page.tsx";
+import { EmptyState } from "@/components/empty-state.tsx";
+import { PropertyList, PropertyRow } from "@/components/property-list.tsx";
 import { Separator } from "@/components/ui/separator.tsx";
 import { cn } from "@/lib/utils.ts";
 
@@ -74,7 +74,7 @@ export function TokensDialog({
   const body = (
     <>
       {usage || fill ? (
-        <DescriptionList
+        <PropertyList
           contentSlot={
             <>
               {usage ? (

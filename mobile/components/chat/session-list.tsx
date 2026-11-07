@@ -8,10 +8,10 @@ import { useAppForm } from "@/components/app/app-form.tsx";
 import { MessageSquare } from "@/components/app/app-icons";
 import { ConfirmButton } from "@/components/confirm-button.tsx";
 import { DialogLayout } from "@/components/dialog-layout.tsx";
+import { EmptyState } from "@/components/empty-state.tsx";
 import { ListItem } from "@/components/list-item.tsx";
-import { EmptyState } from "@/components/page.tsx";
+import { LoadState } from "@/components/load-state.tsx";
 import { PageLayout } from "@/components/page-layout.tsx";
-import { QueryState } from "@/components/query-state.tsx";
 import { SettingsLink } from "@/components/settings/link.tsx";
 import { Sidebar, SidebarSection } from "@/components/sidebar.tsx";
 import { Alert } from "@/components/ui/alert.tsx";
@@ -265,7 +265,7 @@ function ListState({ list, compact }: { list: List; compact?: boolean }) {
   const { sessions } = list;
   return (
     <>
-      <QueryState
+      <LoadState
         query={sessions}
         what="sessions"
         count={list.all.length}

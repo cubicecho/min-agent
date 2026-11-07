@@ -161,7 +161,13 @@ function SelectItem({ value, disabled = false, className, children }: SelectItem
         select.onValueChange(value);
         select.setOpen(false);
       }}
-      className={cn(SELECT_ITEM_CLASS, disabled && "opacity-50", className)}
+      // The chosen option is the chosen tint.
+      className={cn(
+        SELECT_ITEM_CLASS,
+        selected && "bg-active/40",
+        disabled && "opacity-50",
+        className,
+      )}
     >
       {selected ? (
         <View className="absolute left-2 h-3.5 w-3.5 items-center justify-center">

@@ -18,8 +18,8 @@ import "../global.css";
 import { MessageSquare } from "@/components/app/app-icons";
 import { UpdateBanner } from "@/components/app/update-banner.tsx";
 import { ChatsSidebar, useNewChat } from "@/components/chat/session-list.tsx";
-import { RouteError } from "@/components/route-error.tsx";
-import { BarNavItem, SidebarNavItem } from "@/components/sidebar.tsx";
+import { ErrorPage } from "@/components/error-page.tsx";
+import { AppBarItem, SidebarItem } from "@/components/sidebar.tsx";
 import { SidebarLayout } from "@/components/split-layout.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Plus, Settings } from "@/components/ui/icons";
@@ -117,7 +117,7 @@ function Shell() {
               brandSlot={<Brand />}
               footerSlot={
                 <Link href="/settings" asChild>
-                  <SidebarNavItem label="Settings" iconSlot={<Settings />} active={onSettings} />
+                  <SidebarItem label="Settings" iconSlot={<Settings />} active={onSettings} />
                 </Link>
               }
             />
@@ -128,10 +128,10 @@ function Shell() {
         navSlot={
           <>
             <Link href="/" asChild>
-              <BarNavItem label="Chats" iconSlot={<MessageSquare />} active={onChats} />
+              <AppBarItem label="Chats" iconSlot={<MessageSquare />} active={onChats} />
             </Link>
             <Link href="/settings" asChild>
-              <BarNavItem label="Settings" iconSlot={<Settings />} active={onSettings} />
+              <AppBarItem label="Settings" iconSlot={<Settings />} active={onSettings} />
             </Link>
           </>
         }
@@ -204,7 +204,7 @@ export default function RootLayout() {
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   return (
     <View className="flex-1 bg-background">
-      <RouteError error={error} reset={() => void retry()} details />
+      <ErrorPage error={error} reset={() => void retry()} details />
     </View>
   );
 }

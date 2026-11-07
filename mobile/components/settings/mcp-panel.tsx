@@ -15,12 +15,13 @@ import { useMemo, useState } from "react";
 import { Text } from "react-native";
 import { useAppForm } from "@/components/app/app-form.tsx";
 import { Globe, Server, Terminal } from "@/components/app/app-icons";
+import { CardLayout } from "@/components/card-layout.tsx";
 import { ConfirmButton } from "@/components/confirm-button.tsx";
 import { DialogLayout } from "@/components/dialog-layout.tsx";
+import { EmptyState } from "@/components/empty-state.tsx";
 import { List as RowList } from "@/components/list.tsx";
 import { ListItem } from "@/components/list-item.tsx";
-import { EmptyState } from "@/components/page.tsx";
-import { QueryState } from "@/components/query-state.tsx";
+import { LoadState } from "@/components/load-state.tsx";
 import { Section } from "@/components/section.tsx";
 import { Alert } from "@/components/ui/alert.tsx";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
@@ -326,9 +327,8 @@ function Editor({
         contentSlot={
           <Form className="gap-4">
             {state ? (
-              <Section
+              <CardLayout
                 descriptionPlacement={placement}
-                surface="card"
                 title="Connection"
                 level={3}
                 actionSlot={
@@ -469,13 +469,14 @@ function Editor({
                   {(hooks) => (
                     <>
                       {hooks.state.value.map((_, index) => (
-                        <Section
+                        <CardLayout
                           // The hooks have no identity but their place: the id is a field.
                           // biome-ignore lint/suspicious/noArrayIndexKey: see above
                           key={index}
-                          surface="card"
                           title={`Hook ${index + 1}`}
-                          level={4}
+                          // A card heading goes no deeper than 3, so a hook is ranked beside the
+                          // Hooks section it sits in rather than under it.
+                          level={3}
                           actionSlot={
                             <Button
                               variant="ghost"
@@ -640,7 +641,7 @@ export function McpPanel({ active = true }: { active?: boolean }) {
                     description={messageOf(save.error)}
                   />
                 ) : null}
-                <QueryState
+                <LoadState
                   query={servers}
                   what="MCP servers"
                   count={list.length}
