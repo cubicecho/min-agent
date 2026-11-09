@@ -184,7 +184,7 @@ function RenameForm({ list, id, title }: { list: List; id: string; title: string
         <>
           <Button variant="outline" onPress={cancel} content="Cancel" />
           <form.AppForm>
-            <form.SubmitButton isEdit editLabel="Rename" savingLabel="Renaming…" />
+            <form.SubmitButton isEdit editLabel="Rename" loadingLabel="Renaming…" />
           </form.AppForm>
         </>
       )}

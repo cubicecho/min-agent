@@ -23,6 +23,7 @@ import { AppBarItem, SidebarItem } from "@/components/sidebar.tsx";
 import { SidebarLayout } from "@/components/split-layout.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Plus, Settings } from "@/components/ui/icons";
+import { OverlayHost } from "@/components/ui/overlay.tsx";
 import { loadDisplaySettings } from "@/lib/display-settings.ts";
 import { useShortcut } from "@/lib/keys.ts";
 import { useBottomInset, useWide } from "@/lib/layout.ts";
@@ -188,7 +189,10 @@ export default function RootLayout() {
       <ThemeProvider value={navigationTheme}>
         <QueryClientProvider client={queryClient}>
           <StatusBar style="light" />
-          <Shell />
+          {/* The layer tooltips are drawn in on device, so a ScrollView does not clip them. */}
+          <OverlayHost>
+            <Shell />
+          </OverlayHost>
         </QueryClientProvider>
       </ThemeProvider>
     </GestureHandlerRootView>

@@ -1,11 +1,5 @@
-import {
-  Cpu,
-  LinkIcon,
-  Mic,
-  Server,
-  SlidersHorizontal,
-  Smartphone,
-} from "@/components/app/app-icons";
+import { Cpu, LinkIcon, Mic, SlidersHorizontal, Smartphone } from "@/components/app/app-icons";
+import { Server } from "@/components/ui/icons";
 
 /**
  * The panels behind `/settings`, in the order they are shown.
