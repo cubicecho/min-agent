@@ -7,7 +7,7 @@ import {
   type SwitchFieldProps,
   switchFieldIds,
 } from "@/components/ui/switch-field-base";
-import { cn } from "@/lib/utils";
+import { cn, FIELD_DISABLED_CLASS } from "@/lib/utils";
 
 /** A switch with its caption on one row, where pressing the caption toggles it. */
 export function SwitchField({
@@ -41,12 +41,15 @@ export function SwitchField({
       >
         <Label
           htmlFor={id}
-          className={cn(SWITCH_FIELD_LABEL_CLASS, disabled && "opacity-50", labelClassName)}
+          className={cn(SWITCH_FIELD_LABEL_CLASS, disabled && FIELD_DISABLED_CLASS, labelClassName)}
         >
           {label}
         </Label>
         {description ? (
-          <Text nativeID={descriptionId} className={SWITCH_FIELD_DESCRIPTION_CLASS}>
+          <Text
+            nativeID={descriptionId}
+            className={cn(SWITCH_FIELD_DESCRIPTION_CLASS, disabled && FIELD_DISABLED_CLASS)}
+          >
             {description}
           </Text>
         ) : null}
