@@ -14,7 +14,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Text } from "react-native";
 import { useAppForm } from "@/components/app/app-form.tsx";
-import { Globe, Server, Terminal } from "@/components/app/app-icons";
+import { Globe, Terminal } from "@/components/app/app-icons";
 import { CardLayout } from "@/components/card-layout.tsx";
 import { ConfirmButton } from "@/components/confirm-button.tsx";
 import { DialogLayout } from "@/components/dialog-layout.tsx";
@@ -27,7 +27,7 @@ import { Alert } from "@/components/ui/alert.tsx";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button.tsx";
 import { Form } from "@/components/ui/form.tsx";
-import { ChevronRight, Plus, RefreshCw, Trash2, X } from "@/components/ui/icons";
+import { ChevronRight, Plus, RefreshCw, Server, Trash2, X } from "@/components/ui/icons";
 import { SwitchField as SwitchRow } from "@/components/ui/switch-field";
 import { api } from "@/lib/client.ts";
 import { useDescriptionPlacement } from "@/lib/display-settings.ts";
@@ -303,6 +303,7 @@ function Editor({
         size="lg"
         title={existing ? name : "Add a server"}
         description="An MCP server, and what min-agent does with its tools."
+        descriptionPlacement={placement}
         hasUnsavedChanges={() => form.state.isDefaultValue === false}
         footerSlot={
           existing ? (

@@ -3,22 +3,28 @@ import * as React from "react";
 import { Text, View } from "react-native";
 import {
   ITEM_ACTIONS_CLASS,
+  ITEM_ACTIONS_SIZES,
   ITEM_CONTENT_CLASS,
+  ITEM_CONTENT_SIZES,
   ITEM_DESCRIPTION_CLASS,
+  ITEM_DESCRIPTION_SIZES,
   ITEM_FOOTER_CLASS,
   ITEM_HEADER_CLASS,
   ITEM_SELECTED_CLASS,
   ITEM_SELECTED_DESCRIPTION_CLASS,
   ITEM_SEPARATOR_CLASS,
   ITEM_TITLE_CLASS,
+  ITEM_TITLE_SIZES,
   ITEM_TITLE_TEXT,
+  ITEM_TITLE_TEXT_SIZES,
   type ItemMediaVariant,
   type ItemSize,
   type ItemVariant,
   itemMediaVariants,
   itemVariants,
 } from "@/components/ui/item-base";
-import { cn } from "@/lib/utils";
+import { Separator, type SeparatorProps } from "@/components/ui/separator";
+import { actionGap, cn } from "@/lib/utils";
 
 // `className` is re-declared rather than inherited: nativewind types it as `className?: string`,
 // which under `exactOptionalPropertyTypes` rejects the conditional a call site passes.
@@ -51,35 +57,10 @@ function ItemGroup({ className, ...props }: ViewProps) {
   return <View testID="item-group" className={cn("flex-col", className)} {...props} />;
 }
 
-type ItemSeparatorProps = Omit<ViewProps, "children"> & {
-  orientation?: "horizontal" | "vertical" | undefined;
-  /**
-   * shadcn's: a decorative rule is hidden from assistive technology, which is the default. `false`
-   * announces it as a separator between the rows either side.
-   */
-  decorative?: boolean | undefined;
-};
-
 /** A rule between two items. */
-function ItemSeparator({
-  className,
-  orientation = "horizontal",
-  decorative = true,
-  ...props
-}: ItemSeparatorProps) {
+function ItemSeparator({ className, ...props }: SeparatorProps) {
   return (
-    <View
-      testID="item-separator"
-      {...(decorative
-        ? { "aria-hidden": true }
-        : { role: "separator" as const, "aria-orientation": orientation })}
-      className={cn(
-        ITEM_SEPARATOR_CLASS,
-        orientation === "vertical" ? "h-full w-px" : "h-px w-full",
-        className,
-      )}
-      {...props}
-    />
+    <Separator testID="item-separator" className={cn(ITEM_SEPARATOR_CLASS, className)} {...props} />
   );
 }
 
@@ -98,8 +79,14 @@ type ItemProps = ViewProps & {
   selected?: boolean | undefined;
 };
 
-/** Whether the row the part is in is the chosen one, so its description can take its ink. */
-const ItemSelectedContext = React.createContext(false);
+/**
+ * What the parts need to know about the row they are in, since nothing is inherited on a device:
+ * whether it is the chosen one, for the description's ink, and its size, for each part's metrics.
+ */
+const ItemRowContext = React.createContext<{ selected: boolean; size: ItemSize }>({
+  selected: false,
+  size: "default",
+});
 
 /** One row: media, content and actions side by side. */
 function Item({
@@ -111,20 +98,21 @@ function Item({
   ...props
 }: ItemProps) {
   const classes = cn(itemVariants({ variant, size }), selected && ITEM_SELECTED_CLASS, className);
+  const row = React.useMemo(() => ({ selected, size: size ?? "default" }), [selected, size]);
   if (asChild) {
     // `Slot` is typed for the DOM, but it renders nothing of its own — it clones the caller's
     // one child with these props merged in — so the cast is the honest way to say neither side's
     // typing describes it (`Button` does the same).
     return (
-      <ItemSelectedContext.Provider value={selected}>
+      <ItemRowContext.Provider value={row}>
         <Slot className={classes} {...(props as unknown as React.HTMLAttributes<HTMLElement>)} />
-      </ItemSelectedContext.Provider>
+      </ItemRowContext.Provider>
     );
   }
   return (
-    <ItemSelectedContext.Provider value={selected}>
+    <ItemRowContext.Provider value={row}>
       <View testID="item" className={classes} {...props} />
-    </ItemSelectedContext.Provider>
+    </ItemRowContext.Provider>
   );
 }
 
@@ -143,8 +131,13 @@ function ItemMedia({ className, variant = "default", ...props }: ItemMediaProps)
 
 /** The middle of an item, holding its title and description. */
 function ItemContent({ className, children, ...props }: ViewProps) {
+  const { size } = React.useContext(ItemRowContext);
   return (
-    <View testID="item-content" className={cn(ITEM_CONTENT_CLASS, className)} {...props}>
+    <View
+      testID="item-content"
+      className={cn(ITEM_CONTENT_CLASS, ITEM_CONTENT_SIZES[size], className)}
+      {...props}
+    >
       {withText(children, PART_TEXT)}
     </View>
   );
@@ -155,20 +148,30 @@ function ItemContent({ className, children, ...props }: ViewProps) {
  * word — and a `View` inside a `Text` is not a row on a device. The string gets the title's type.
  */
 function ItemTitle({ className, children, ...props }: ViewProps) {
+  const { size } = React.useContext(ItemRowContext);
   return (
-    <View testID="item-title" className={cn("self-start", ITEM_TITLE_CLASS, className)} {...props}>
-      {withText(children, cn("text-foreground", ITEM_TITLE_TEXT))}
+    <View
+      testID="item-title"
+      className={cn("self-start", ITEM_TITLE_CLASS, ITEM_TITLE_SIZES[size], className)}
+      {...props}
+    >
+      {withText(children, cn("text-foreground", ITEM_TITLE_TEXT, ITEM_TITLE_TEXT_SIZES[size]))}
     </View>
   );
 }
 
 /** The muted line under the item's title. */
 function ItemDescription({ className, ...props }: TextProps) {
-  const selected = React.useContext(ItemSelectedContext);
+  const { selected, size } = React.useContext(ItemRowContext);
   return (
     <Text
       testID="item-description"
-      className={cn(ITEM_DESCRIPTION_CLASS, selected && ITEM_SELECTED_DESCRIPTION_CLASS, className)}
+      className={cn(
+        ITEM_DESCRIPTION_CLASS,
+        ITEM_DESCRIPTION_SIZES[size],
+        selected && ITEM_SELECTED_DESCRIPTION_CLASS,
+        className,
+      )}
       {...props}
     />
   );
@@ -176,8 +179,19 @@ function ItemDescription({ className, ...props }: TextProps) {
 
 /** The buttons at the far end of an item. */
 function ItemActions({ className, children, ...props }: ViewProps) {
+  const { size } = React.useContext(ItemRowContext);
   return (
-    <View testID="item-actions" className={cn(ITEM_ACTIONS_CLASS, className)} {...props}>
+    <View
+      testID="item-actions"
+      className={cn(
+        ITEM_ACTIONS_CLASS,
+        ITEM_ACTIONS_SIZES[size],
+        // `default` keeps shadcn's gap whatever the buttons are.
+        size === "sm" && actionGap(children),
+        className,
+      )}
+      {...props}
+    >
       {withText(children, PART_TEXT)}
     </View>
   );
