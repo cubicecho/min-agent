@@ -1,7 +1,10 @@
+import type { ElicitationAction, ElicitationContent } from "../elicitation.ts";
 import {
+  AnswerElicitationDocument,
   ConfigDocument,
   CreateSessionDocument,
   DeleteSessionDocument,
+  type ElicitationAction as ElicitationActionEnum,
   McpPromptCompletionsDocument,
   McpPromptDocument,
   McpPromptsDocument,
@@ -245,6 +248,26 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
      */
     truncateSession: async (id: string, idx: number) =>
       (await request(TruncateSessionDocument, { id, fromIdx: idx })).truncateSession,
+
+    /**
+     * Answers a question a tool's server asked during this chat's turn. `false` when it is no
+     * longer waiting, which a form takes as "gone", not as a failure.
+     */
+    answerElicitation: async (
+      sessionId: string,
+      id: string,
+      action: ElicitationAction,
+      content?: ElicitationContent,
+    ) =>
+      (
+        await request(AnswerElicitationDocument, {
+          sessionId,
+          id,
+          // The generated enum's members are these same three strings.
+          action: action as ElicitationActionEnum,
+          content,
+        })
+      ).answerElicitation,
 
     mcp: async () => (await request(McpStatusDocument)).mcpStatus.map(mcpState),
 

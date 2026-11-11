@@ -32,7 +32,7 @@ import {
   type Turn,
   tryAsk,
 } from "@cubicecho/agent-core";
-import { McpPoolError, type ToolDefinition } from "@cubicecho/agent-mcp-pool";
+import { type ElicitHandler, McpPoolError, type ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { measureRequest, splitContext } from "../shared/client/usage.ts";
 import { MS_PER_SECOND } from "../shared/consts.ts";
@@ -82,8 +82,8 @@ import { PROXY_TOOLS, proxiedCall, proxyCatalogPrompt, proxyLoadResult } from ".
  * own stand-ins.
  */
 export interface TurnDeps {
-  /** The MCP servers: their tools, their hooks and their resources. */
-  mcp: Pick<Mcp, "catalog" | "tools" | "call" | "readsOnly" | "runHooks"> & ResourceSource;
+  /** The MCP servers: their tools, their hooks, their resources and their questions. */
+  mcp: Pick<Mcp, "catalog" | "tools" | "call" | "readsOnly" | "runHooks" | "ask"> & ResourceSource;
   /** Where the turn's messages and the chat's own columns are written. */
   store: Pick<Store, "addMessage" | "patchMessage" | "updateSession">;
   /** The settings the turn is run under, read once at its start. */
@@ -612,6 +612,8 @@ function declaredTools({ mcp }: TurnDeps, { offersResources, proxied, native }: 
 function toolRunner(
   { mcp }: TurnDeps,
   { catalog, onDemand, proxied, carried }: TurnPlan,
+  session: Session,
+  emit: Emit,
   signal?: AbortSignal,
 ) {
   // What a `load_tools` answered here has loaded, for its "already loaded". On demand the loop
@@ -648,12 +650,22 @@ function toolRunner(
    * `report.log` goes to the pool as the call's `onLog`, so what a server logs while it runs
    * reaches the chat as a `server-log` event on that call's card — and never the transcript,
    * since it is for the person reading why a call went the way it did, not for the model.
+   *
+   * `asking` is the call's `onElicit` the same way: a question its server asks while it runs goes
+   * on this turn's stream, so it reaches the chat whose turn made the call and nobody else's.
    */
   const dispatch = async (
     { id, name: called, raw }: ToolCallRequest,
     _signal: AbortSignal | undefined,
     report: ToolCallReport,
   ): Promise<string> => {
+    const asking: ElicitHandler = (serverId, params, { signal: waiting }) =>
+      mcp.ask(
+        { sessionId: session.id, toolUseId: id, serverId, server: mcp.labelOf(serverId) },
+        params,
+        waiting,
+        emit,
+      );
     try {
       const args = parseArgs(raw);
       // Reached only where the loop is not loading on demand itself: proxied, and eager, where a
@@ -679,7 +691,7 @@ function toolRunner(
         const { name, input } = proxiedCall(args, catalog);
         used.add(name);
         return await callOnce(answered, `${name}\u0000${JSON.stringify(input)}`, () =>
-          mcp.call(name, input, signal, report.log),
+          mcp.call(name, input, signal, report.log, asking),
         );
       }
       if (called === LIST_RESOURCES) {
@@ -701,7 +713,7 @@ function toolRunner(
       }
       used.add(called);
       return await callOnce(answered, `${called}\u0000${raw}`, () =>
-        mcp.call(called, args, signal, report.log),
+        mcp.call(called, args, signal, report.log, asking),
       );
     } catch (error) {
       failed.add(id);
@@ -1014,7 +1026,7 @@ export async function runTurn(
     preselected,
     emit,
   );
-  const { dispatch, reads, load, used, failed } = toolRunner(deps, plan, signal);
+  const { dispatch, reads, load, used, failed } = toolRunner(deps, plan, session, emit, signal);
   for (const name of preselected) {
     load(name);
   }
