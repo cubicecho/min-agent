@@ -14,6 +14,7 @@ import {
   type TurnStats,
 } from "../../shared/types.ts";
 import { declaredTools, errorOf, jsonBody, sessionOf } from "../helpers.ts";
+import { hookRunnerOver } from "./helpers.ts";
 
 /**
  * The edges of `runTurn`'s loop that `run-turn.test.ts` leaves alone: what a stop does at each
@@ -43,6 +44,7 @@ const mcp = {
   readResource: vi.fn(),
   labelOf: vi.fn((id: string) => id),
   runHooks: vi.fn(),
+  hookRunner: vi.fn(),
   ask: vi.fn(),
 };
 
@@ -268,6 +270,8 @@ beforeEach(() => {
   for (const mock of Object.values(mcp)) {
     mock.mockReset();
   }
+  // The pool binds the notice and passes each call its signal; the runs are `runHooks`.
+  mcp.hookRunner.mockImplementation(hookRunnerOver(mcp.runHooks));
   mcp.catalog.mockImplementation(catalog);
   mcp.tools.mockImplementation((names?: string[]) =>
     names

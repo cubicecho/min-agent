@@ -83,7 +83,8 @@ import { PROXY_TOOLS, proxiedCall, proxyCatalogPrompt, proxyLoadResult } from ".
  */
 export interface TurnDeps {
   /** The MCP servers: their tools, their hooks, their resources and their questions. */
-  mcp: Pick<Mcp, "catalog" | "tools" | "call" | "readsOnly" | "runHooks" | "ask"> & ResourceSource;
+  mcp: Pick<Mcp, "catalog" | "tools" | "call" | "readsOnly" | "hookRunner" | "ask"> &
+    ResourceSource;
   /** Where the turn's messages and the chat's own columns are written. */
   store: Pick<Store, "addMessage" | "patchMessage" | "updateSession">;
   /** The settings the turn is run under, read once at its start. */

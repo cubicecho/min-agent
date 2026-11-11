@@ -1,10 +1,8 @@
 import {
   type ElicitHandler,
-  type HookContext,
-  type HookEvent,
+  type HookRunnerOptions,
   McpPool,
   type McpPoolOptions,
-  type RunHooksOptions,
   type ServerLogEntry,
   serversWith,
 } from "@cubicecho/agent-mcp-pool";
@@ -266,11 +264,11 @@ export function createMcp(options: McpPoolOptions = {}) {
     answer: questions.answer,
 
     /**
-     * Runs every enabled server's hooks for one event. Never rejects; see `server/hooks.ts`, which
-     * is the only caller.
+     * What runs one event's hooks on every enabled server, as agent-core's hooks take it, with
+     * `onNotice` bound for the life of the runner and the signal left to each call. Never rejects;
+     * see `server/hooks.ts`, which is the only caller.
      */
-    runHooks: (event: HookEvent, context: HookContext, options?: RunHooksOptions) =>
-      pool.runHooks(event, context, options),
+    hookRunner: (options?: HookRunnerOptions) => pool.hookRunner(options),
 
     /**
      * Closes every connection, for a process on its way out.

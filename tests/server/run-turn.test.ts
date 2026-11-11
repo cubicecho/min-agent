@@ -25,6 +25,7 @@ import {
   textOf,
   turnStats,
 } from "../helpers.ts";
+import { hookRunnerOver } from "./helpers.ts";
 
 /**
  * `runTurn` as it behaves today, pinned from outside: what it posts to the endpoint, what it
@@ -60,6 +61,7 @@ const mcp = {
   readResource: vi.fn(),
   labelOf: vi.fn((id: string) => id),
   runHooks: vi.fn(),
+  hookRunner: vi.fn(),
   ask: vi.fn(),
 };
 
@@ -348,6 +350,8 @@ beforeEach(() => {
   for (const mock of Object.values(mcp)) {
     mock.mockReset();
   }
+  // The pool binds the notice and passes each call its signal; the runs are `runHooks`.
+  mcp.hookRunner.mockImplementation(hookRunnerOver(mcp.runHooks));
   mcp.catalog.mockImplementation(catalog);
   // Caller order when names are given, as the pool keeps it; a name nothing offers is skipped.
   mcp.tools.mockImplementation((names?: string[]) =>
