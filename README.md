@@ -392,6 +392,10 @@ A hook that fails or times out costs the turn its context, never the turn itself
 a line says what each hook added or why it failed. Context opens like thinking does, to show
 exactly what the model was given. A failed `afterTurn` line is kept with the turn.
 
+`afterTurn` is told the question as you typed it, without the context the hooks added to it, and
+each message under its index in the stored chat. That is the index `beforeCompact` uses when the
+same message is folded later, so a memory server sees one message, not two.
+
 **Hide from the model** (the switch beside each tool) takes a tool out of what the model is
 offered, and refuses the model's calls to it, while this row's hooks can still call it. That is
 what makes a memory server work without the model's help. This is
