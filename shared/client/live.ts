@@ -12,7 +12,15 @@ export type LivePart =
       input: string;
       result?: string;
       isError?: boolean;
+      /** What the call's server logged while it ran, in arrival order. */
+      logs?: ServerLog[];
     };
+
+/** One message a tool's server logged during a call, as its card shows it. */
+export interface ServerLog {
+  level: string;
+  text: string;
+}
 
 /** Folds one SSE event into the in-flight parts list. */
 export function applyEvent(parts: LivePart[], event: StreamEvent): LivePart[] {
@@ -42,6 +50,12 @@ export function applyEvent(parts: LivePart[], event: StreamEvent): LivePart[] {
       return parts.map((part) =>
         part.kind === "tool" && part.id === event.toolUseId
           ? { ...part, result: event.content, isError: event.isError }
+          : part,
+      );
+    case "server_log":
+      return parts.map((part) =>
+        part.kind === "tool" && part.id === event.toolUseId
+          ? { ...part, logs: [...(part.logs ?? []), { level: event.level, text: event.text }] }
           : part,
       );
     case "hook":

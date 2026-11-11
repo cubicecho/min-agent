@@ -131,8 +131,8 @@ const TurnEventType = new GraphQLObjectType({
     type: {
       type: new GraphQLNonNull(GraphQLString),
       description:
-        "reasoning_delta | text_delta | tool_use | tool_result | title | stats | hook | " +
-        "done | followups | error.",
+        "reasoning_delta | text_delta | tool_use | tool_result | server_log | title | stats | " +
+        "hook | done | followups | error.",
     },
     text: { type: GraphQLString },
     id: { type: GraphQLString },
@@ -141,6 +141,10 @@ const TurnEventType = new GraphQLObjectType({
     toolUseId: { type: GraphQLString },
     content: { type: GraphQLString },
     isError: { type: GraphQLBoolean },
+    level: {
+      type: GraphQLString,
+      description: "On `server_log`, the level the tool's server logged at; `text` is the message.",
+    },
     title: { type: GraphQLString },
     stats: { type: GraphQLJSON },
     hook: { type: GraphQLJSON, description: "A `HookNote`: what one hook added, or why not." },
@@ -310,6 +314,36 @@ export function createSchema({ db, mcp, store, settings: config }: SchemaDeps): 
           },
           resolve: (_root, { server, name, args }) =>
             mcpPrompts.get(mcp, server, name, (args ?? {}) as Record<string, string>),
+        },
+        mcpPromptCompletions: {
+          type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(GraphQLString))),
+          description:
+            "What the server suggests for one argument of a prompt, given its text so far and the " +
+            "other arguments. Empty from a server that cannot complete, or that failed to.",
+          args: {
+            server: { type: new GraphQLNonNull(GraphQLString) },
+            name: { type: new GraphQLNonNull(GraphQLString), description: "The prompt's name." },
+            argument: {
+              type: new GraphQLNonNull(GraphQLString),
+              description: "The argument being filled in.",
+            },
+            value: {
+              type: new GraphQLNonNull(GraphQLString),
+              description: "What is in it now.",
+            },
+            args: {
+              type: GraphQLJSON,
+              description: "The other arguments by name, which a server may narrow by.",
+            },
+          },
+          resolve: (_root, { server, name, argument, value, args }) =>
+            mcpPrompts.complete(
+              mcp,
+              server,
+              name,
+              { name: argument, value },
+              (args ?? {}) as Record<string, string>,
+            ),
         },
         health: {
           type: new GraphQLNonNull(HealthType),
