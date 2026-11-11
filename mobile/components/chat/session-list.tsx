@@ -20,9 +20,11 @@ import { Form } from "@/components/ui/form.tsx";
 import { Pencil, Plus, Trash2 } from "@/components/ui/icons";
 import type { InputHandle } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
+import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/client.ts";
 import { useShortcut } from "@/lib/keys.ts";
 import { invalidateSession, queryKeys } from "@/lib/queries.ts";
+import { useIsRunning } from "@/lib/turns.ts";
 import type { SlotNode } from "@/lib/utils.ts";
 
 /**
@@ -309,10 +311,18 @@ function SessionRow({
   active?: boolean;
   className?: string;
 }) {
+  // A chat still answering says so from the list, so leaving one mid-turn to read another
+  // does not look like it stopped, and you can see which one to go back to.
+  const running = useIsRunning(item.id);
   return (
     <ListItem
       title={item.title}
       description={when(item.updatedAt, bucket)}
+      meta={
+        running ? (
+          <Spinner label={`${item.title} is answering`} className="size-3.5 text-foreground/60" />
+        ) : undefined
+      }
       onPress={() => list.open(item.id)}
       actionSlot={<RowActions list={list} id={item.id} title={item.title} />}
       selected={active}

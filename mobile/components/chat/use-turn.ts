@@ -1,13 +1,12 @@
 import { messageText, turnStart } from "@shared/client/transcript.ts";
-import { useLiveParts } from "@shared/client/use-live-parts.ts";
 import type { ElicitationAction, ElicitationContent } from "@shared/elicitation.ts";
 import { messageOf } from "@shared/errors.ts";
-import type { TurnStats } from "@shared/types.ts";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, streamTurn } from "@/lib/client.ts";
 import { invalidateSession, queryKeys } from "@/lib/queries.ts";
+import { turns, useChatTurn } from "@/lib/turns.ts";
 import type { Speaker } from "@/lib/voice.ts";
 
 /** What a chat pane hands the turn it runs. */
@@ -59,25 +58,22 @@ export function useTurn({
   });
 
   const [model, setModel] = useState("");
-  const [pending, setPending] = useState<string | null>(null);
-  const { parts: live, push: pushLive, reset: resetLive } = useLiveParts();
-  const [turnStats, setTurnStats] = useState<TurnStats | null>(null);
-  const [startedAt, setStartedAt] = useState(0);
-  const [failure, setFailure] = useState<string | null>(null);
-  const abort = useRef<AbortController | null>(null);
+  const turn = useChatTurn(activeId);
+  const pending = turn.prompt;
   /**
    * Which chat is on screen, readable from a stream's callbacks — they outlive the render
-   * that started them, and a turn must only paint the conversation it belongs to.
+   * that started them, and only the chat being looked at should read itself aloud.
    */
   const showing = useRef(activeId);
   showing.current = activeId;
   /**
-   * How long the stored transcript was when this turn was sent. The server writes the question
-   * down before it asks the model anything, so a transcript that has grown past this already
-   * has it — and the optimistic copy below would be the same question twice, one above the
-   * other, for as long as settling takes.
+   * Whether this pane is still on screen at all. On a narrow window the chat screen is dropped
+   * when the reader goes back to the list, and its stream runs on with `showing` still naming
+   * the chat it was on.
    */
-  const asked = useRef(0);
+  const mounted = useRef(true);
+  /** Whether the chat a stream belongs to is the one the reader is looking at. */
+  const isShowing = (id: string) => mounted.current && showing.current === id;
   /**
    * The questions a tool's server is waiting on the person for, by id, with the chat whose turn
    * asked them. Leaving that chat puts them away: nobody is looking at the form any more, and a
@@ -96,20 +92,30 @@ export function useTurn({
     }
   }, [putAway]);
   // Leaving the chat screen altogether, not only for another chat.
-  useEffect(() => putAllAway, [putAllAway]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      putAllAway();
+    };
+  }, [putAllAway]);
 
   const activeModel = model || session.data?.model || defaultModel;
   const stored = session.data?.messages ?? [];
-  /** The question in flight, for as long as the stored transcript is still without it. */
-  const question = pending && stored.length <= asked.current ? pending : null;
+  /**
+   * The question in flight, for as long as the stored transcript is still without it. The
+   * server writes the question down before it asks the model anything, so a transcript that
+   * has grown past `asked` already has it — and the optimistic copy would be the same
+   * question twice, one above the other, for as long as settling takes.
+   */
+  const question = pending && stored.length <= turn.asked ? pending : null;
 
   /**
-   * Everything in this pane belongs to one conversation, and the pane outlives them: the
-   * router keeps `/chat/[id]` mounted and swaps its parameter, so without this the last
-   * chat's turn — its live parts, its unsent question, its stats, its half-typed reply —
-   * would still be on screen under the next one. A turn already streaming is left alone to
-   * finish into the session that asked for it; `send` below drops what arrives for a chat
-   * that is no longer the one being looked at.
+   * The pane outlives the conversations it shows: the router keeps `/chat/[id]` mounted and
+   * swaps its parameter, so without this the last chat's half-typed reply, model pick and
+   * read-aloud would still be on screen under the next one. The turn itself is not reset:
+   * it is kept per chat in `turns`, so the next chat shows its own and a turn already
+   * streaming runs on into the session that asked for it, still showing when you come back.
    *
    * The route rather than `activeId` is the trigger, because the empty pane holds its own
    * new chat before the address bar knows about it, and that is not a switch.
@@ -123,14 +129,9 @@ export function useTurn({
     route.current = sessionId;
     putAllAway();
     setCreated(null);
-    setPending(null);
     setDraft("");
     setModel("");
-    setTurnStats(null);
-    setStartedAt(0);
-    setFailure(null);
     onLeave();
-    resetLive();
     speech.stop();
   }, [sessionId]);
 
@@ -152,18 +153,14 @@ export function useTurn({
    * This runs on `done` rather than on the end of the stream: a turn that writes follow-up
    * chips holds its stream open for the second they take, and the composer has no business
    * waiting on that. Whichever arrives first settles the turn; `finish` makes the other a
-   * no-op, and a turn whose chat has since been left off screen only refreshes what it wrote.
+   * no-op.
    */
   async function settle(id: string, read = false) {
     await invalidateSession(queryClient, id);
-    // Tidying up after a turn the reader has already walked away from would take the
-    // composer and the transcript of whatever they walked to with it.
-    if (showing.current !== id) {
+    turns.end(id);
+    if (!isShowing(id)) {
       return;
     }
-    setPending(null);
-    resetLive();
-    setTurnStats(null);
     // A reply that read itself aloud is still the one being read, and the button on it is
     // the only way to stop it. Claimed here rather than at `done` because the index is the
     // one in the stored transcript, which is what the refetch above has just settled — a
@@ -194,27 +191,26 @@ export function useTurn({
     }
     // Narrowed once, for the callbacks below: `id` is a `let` and they outlive this line.
     const turnId = id;
-    // A chat started from the empty pane is adopted here rather than a render later: the
-    // first tokens can land before `created` has been through React, and they belong on
-    // screen, not to the chat this pane was showing a moment ago.
+    // A chat started from the empty pane is adopted here rather than a render later, so a
+    // reply that finishes before `created` has been through React still reads itself aloud.
     showing.current = turnId;
 
-    // Read out of the cache rather than off `session.data`: retrying reads the transcript back
-    // shorter first, and this render may not have caught up with that yet.
-    asked.current =
-      queryClient.getQueryData<{ messages: unknown[] }>(queryKeys.session(turnId))?.messages
-        .length ?? 0;
+    const controller = new AbortController();
+    turns.start(turnId, {
+      prompt,
+      // Read out of the cache rather than off `session.data`: retrying reads the transcript
+      // back shorter first, and this render may not have caught up with that yet.
+      asked:
+        queryClient.getQueryData<{ messages: unknown[] }>(queryKeys.session(turnId))?.messages
+          .length ?? 0,
+      controller,
+    });
 
     // A chip sends its own text; anything half-typed in the box is left alone.
     if (!text) {
       setDraft("");
     }
-    setPending(prompt);
     speech.stop();
-    resetLive();
-    setTurnStats(null);
-    setFailure(null);
-    setStartedAt(Date.now());
     onStart();
     /**
      * The answer as it arrives, kept only so that it can be read aloud when it is finished.
@@ -235,11 +231,6 @@ export function useTurn({
       settled = true;
       await settle(turnId, read);
     };
-    // Held rather than read back off the ref: sending in another chat replaces what `abort`
-    // points at, and this turn still has to know whether it was this one that was stopped.
-    const controller = new AbortController();
-    abort.current = controller;
-
     try {
       await streamTurn({
         sessionId: turnId,
@@ -260,7 +251,7 @@ export function useTurn({
             return;
           }
           if (event.type === "done") {
-            if (speakReplies && showing.current === turnId) {
+            if (speakReplies && isShowing(turnId)) {
               read = speech.speak(answer);
             }
             void finish();
@@ -271,7 +262,7 @@ export function useTurn({
           if (event.type === "elicitation") {
             questions.current.set(event.elicitation.id, turnId);
             // Asked in a chat the reader has already left: there is no form to answer it in.
-            if (showing.current !== turnId) {
+            if (!isShowing(turnId)) {
               putAway(event.elicitation.id, turnId);
               return;
             }
@@ -279,34 +270,21 @@ export function useTurn({
           if (event.type === "elicitation_end") {
             questions.current.delete(event.id);
           }
-          // The rest is this turn showing itself, and it only has somewhere to show while
-          // the chat it belongs to is the one being looked at. Switch away and the turn
-          // runs on into its own session; the transcript has it when you come back.
-          if (showing.current !== turnId) {
-            return;
-          }
-          pushLive(event);
-          if (event.type === "stats") {
-            setTurnStats(event.stats);
-          }
-          if (event.type === "error") {
-            setFailure(event.message);
-          }
+          // Kept under the chat it belongs to whether or not that chat is on screen: switch
+          // away and back mid-turn, and the turn is still there, still going.
+          turns.push(turnId, event);
         },
       });
     } catch (error) {
-      const isStillShown = controller.signal.aborted === false && showing.current === turnId;
-      if (isStillShown) {
-        setFailure(messageOf(error));
+      if (controller.signal.aborted === false) {
+        turns.fail(turnId, messageOf(error));
       }
     } finally {
-      if (abort.current === controller) {
-        abort.current = null;
-      }
       await finish();
       // The address bar catches up once the stream is really over, not on `done`: moving the
-      // route mid-stream would remount this pane and drop what is still arriving on it.
-      if (!sessionId) {
+      // route mid-stream would remount this pane under the reader's hands. Only if the reader
+      // is still on it, though — one who has walked to another chat stays there.
+      if (!sessionId && isShowing(turnId)) {
         router.replace(`/chat/${turnId}`);
       }
     }
@@ -377,12 +355,13 @@ export function useTurn({
     /** The prompt of the turn in flight. */
     pending,
     question,
-    live,
-    turnStats,
-    startedAt,
-    failure,
+    live: turn.parts,
+    turnStats: turn.stats,
+    startedAt: turn.startedAt,
+    failure: turn.failure,
     send,
-    stop: () => abort.current?.abort(),
+    /** Stops this chat's turn, not whichever was sent last. */
+    stop: () => turn.controller?.abort(),
     answerQuestion,
     retry,
     edit,
