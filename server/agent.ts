@@ -18,6 +18,7 @@ import {
   listLines,
   loadResult,
   preselect,
+  pruneNotice,
   REASONING_CONTENT,
   ReasoningReplay,
   requestedNames,
@@ -184,15 +185,17 @@ async function prune(
   contextLimit: number,
   compacted = false,
 ): Promise<boolean> {
-  const through = planPrune(session, contextLimit, { compacted });
-  if (through === undefined) {
+  const plan = planPrune(session, contextLimit, { compacted });
+  if (!plan) {
     return false;
   }
 
   const from = session.pruning?.through ?? 0;
-  session.pruning = { through, at: new Date().toISOString() };
+  session.pruning = { through: plan.through, at: new Date().toISOString() };
   await store.updateSession(session.id, { pruning: session.pruning });
-  console.log(`[agent] cleared tool results before message ${through} (was ${from})`);
+  console.log(
+    `[agent] ${pruneNotice(plan, compacted)}, before message ${plan.through} (was ${from})`,
+  );
   return true;
 }
 

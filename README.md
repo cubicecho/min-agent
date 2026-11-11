@@ -691,7 +691,7 @@ the server actually serves (llama.cpp will list a 256k model it loaded at `-c 16
 
 A file read forty steps ago is still ten thousand tokens on every request since, long after the
 model took what it wanted from it. So old tool results are sent as a one-line stub —
-`[result cleared, 12,345 chars]`, agent-core's `pruneToolResults()` — while the stored message
+`[result cleared, 12,345 chars]`, agent-core's stub — while the stored message
 and what the chat shows stay whole.
 
 The fussy part is the prompt cache. "All but the latest five results" is a window that slides:
@@ -701,8 +701,9 @@ instead. `session.pruning` records `{ through, at }`, results before `through` a
 and results from it on are sent whole, and a request is the one before it with only its tail
 added for as long as the marker stays where it is.
 
-`planPrune()` in `server/pruning.ts` decides when it moves, and it is asked at the start of a turn
-and after each step's results are in — a long turn of tool calls is where the window fills, and
+`planPrune()` in `server/pruning.ts` decides when it moves — agent-core's `planPrune()` on
+min-agent's policy, with its `pruneThrough()` making the stubs — and it is asked at the start of a
+turn and after each step's results are in — a long turn of tool calls is where the window fills, and
 nothing compacts mid-turn. The marker goes onto the fifth result from the end, and only:
 
 - **with a compaction**, which has just rewritten the head of the request, so whatever a move
