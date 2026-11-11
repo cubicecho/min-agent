@@ -1,110 +1,15 @@
-import type { CatalogServer } from "@cubicecho/agent-core";
-import { expandNames, loadResult } from "@cubicecho/agent-core";
-import type { ToolDefinition } from "@cubicecho/agent-mcp-pool";
-import {
-  holdsDefinitions,
-  PROXY_TOOLS,
-  proxiedCall,
-  proxyCatalogPrompt,
-  proxyLoadResult,
-} from "../../server/tool-proxy.ts";
+import { CALL_TOOL as CORE_CALL_TOOL } from "@cubicecho/agent-core";
 import { CALL_TOOL, shownCall } from "../../shared/tool-proxy.ts";
 
-const catalog: CatalogServer[] = [
-  {
-    id: "fs",
-    label: "Files",
-    tools: [
-      { name: "fs__read", description: "Read a file." },
-      { name: "fs__write", description: "Write a file." },
-    ],
-  },
-];
-
-const definition = (name: string): ToolDefinition => ({
-  type: "function",
-  function: {
-    name,
-    description: `Does ${name}.`,
-    parameters: { type: "object", properties: { path: { type: "string" } } },
-  },
-});
-
-describe("proxied tool discovery", () => {
-  it("declares only load_tools and call_tool", () => {
-    expect(PROXY_TOOLS.map((tool) => tool.function.name)).toEqual(["load_tools", CALL_TOOL]);
-  });
-
-  it("points the catalogue at call_tool", () => {
-    const prompt = proxyCatalogPrompt(catalog);
-    expect(prompt).toContain("`call_tool`");
-    expect(prompt).toContain("fs__read");
-    expect(proxyCatalogPrompt([])).toBe("");
-  });
-
-  it("answers a load with each new tool's whole definition", () => {
-    const resolved = expandNames(["fs__read"], catalog);
-    const result = proxyLoadResult(resolved, catalog, [definition("fs__read")], new Set());
-    expect(result).toContain('"name":"fs__read"');
-    expect(result).toContain('"parameters":{"type":"object"');
-    expect(result).not.toContain("Not in the catalogue");
-  });
-
-  it("answers a repeat without the definition, and passes on the refusals", () => {
-    const resolved = expandNames(["fs__read", "fs__nope"], catalog);
-    const result = proxyLoadResult(
-      resolved,
-      catalog,
-      [definition("fs__read")],
-      new Set(["fs__read"]),
-    );
-    expect(result).not.toContain('"parameters"');
-    expect(result).toContain("Already loaded earlier in this turn: fs__read");
-    expect(result).toContain("Not in the catalogue: fs__nope");
-  });
-
-  it("tells a result that holds definitions from one that only points at them", () => {
-    const fresh = expandNames(["fs__read", "fs__write"], catalog);
-    const definitions = [definition("fs__read"), definition("fs__write")];
-    // Fresh definitions, all or some: the only copy the model has.
-    expect(holdsDefinitions(proxyLoadResult(fresh, catalog, definitions, new Set()))).toBe(true);
-    expect(
-      holdsDefinitions(proxyLoadResult(fresh, catalog, definitions, new Set(["fs__read"]))),
-    ).toBe(true);
-    // A repeat and a refusal carry none, and neither does an on-demand load, whose definitions
-    // are in the tool array.
-    expect(
-      holdsDefinitions(
-        proxyLoadResult(fresh, catalog, definitions, new Set(["fs__read", "fs__write"])),
-      ),
-    ).toBe(false);
-    expect(
-      holdsDefinitions(proxyLoadResult(expandNames(["fs__nope"], catalog), catalog, [], new Set())),
-    ).toBe(false);
-    expect(holdsDefinitions(loadResult(fresh, catalog, new Set()))).toBe(false);
-    // Only at the head: a tool's output that quotes the line is not a load.
-    expect(holdsDefinitions("log: Loaded 2 tool(s). Run them with `call_tool`.")).toBe(false);
-  });
-
-  it("reads a call's arguments as an object or as a JSON string", () => {
-    const input = { path: "a.txt" };
-    expect(proxiedCall({ name: "fs__read", arguments: input }, catalog)).toEqual({
-      name: "fs__read",
-      input,
-    });
-    expect(proxiedCall({ name: "fs__read", arguments: '{"path":"a.txt"}' }, catalog).input).toEqual(
-      input,
-    );
-    expect(proxiedCall({ name: "fs__read" }, catalog).input).toEqual({});
-  });
-
-  it("refuses a call it cannot run", () => {
-    expect(() => proxiedCall({}, catalog)).toThrow(/needs a name/);
-    expect(() => proxiedCall({ name: "fs__nope", arguments: {} }, catalog)).toThrow(
-      /Not in the catalogue/,
-    );
-    expect(() => proxiedCall({ name: "fs__read", arguments: "{" }, catalog)).toThrow(/valid JSON/);
-    expect(() => proxiedCall({ name: "fs__read", arguments: [1] }, catalog)).toThrow(/an object/);
+/**
+ * Proxied discovery is agent-core's — the two declared tools, the catalogue, the load's answer and
+ * the unwrapping of a `call_tool` — and is tested there. What is min-agent's is the display: the
+ * app cannot load agent-core, so `shared/tool-proxy.ts` keeps the one name and the one reading it
+ * needs, and has to agree with the package's.
+ */
+describe("proxied tool discovery, as the chat shows it", () => {
+  it("names the proxy tool as agent-core does", () => {
+    expect(CALL_TOOL).toBe(CORE_CALL_TOOL);
   });
 
   it("shows a call_tool as the tool it ran", () => {

@@ -438,6 +438,11 @@ whether or not the model touches a single one.
   calling through `call_tool` than calling a declared tool. A preselected shortlist is added to
   the history as a `load_tools` call and its result, since the tool array can't take it. Nothing
   carries over between turns; the definitions loaded on earlier turns are still in the history.
+  The mode is agent-core's own, run by its loop; `list_resources` and `read_resource` are declared
+  beside the two and called directly, never through `call_tool`. One thing it does not do here: a
+  load repeated on a later step of a turn is answered with the definition again rather than as
+  already loaded, because the loop forgets what it loaded whenever it is handed a rebuilt
+  transcript, and min-agent hands it the stored one on every step.
 - **Eager** sends everything every time. Simpler, and right when there are only a few tools.
 
 Measured on the same server, same prompt:

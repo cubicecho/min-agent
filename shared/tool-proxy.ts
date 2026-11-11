@@ -1,6 +1,23 @@
 /**
- * The one tool a proxied session runs every catalogued tool through. Shared because the client
- * unwraps it for display as well as the server dispatching it — see `server/tool-proxy.ts`.
+ * Proxied tool discovery: on-demand loading with a tool array that never changes.
+ *
+ * On-demand mode declares each tool as it is loaded, and a chat template renders the tool array
+ * inside the system turn, ahead of the whole conversation. Appending one definition there moves
+ * every token after it, so each load re-prefills the transcript — and on a hybrid model, which
+ * llama.cpp can only rewind to a saved checkpoint, usually all of it from the first token. Here
+ * the array is `load_tools` and `call_tool` for the life of the session: a load answers with the
+ * definitions as its result, at the end of the history where the cache already stops, and the
+ * model calls a loaded tool through `call_tool`. The price is one level of indirection the model
+ * has to get right, which a small model does less reliably than a native call.
+ *
+ * The mode is agent-core's own, run by its loop; min-agent's resource tools sit beside the two as
+ * the loop's host tools. What is here is the display's half, which the app needs and cannot take
+ * from agent-core: Metro resolves packages from `mobile/node_modules` only.
+ */
+
+/**
+ * The one tool a proxied session runs every catalogued tool through, as agent-core names it.
+ * Shared because the client unwraps it for display as well as the server dispatching it.
  */
 export const CALL_TOOL = "call_tool";
 

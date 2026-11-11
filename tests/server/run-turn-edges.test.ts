@@ -573,7 +573,9 @@ describe("arguments a model gets wrong", () => {
   /**
    * The call is refused as it is in eager mode, but the loop has loaded the tool by then: it
    * loads a catalogued tool the moment it is called by name. Before #52 the arguments were read
-   * first and nothing was declared. Nothing is carried either way, since the tool never ran.
+   * first and nothing was declared. It is carried, as the loop's `used` has it: the model did
+   * call it, and only the arguments were what min-agent refused. Before the loop said which
+   * calls it had repaired, the refusal came ahead of min-agent's own count of what was called.
    */
   it("refuses a catalogued tool called with almost-JSON arguments, having loaded it", async () => {
     configure({ toolDiscovery: "ondemand" });
@@ -588,7 +590,7 @@ describe("arguments a model gets wrong", () => {
       ["c1", "model produced invalid tool arguments: {'path': '/a',}", true],
     ]);
     expect(bodies().map(declaredTools)).toEqual([["load_tools"], ["load_tools", "fs__read"]]);
-    expect(chat.loadedTools).toEqual([]);
+    expect(chat.loadedTools).toEqual(["fs__read"]);
   });
 
   /** Before #52 the pool was handed them as they were: `mcp.call("fs__read", ["/a"])`. */
@@ -602,6 +604,25 @@ describe("arguments a model gets wrong", () => {
     expect(mcp.call).not.toHaveBeenCalled();
     expect(results(events)).toEqual([
       ["c1", 'model produced tool arguments that are not an object: ["/a"]', true],
+    ]);
+  });
+
+  /**
+   * The loop opens JSON inside a string and says it took a repair, and that is what is refused.
+   * Before it said so, `JSON.parse` read the outer string, and the pool was handed a string where
+   * the tool had asked for an object.
+   */
+  it("refuses an object written inside a string, as it refuses any repair", async () => {
+    offered = [READ];
+    mcp.call.mockResolvedValue("contents");
+    const written = JSON.stringify(JSON.stringify({ path: "/a" }));
+    script = [asks(["c1", "fs__read", written]), says("Sorry.")];
+
+    const { events } = await run(sessionOf(), "read it");
+
+    expect(mcp.call).not.toHaveBeenCalled();
+    expect(results(events)).toEqual([
+      ["c1", `model produced invalid tool arguments: ${written}`, true],
     ]);
   });
 
