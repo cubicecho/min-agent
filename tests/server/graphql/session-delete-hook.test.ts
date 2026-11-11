@@ -5,6 +5,7 @@ import { HOST } from "../../../server/hooks.ts";
 import { createMcp } from "../../../server/mcp.ts";
 import { createStore } from "../../../server/store.ts";
 import { closeTestDb, createTestDb, resetTestDb } from "../db.ts";
+import { hookRunnerOver } from "../helpers.ts";
 
 /**
  * Deleting a chat tells the MCP servers' `sessionDelete` hooks, so a memory server can forget it.
@@ -19,7 +20,7 @@ const db = await createTestDb();
 const store = createStore(db);
 const schema = createSchema({
   db,
-  mcp: { ...createMcp(), runHooks },
+  mcp: { ...createMcp(), hookRunner: hookRunnerOver(runHooks) },
   store,
   settings: createSettings(db),
 });

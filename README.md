@@ -180,7 +180,7 @@ Four tables, created by the migrations in `drizzle/`, which `runMigrations()` ap
 ```
 settings      one row, id 'default' — Settings → Agent
 mcp_servers   one row per server, ordered by position — Settings → MCP
-sessions      one per chat: title, dates, token totals, compaction and pruning state
+sessions      one per chat: title, dates, token totals, compaction and pruning state, ledger
 messages      one per message, ordered by (session_id, idx), cascade-deleted with the session
 ```
 
@@ -438,6 +438,11 @@ whether or not the model touches a single one.
   calling through `call_tool` than calling a declared tool. A preselected shortlist is added to
   the history as a `load_tools` call and its result, since the tool array can't take it. Nothing
   carries over between turns; the definitions loaded on earlier turns are still in the history.
+  The mode is agent-core's own, run by its loop; `list_resources` and `read_resource` are declared
+  beside the two and called directly, never through `call_tool`. One thing it does not do here: a
+  load repeated on a later step of a turn is answered with the definition again rather than as
+  already loaded, because the loop forgets what it loaded whenever it is handed a rebuilt
+  transcript, and min-agent hands it the stored one on every step.
 - **Eager** sends everything every time. Simpler, and right when there are only a few tools.
 
 Measured on the same server, same prompt:
@@ -678,6 +683,14 @@ inside the last question's tool loop instead — at a reply after the question, 
 and sent after the summary — and gives up only if that folds too little as well. A fold that
 would not pay for itself is not worth a round trip.
 
+What a message weighs in that walk is measured where it can be. Every request reports its prompt
+tokens, and two requests of one turn where the second only appended to the first differ by exactly
+what was appended — the chat template's tokens, the hooks' context and a tool result's real density
+included. agent-core keeps those readings as a token ledger, and min-agent stores each turn's on
+the session (`sessions.ledger`, indexed into the stored transcript, kept out of the API), so the
+next fold weighs the messages it covers by what the server said they cost and estimates only the
+rest. Whether to fold at all is still the last turn's reported total.
+
 Like titling, a failure is swallowed: the turn proceeds on the full transcript, which is the
 behaviour you had before compaction existed.
 
@@ -685,13 +698,16 @@ Compaction is driven by what the *last* turn cost, so a single huge paste or an 
 tool result can still overrun a window nothing had a chance to fold. When it does, the endpoint's
 complaint comes back with the number the turn was working to added to it — the whole difficulty of
 that failure is that the two disagree, and the usual cause is a **Context window** larger than what
-the server actually serves (llama.cpp will list a 256k model it loaded at `-c 16384`).
+the server actually serves (llama.cpp will list a 256k model it loaded at `-c 16384`). So the
+server is asked what it serves (agent-core's `servedWindow`, from llama.cpp's `/props` or LM
+Studio's model listing): less than the turn was built to, and the message names the figure; at
+least as much, and the setting is left out of it, since the turn simply outgrew a right window.
 
 ### Clearing old tool results
 
 A file read forty steps ago is still ten thousand tokens on every request since, long after the
 model took what it wanted from it. So old tool results are sent as a one-line stub —
-`[result cleared, 12,345 chars]`, agent-core's `pruneToolResults()` — while the stored message
+`[result cleared, 12,345 chars]`, agent-core's stub — while the stored message
 and what the chat shows stay whole.
 
 The fussy part is the prompt cache. "All but the latest five results" is a window that slides:
@@ -701,8 +717,9 @@ instead. `session.pruning` records `{ through, at }`, results before `through` a
 and results from it on are sent whole, and a request is the one before it with only its tail
 added for as long as the marker stays where it is.
 
-`planPrune()` in `server/pruning.ts` decides when it moves, and it is asked at the start of a turn
-and after each step's results are in — a long turn of tool calls is where the window fills, and
+`planPrune()` in `server/pruning.ts` decides when it moves — agent-core's `planPrune()` on
+min-agent's policy, with its `pruneThrough()` making the stubs — and it is asked at the start of a
+turn and after each step's results are in — a long turn of tool calls is where the window fills, and
 nothing compacts mid-turn. The marker goes onto the fifth result from the end, and only:
 
 - **with a compaction**, which has just rewritten the head of the request, so whatever a move
@@ -723,8 +740,11 @@ assistant reply carries a footnote like:
 
     187 out · 44.7 tok/s · 420ms to first token · 4.6s · 2 tools
 
-Throughput is measured over generation only, from the first streamed token to the last, so a slow
-prefill does not drag the rate down — that wait is reported separately as *to first token*.
+Throughput is measured over generation only, so a slow prefill does not drag the rate down — that
+wait is reported separately as *to first token*. The figures are agent-core's account of the turn
+(`result.metrics` and `result.usage`): the decode time llama.cpp reports where it reports one, and
+otherwise the time each request spent streaming from its first token to its end, summed; *to first
+token* is the mean over the turn's requests.
 `2 tools` and `3 rounds` only appear when the turn actually used tools. The stats are stored with
 the session, so they survive a reload.
 

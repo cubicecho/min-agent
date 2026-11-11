@@ -29,19 +29,16 @@ export const HOST = "min-agent";
 const notice = (message: string) => console.warn(`[hooks] ${message}`);
 
 /** What the hooks run on: the app's MCP servers, or a test's stand-in for them. */
-export type HookPool = Pick<Mcp, "runHooks">;
+export type HookPool = Pick<Mcp, "hookRunner">;
 
 /**
- * The pool, as the runner agent-core's hooks are handed. The runner it returns never rejects, as
- * the pool's `runHooks` does not.
+ * The pool, as the runner agent-core's hooks are handed: the pool's own `hookRunner`, with the
+ * notices bound to this module's log line. It never rejects, as the pool's `runHooks` does not.
  *
  * @param mcp The servers whose hooks run.
  * @returns What runs one event's hooks, `signal` ending them all.
  */
-const runnerOf =
-  (mcp: HookPool): core.HookRunner =>
-  (event, context, { signal }) =>
-    mcp.runHooks(event, context, { signal, onNotice: notice });
+const runnerOf = (mcp: HookPool): core.HookRunner => mcp.hookRunner({ onNotice: notice });
 
 /**
  * A note as the chat's stream carries it.

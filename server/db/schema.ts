@@ -1,3 +1,4 @@
+import type { TokenLedger } from "@cubicecho/agent-core";
 import { defineRelations } from "drizzle-orm";
 import {
   boolean,
@@ -166,6 +167,14 @@ export const sessions = table("sessions", {
   compaction: jsonb().$type<NonNullable<Session["compaction"]>>(),
   /** How far old tool results are sent as stubs. Null until the rule first moves it. */
   pruning: jsonb().$type<NonNullable<Session["pruning"]>>(),
+  /**
+   * What each request a turn sent reported its prompt as, and how far into `messages` it reached:
+   * agent-core's token ledger, indexed into the stored transcript. Two entries of one epoch
+   * subtract to what the messages between them cost, which is what a fold is planned from where
+   * there is a reading — see `server/compaction.ts`. The runner's cache rather than anything a
+   * person sets, so it is kept out of the API.
+   */
+  ledger: jsonb().$type<TokenLedger>().notNull().default([]),
   /**
    * Kept in step by the store as messages are appended, so the session list is one query
    * over one table. This is the row that replaces the `.meta.json` sidecar the file store

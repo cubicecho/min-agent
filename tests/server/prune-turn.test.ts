@@ -8,6 +8,7 @@ import {
   type StreamEvent,
 } from "../../shared/types.ts";
 import { declaredTools, jsonBody, messagesOf, sessionOf, textOf, turnStats } from "../helpers.ts";
+import { hookRunnerOver } from "./helpers.ts";
 
 /**
  * Pruning as a turn does it, read off the requests themselves: what the endpoint is posted on each
@@ -32,6 +33,7 @@ const mcp = {
   resourceServers: vi.fn(),
   call: vi.fn(),
   runHooks: vi.fn(),
+  hookRunner: vi.fn(),
   ask: vi.fn(),
   resources: vi.fn(),
   readResource: vi.fn(),
@@ -262,6 +264,8 @@ beforeEach(() => {
   for (const mock of Object.values(mcp)) {
     mock.mockReset();
   }
+  // The pool binds the notice and passes each call its signal; the runs are `runHooks`.
+  mcp.hookRunner.mockImplementation(hookRunnerOver(mcp.runHooks));
   mcp.catalog.mockImplementation(() => [
     {
       id: "fs",

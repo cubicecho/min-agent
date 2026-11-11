@@ -14,10 +14,11 @@ import {
 } from "../../server/hooks.ts";
 import type { McpServerConfig, StoredMessage } from "../../shared/types.ts";
 import { sessionOf, textOf } from "../helpers.ts";
+import { hookRunnerOver } from "./helpers.ts";
 
 const runHooks = vi.fn();
 /** The pool every test runs hooks on, as `server/index.ts` hands in the real one. */
-const mcp: HookPool = { runHooks };
+const mcp: HookPool = { hookRunner: hookRunnerOver(runHooks) };
 
 /**
  * The half of hooks that is min-agent's own: the pool runs them, and this decides what a

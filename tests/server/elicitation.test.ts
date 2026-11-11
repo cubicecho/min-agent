@@ -129,7 +129,9 @@ test("stopping the turn puts the question away, and tells the chat it is gone", 
   const controller = new AbortController();
   const { events, result } = push(mcp, () => controller.abort(), controller.signal);
 
-  await expect(result).rejects.toThrow();
+  // Said as the stop it was: before agent-mcp-pool 3.16.2 the SDK's wrapping of the abort came
+  // out as a timeout, and a stopped call's card claimed it had run out of time.
+  await expect(result).rejects.toMatchObject({ code: "aborted" });
   expect(events.map((event) => event.type)).toEqual(["elicitation", "elicitation_end"]);
   expect(events[1]).toMatchObject({ action: "cancel" });
   expect(mcp.answer("chat-a", "anything", { action: "accept" })).toBe(false);

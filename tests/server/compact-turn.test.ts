@@ -7,6 +7,7 @@ import {
   type StoredMessage,
 } from "../../shared/types.ts";
 import { jsonBody, messagesOf, sessionOf, turnStats } from "../helpers.ts";
+import { hookRunnerOver } from "./helpers.ts";
 
 /**
  * Compaction as a turn does it, pinned from outside: when the summary is asked for, what the
@@ -44,6 +45,7 @@ const mcp = {
   resourceServers: vi.fn(),
   call: vi.fn(),
   runHooks: vi.fn(),
+  hookRunner: vi.fn(),
   ask: vi.fn(),
   resources: vi.fn(),
   readResource: vi.fn(),
@@ -214,6 +216,8 @@ beforeEach(() => {
   for (const mock of Object.values(mcp)) {
     mock.mockReset();
   }
+  // The pool binds the notice and passes each call its signal; the runs are `runHooks`.
+  mcp.hookRunner.mockImplementation(hookRunnerOver(mcp.runHooks));
   mcp.catalog.mockReturnValue([]);
   mcp.tools.mockReturnValue([]);
   mcp.readsOnly.mockReturnValue(false);

@@ -1,7 +1,10 @@
 import {
   type CatalogServer,
   catalogPrompt,
+  holdsDefinitions,
   LOAD_TOOLS_DEFINITION,
+  PROXY_TOOLS,
+  proxyCatalogPrompt,
   resetAll,
   SESSION_HEADER,
   sanitizeTools,
@@ -25,6 +28,7 @@ import {
   textOf,
   turnStats,
 } from "../helpers.ts";
+import { hookRunnerOver } from "./helpers.ts";
 
 /**
  * `runTurn` as it behaves today, pinned from outside: what it posts to the endpoint, what it
@@ -60,6 +64,7 @@ const mcp = {
   readResource: vi.fn(),
   labelOf: vi.fn((id: string) => id),
   runHooks: vi.fn(),
+  hookRunner: vi.fn(),
   ask: vi.fn(),
 };
 
@@ -85,10 +90,12 @@ const store = {
 
 const { runTurn } = await import("../../server/agent.ts");
 const { RESOURCE_TOOLS } = await import("../../server/mcp-resources.ts");
-const { PROXY_TOOLS, proxyCatalogPrompt } = await import("../../server/tool-proxy.ts");
 
-/** One scripted answer: a stream of chunks, or a 400 with the endpoint's reason. */
-type Reply = { chunks: object[]; hangs?: boolean } | { refusal: string };
+/**
+ * One scripted answer: a stream of chunks, a 400 with the endpoint's reason, or a whole
+ * completion, which is how a side task such as a preselection is answered.
+ */
+type Reply = { chunks: object[]; hangs?: boolean } | { refusal: string } | { answer: string };
 
 /** What the endpoint will answer, in order, and every body it was posted. */
 let script: Reply[] = [];
@@ -98,6 +105,8 @@ let sessions: (string | null)[] = [];
 /** Every `/props` probe, and the slots it answers with: none, unless a test says so. */
 let probes: string[] = [];
 let slots = 0;
+/** The window `/props` says the model was loaded in: none, unless a test says so. */
+let served = 0;
 
 /**
  * @param delta What this chunk adds to the reply.
@@ -155,6 +164,12 @@ const stalls = (...parts: string[]): Reply => ({
 });
 
 /**
+ * @param answer What a side task's model replies, whole.
+ * @returns A completion that is not streamed.
+ */
+const answers = (answer: string): Reply => ({ answer });
+
+/**
  * @param refusal The endpoint's reason, as the `error.message` of a 400.
  * @returns A request refused outright.
  */
@@ -162,24 +177,46 @@ const refuses = (refusal: string): Reply => ({ refusal });
 
 /**
  * The endpoint. Anything but a chat completion is a 404, and is recorded all the same, so a
- * request nobody scripted shows up in `requests` rather than passing unseen. The one exception is
- * llama.cpp's `/props`, which a turn asks once for its slots because it runs under the chat's id;
- * that is kept apart in `probes`, and answers a `total_slots` only where a test set `slots`.
+ * request nobody scripted shows up in `requests` rather than passing unseen. The exceptions are
+ * the two routes a server says what it serves on: llama.cpp's `/props`, which a turn asks once
+ * for its slots because it runs under the chat's id, and LM Studio's `/api/v0/models`, which an
+ * overflow asks after it for the window. Both are kept apart in `probes`; `/props` answers a
+ * `total_slots` only where a test set `slots`, and an `n_ctx` only where it set `served`.
  *
  * @param url Where the SDK posted.
  * @param init The request, whose body is the JSON exactly as it went out.
  * @returns The next scripted reply.
  */
 async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  if (new URL(String(url)).pathname.endsWith("/props")) {
+  const { pathname } = new URL(String(url));
+  if (pathname.endsWith("/api/v0/models")) {
     probes.push(String(url));
-    return slots > 0 ? Response.json({ total_slots: slots }) : new Response("{}", { status: 404 });
+    return new Response("{}", { status: 404 });
+  }
+  if (pathname.endsWith("/props")) {
+    probes.push(String(url));
+    const props = {
+      ...(slots > 0 ? { total_slots: slots } : {}),
+      ...(served > 0 ? { default_generation_settings: { n_ctx: served } } : {}),
+    };
+    return Object.keys(props).length ? Response.json(props) : new Response("{}", { status: 404 });
   }
   requests.push(String(init?.body ?? url));
   sessions.push(new Headers(init?.headers).get(SESSION_HEADER));
   const reply = String(url).endsWith("/chat/completions") ? script.shift() : undefined;
   if (!reply) {
     return new Response("{}", { status: 404 });
+  }
+  if ("answer" in reply) {
+    return Response.json({
+      id: "completion",
+      object: "chat.completion",
+      created: 0,
+      model: "small",
+      choices: [
+        { index: 0, message: { role: "assistant", content: reply.answer }, finish_reason: "stop" },
+      ],
+    });
   }
   if ("refusal" in reply) {
     return new Response(JSON.stringify({ error: { message: reply.refusal } }), {
@@ -338,6 +375,7 @@ beforeEach(() => {
   sessions = [];
   probes = [];
   slots = 0;
+  served = 0;
   stored = [];
   patches = [];
   updates = [];
@@ -348,6 +386,8 @@ beforeEach(() => {
   for (const mock of Object.values(mcp)) {
     mock.mockReset();
   }
+  // The pool binds the notice and passes each call its signal; the runs are `runHooks`.
+  mcp.hookRunner.mockImplementation(hookRunnerOver(mcp.runHooks));
   mcp.catalog.mockImplementation(catalog);
   // Caller order when names are given, as the pool keeps it; a name nothing offers is skipped.
   mcp.tools.mockImplementation((names?: string[]) =>
@@ -478,7 +518,10 @@ describe("the request body", () => {
     expect(system.content).toContain("Read before writing.");
   });
 
-  it("puts the servers' guidance after the catalogue when proxied", async () => {
+  // Proxied is the loop's own mode, which writes the guidance where on demand does: between the
+  // operator's prompt and the catalogue. min-agent ran the loop eager and wrote the proxy's
+  // catalogue itself until agent-core 4.17 took host tools, so the guidance followed it then.
+  it("puts the servers' guidance before the catalogue when proxied, as on demand", async () => {
     configure({ toolDiscovery: "proxy" });
     offer(READ);
     guidance = { fs: "Read before writing." };
@@ -488,7 +531,7 @@ describe("the request body", () => {
 
     const [system] = bodies()[0].messages as { content: string }[];
     expect(system.content).toBe(
-      ["Be brief.", proxyCatalogPrompt(catalog()), serverInstructionsPrompt(catalog())].join(
+      ["Be brief.", serverInstructionsPrompt(catalog()), proxyCatalogPrompt(catalog())].join(
         "\n\n",
       ),
     );
@@ -539,7 +582,7 @@ describe("the request body", () => {
           { role: "system", content: `Be brief.\n\n${proxyCatalogPrompt(catalog())}` },
           { role: "user", content: "hi" },
         ],
-        tools: sent(sanitizeTools(PROXY_TOOLS)),
+        tools: sent(sanitizeTools([...PROXY_TOOLS])),
       },
     ]);
   });
@@ -600,7 +643,9 @@ describe("a plain answer", () => {
     script = [says("Hel", "lo.")];
     const chat = sessionOf({ title: "New chat" });
 
-    // Half a second between the two deltas, and another after the last.
+    // Half a second between the two deltas, and another after the last. The generation is the
+    // loop's own reading of the request, from its first token to its end, so it counts both: with
+    // no decode time from the server, a turn's last token is known only by its stream closing.
     const { events, stats } = await run(chat, "hi there", {
       onEvent: (event) => {
         if (event.type === "text_delta") {
@@ -618,8 +663,8 @@ describe("a plain answer", () => {
       iterations: 1,
       toolCalls: 0,
       ttftMs: 0,
-      generationMs: 500,
-      tokensPerSecond: 20,
+      generationMs: 1000,
+      tokensPerSecond: 10,
       contextTokens: 110,
       lastPromptTokens: 100,
       contextLimit: 32_768,
@@ -654,7 +699,12 @@ describe("a plain answer", () => {
       { role: "assistant", content: "Hello.", stats },
     ]);
     const usage = { promptTokens: 100, completionTokens: 10, totalTokens: 110 };
-    expect(updates).toEqual([{ title: "hi there", model: "m" }, { usage }]);
+    // The turn's one request, which carried the question: kept for the next fold to weigh by.
+    const ledger = [{ through: 0, prompt: 100, epoch: 0 }];
+    expect(updates).toEqual([
+      { title: "hi there", model: "m" },
+      { usage, ledger },
+    ]);
     expect(chat).toMatchObject({ title: "hi there", model: "m", usage });
   });
 });
@@ -961,6 +1011,61 @@ describe("loading tools", () => {
     // Nothing is carried: the session's list is neither read nor written.
     expect(chat.loadedTools).toEqual(["fs__ls"]);
     expect(updates.some((patch) => "loadedTools" in patch)).toBe(false);
+  });
+
+  /**
+   * Pinned, not endorsed. The loop forgets what a proxied run has loaded whenever `beforeStep`
+   * hands it a transcript of its own — a rewrite may have folded a definition away — and min-agent
+   * hands it one on every step, since it sends the stored rows rather than the loop's copy. So a
+   * load repeated on a later step is answered with the definition again. Before the mode was the
+   * loop's, min-agent's own answer said it was already loaded earlier in this turn.
+   */
+  it("answers a proxied load repeated on a later step with the definition again", async () => {
+    configure({ toolDiscovery: "proxy" });
+    offer(READ, LS);
+    script = [
+      asks(["c1", "load_tools", '{"names":["fs__read"]}']),
+      asks(["c2", "load_tools", '{"names":["fs__read"]}']),
+      says("Loaded."),
+    ];
+
+    const { events } = await run(sessionOf(), "get ready");
+
+    const loads = events.flatMap((event) => (event.type === "tool_result" ? [event.content] : []));
+    expect(loads).toHaveLength(2);
+    expect(loads.every((content) => holdsDefinitions(content))).toBe(true);
+  });
+
+  it("writes a proxied shortlist after the question as a load nobody made, and stores it", async () => {
+    configure({ toolDiscovery: "proxy", taskModels: { toolSelect: "small" } });
+    offer(READ, LS);
+    // The preselection first, beside the hooks, then the turn.
+    script = [answers('{"tools":["fs__read"]}'), says("Ready.")];
+    const chat = sessionOf();
+
+    const { events } = await run(chat, "read /a");
+
+    // The tool array has nowhere to put it, so the history does: the loop writes the exchange,
+    // and min-agent stores it like any other, between the question and the answer.
+    expect(stored.map(({ role }) => role)).toEqual(["user", "assistant", "tool", "assistant"]);
+    expect(stored[1]).toMatchObject({
+      content: null,
+      tool_calls: [{ function: { name: "load_tools", arguments: '{"names":["fs__read"]}' } }],
+    });
+    const definitions = textOf(stored[2]);
+    expect(holdsDefinitions(definitions)).toBe(true);
+    expect(definitions).toContain('"name":"fs__read"');
+    // Sent after the question, on the turn's one request.
+    const turn = bodies()[1];
+    expect(messagesOf(turn).map(({ role }) => role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "tool",
+    ]);
+    expect(events.slice(0, 2).map(({ type }) => type)).toEqual(["tool_use", "tool_result"]);
+    // Loading is bookkeeping, a shortlist's as much as the model's own.
+    expect(chat.messages.at(-1)?.stats).toMatchObject({ iterations: 1, toolCalls: 0 });
   });
 });
 
@@ -1542,6 +1647,29 @@ describe("what the loop decides beyond the common path", () => {
     ]);
   });
 
+  it("says what the loop makes of a miss between two steps of the turn", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    script = [
+      {
+        chunks: [
+          chunk({ tool_calls: [{ index: 0, ...call("c1", "fs__ls", "{}") }] }),
+          chunk({}, "tool_calls"),
+          usage(1100, 0),
+        ],
+      },
+      // 1100 went out on the step before and 100 of them were found, with nothing changed.
+      { chunks: [chunk({ content: "One file." }), chunk({}, "stop"), usage(1200, 100)] },
+    ];
+
+    await run(sessionOf(), "what is here");
+
+    expect(vi.mocked(console.warn).mock.calls.map(([line]) => line)).toEqual([
+      "[agent] prompt cache missed: 100 of 1200 cached, after a 1100-token request (none-known)",
+    ]);
+  });
+
   /** B1: the lookup stopped at the newest stats and read no count as a prompt of nothing. */
   it("holds a step to the last turn that counted its prompt, past one that did not", async () => {
     const earlier: StoredMessage[] = [
@@ -1585,6 +1713,31 @@ describe("what the loop decides beyond the common path", () => {
     expect(requests).toHaveLength(1);
     expect(events).toEqual([]);
     expect(stored).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  it("names what the server serves when it is less than the turn was built to", async () => {
+    served = 16_384;
+    script = [refuses("This model's maximum context length is 16384 tokens.")];
+
+    const { error } = await run(sessionOf(), "hi");
+
+    expect(error?.name).toBe("ContextOverflow");
+    expect(error?.message).toBe(
+      "400 This model's maximum context length is 16384 tokens. — this turn was built to 32.8k " +
+        "tokens, so the window in Settings → Agent is larger than what the server actually serves " +
+        "(16.4k).",
+    );
+  });
+
+  it("leaves the setting out of an overflow the window it set was right about", async () => {
+    served = 32_768;
+    script = [refuses("This model's maximum context length is 32768 tokens.")];
+
+    const { error } = await run(sessionOf(), "hi");
+
+    // The server serves what the turn was built to, so the turn outgrew a right window.
+    expect(error?.name).toBe("ContextOverflow");
+    expect(error?.message).toBe("400 This model's maximum context length is 32768 tokens.");
   });
 
   it("stores a stopped tool call's answer before the stop ends the turn", async () => {
