@@ -105,21 +105,18 @@ export const hasApiKey = (config: LlmConfig): boolean => resolveApiKey(config) !
  * one: a local model can take a minute over a long answer, and a turn is already cancellable
  * from the client.
  *
- * No key goes over as an empty string rather than as the package's `NO_KEY`. Its client treats
- * the two alike, but its probes for a local server's window send no `Authorization` header for
- * an empty key and `Bearer agent-core` for the placeholder.
+ * No key goes over as the package's own `NO_KEY`, which since agent-core 4.12 sends no
+ * `Authorization` header at all — on a request and on the probes for a local server's window
+ * alike — so there is nothing left to translate it into.
  *
  * @param config The settings to adapt.
- * @returns The endpoint, with an empty `apiKey` when no key is set.
+ * @returns The endpoint, with `NO_KEY` as its `apiKey` when no key is set.
  */
-export const endpoint = (config: LlmConfig): Endpoint => {
-  const apiKey = resolveApiKey(config);
-  return {
-    baseUrl: config.baseUrl,
-    apiKey: apiKey === NO_KEY ? "" : apiKey,
-    requestTimeoutSeconds: 0,
-  };
-};
+export const endpoint = (config: LlmConfig): Endpoint => ({
+  baseUrl: config.baseUrl,
+  apiKey: resolveApiKey(config),
+  requestTimeoutSeconds: 0,
+});
 
 /**
  * What a server list needs beyond each row's shape: unique ids, and hooks the pool will run.

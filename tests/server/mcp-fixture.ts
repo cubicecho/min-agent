@@ -50,17 +50,12 @@ const TEMPLATES = ["a", "b", "c"].map((name) => ({
 const TOPICS = ["mcp", "models", "memory", "routing"];
 
 /**
- * An SDK server declaring `capabilities` and tools besides, with none listed. The tools are not
- * what these servers are for: the pool lists them on every connect whether or not the handshake
- * declared them, and a server without the method fails to connect at all.
+ * An SDK server declaring `capabilities` and nothing else: no tools, which is what these servers
+ * are for. Since agent-mcp-pool 3.16.1 a server whose handshake does not declare `tools` connects
+ * and is listed no tools, where it used to be listed them anyway and fail.
  */
 function serverWith(name: string, capabilities: Record<string, object>) {
-  const server = new Server(
-    { name, version: "0.0.1" },
-    { capabilities: { tools: {}, ...capabilities } },
-  );
-  server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }));
-  return server;
+  return new Server({ name, version: "0.0.1" }, { capabilities });
 }
 
 /** A server holding five prompts, five resources and three templates, two to a page. */
@@ -139,7 +134,11 @@ function linkServer() {
 }
 
 /** A server with tools and nothing else, which no prompt or resource listing should ask. */
-const toolsServer = () => serverWith("tools", {});
+function toolsServer() {
+  const server = serverWith("tools", { tools: {} });
+  server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }));
+  return server;
+}
 
 /** The question `asks` puts to whoever made the call, and the form it wants filled in. */
 export const BRANCH_QUESTION = {

@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@cubicecho/agent-core": "^4.23.8",
-    "@cubicecho/agent-mcp-pool": "^3.16.0",
+    "@cubicecho/agent-mcp-pool": "^3.16.2",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@vantreeseba/drizzle-graphql": "^9.0.0",
     "compression": "^1.8.1",

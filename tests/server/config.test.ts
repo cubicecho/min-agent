@@ -1,3 +1,4 @@
+import { NO_KEY } from "@cubicecho/agent-core";
 import { graphql } from "graphql";
 import {
   assertLlmConfigPatch,
@@ -146,15 +147,15 @@ describe("endpoint", () => {
   });
 
   /**
-   * Empty, not a placeholder. `@cubicecho/agent-core` fills one in for the SDK where it builds
-   * a client, but its probes for a local server's window send no `Authorization` header at all
-   * when the key is empty — so what this hands over with no key is something a server can see.
+   * The package's own placeholder, which it reads as no key everywhere: the SDK is handed it, and
+   * neither a request nor a probe for a local server's window carries an `Authorization` header
+   * for it. An empty string used to stand in for it here, from before the probes knew it.
    */
-  it("sends an empty key when neither the row nor the environment holds one", () => {
+  it("hands over agent-core's NO_KEY when neither the row nor the environment holds one", () => {
     const previous = process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_API_KEY;
     try {
-      expect(endpoint(llmConfigSchema.parse({})).apiKey).toBe("");
+      expect(endpoint(llmConfigSchema.parse({})).apiKey).toBe(NO_KEY);
     } finally {
       if (previous !== undefined) {
         process.env.OPENAI_API_KEY = previous;
