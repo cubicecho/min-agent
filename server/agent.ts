@@ -1224,14 +1224,21 @@ export async function runTurn(
       },
     });
   } catch (error) {
-    await bank(failedRun(error)?.usage);
+    // What the steps before the failure reported is kept, as an answered turn's is, and before a
+    // partial reply is stored below: the loop's transcript ends where the stored one does.
+    const failure = failedRun(error);
+    const measured = failure?.ledger?.length ? failure.ledger : undefined;
+    if (failure && measured) {
+      session.ledger = appendLedger(session, failure.messages, measured);
+    }
+    await bank(failure?.usage, measured ? { ledger: session.ledger } : {});
     await pruneBetweenSteps();
     // Stopping a turn used to throw away everything it had already said: the assistant message
     // is only appended once the stream ends, so an abort left the reply on screen and nothing in
     // the transcript. Keep the part that streamed — the loop hands it back as the failure's
     // `partial`, calls begun left off since nothing will answer them — then let the error
     // through. The route stays quiet about a turn its reader ended.
-    const partial = failedRun(error)?.partial;
+    const partial = failure?.partial;
     if (signal?.aborted && (partial?.content || partial?.reasoning)) {
       await append(
         deps,
@@ -1247,15 +1254,13 @@ export async function runTurn(
     }
     // The loop wraps what it caught to hang the run on it. Every message is stored already, so
     // the run is not needed and the error goes on as it was thrown.
-    throw await withWindow(
-      failedRun(error) && error instanceof Error ? error.cause : error,
-      contextLimit,
-      { ...plan.server, model: chosenModel },
-    );
+    throw await withWindow(failure && error instanceof Error ? error.cause : error, contextLimit, {
+      ...plan.server,
+      model: chosenModel,
+    });
   }
 
-  // What the turn's requests reported, kept for the next fold to weigh the messages by. A turn
-  // that fails keeps none: the loop hands back no ledger with what it throws.
+  // What the turn's requests reported, kept for the next fold to weigh the messages by.
   session.ledger = appendLedger(session, result.messages, result.ledger);
   await bank(result.usage, { ledger: session.ledger });
   // The loop returns on the step that asked for no tools, whose reply is the last row written.

@@ -915,6 +915,29 @@ describe("a tool round trip", () => {
       "tool_result",
     ]);
   });
+
+  it("keeps what the steps before a failure reported, for the next fold to weigh by", async () => {
+    configure({ toolDiscovery: "eager", maxToolIterations: 2 });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    script = [asks(["c1", "fs__ls", '{"path":"/"}']), asks(["c2", "fs__ls", '{"path":"/tmp"}'])];
+    const chat = sessionOf();
+
+    const { error } = await run(chat, "look around");
+
+    expect(error?.message).toBe("Stopped after 2 tool iterations.");
+    // Both requests, indexed into the stored transcript: the question, then the first result. One
+    // epoch, as the second request only added to the first.
+    const ledger = [
+      { through: 0, prompt: 100, epoch: 0 },
+      { through: 2, prompt: 100, epoch: 0 },
+    ];
+    expect(chat.ledger).toEqual(ledger);
+    expect(updates.at(-1)).toEqual({
+      usage: { promptTokens: 200, completionTokens: 20, totalTokens: 220 },
+      ledger,
+    });
+  });
 });
 
 describe("loading tools", () => {
@@ -1014,13 +1037,13 @@ describe("loading tools", () => {
   });
 
   /**
-   * Pinned, not endorsed. The loop forgets what a proxied run has loaded whenever `beforeStep`
-   * hands it a transcript of its own — a rewrite may have folded a definition away — and min-agent
-   * hands it one on every step, since it sends the stored rows rather than the loop's copy. So a
-   * load repeated on a later step is answered with the definition again. Before the mode was the
-   * loop's, min-agent's own answer said it was already loaded earlier in this turn.
+   * min-agent hands the loop a transcript of its own on every step, since it sends the stored rows
+   * rather than the loop's copy. Since agent-core 4.23.9 the loop keeps what a proxied run loaded
+   * across a rewrite that left the load in place, so a load repeated on a later step is answered
+   * as already loaded, as min-agent's own answer said before the mode was the loop's. Up to
+   * 4.23.8 it was answered with the definition again.
    */
-  it("answers a proxied load repeated on a later step with the definition again", async () => {
+  it("answers a proxied load repeated on a later step as already loaded", async () => {
     configure({ toolDiscovery: "proxy" });
     offer(READ, LS);
     script = [
@@ -1033,7 +1056,9 @@ describe("loading tools", () => {
 
     const loads = events.flatMap((event) => (event.type === "tool_result" ? [event.content] : []));
     expect(loads).toHaveLength(2);
-    expect(loads.every((content) => holdsDefinitions(content))).toBe(true);
+    expect(holdsDefinitions(loads[0])).toBe(true);
+    expect(holdsDefinitions(loads[1])).toBe(false);
+    expect(loads[1]).toContain("Already loaded earlier in this conversation: fs__read.");
   });
 
   it("writes a proxied shortlist after the question as a load nobody made, and stores it", async () => {
