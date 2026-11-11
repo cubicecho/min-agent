@@ -8,11 +8,17 @@ import { Square } from "@/components/ui/icons";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils.ts";
+import { cn, type SlotNode } from "@/lib/utils.ts";
 import type { Dictation } from "@/lib/voice.ts";
 
 /** What ties the composer to its label. One composer is on screen at a time. */
 const COMPOSER_ID = "composer";
+
+/** A key in the box, as react-native-web reports it: the modifiers a device's keyboard never sets. */
+type ComposerKey = {
+  nativeEvent: { key: string; ctrlKey?: boolean | undefined };
+  preventDefault: () => void;
+};
 
 /**
  * The foot of a chat: what went wrong with the last turn, the box, and the buttons beside it.
@@ -29,23 +35,38 @@ export function Composer({
   speechError,
   dictation,
   onSend,
+  onQueue,
   onStop,
   onPickPrompt,
+  unsentSlot,
 }: {
   draft: string;
   onDraft: (text: string) => void;
   /** The model a turn would run on. Empty when there is none, and then nothing can be sent. */
   activeModel: string;
-  /** Whether a turn is in flight, which is when send becomes stop. */
+  /** Whether a turn is in flight, which is when stop sits beside send. */
   busy: boolean;
   failure: string | null;
   speechError: string | null;
   dictation: Dictation;
+  /** Sends the box: as a turn, or into the one in flight. Enter in a browser. */
   onSend: () => void;
+  /** Sends the box as the next turn once the one in flight has finished. Ctrl+Enter in a browser. */
+  onQueue: () => void;
   onStop: () => void;
   /** Opens the MCP prompts. Left out where no server offers one. */
   onPickPrompt?: () => void;
+  /** What was typed while the turn ran and has not gone yet, above the box. */
+  unsentSlot?: SlotNode;
 }) {
+  // Taken before the box's own Enter, which would otherwise send it into the turn.
+  const queueOnCtrlEnter = (event: ComposerKey) => {
+    const isQueueKey = event.nativeEvent.key === "Enter" && event.nativeEvent.ctrlKey === true;
+    if (isQueueKey) {
+      event.preventDefault();
+      onQueue();
+    }
+  };
   return (
     <View className="mx-auto w-full max-w-3xl gap-2">
       {failure ? (
@@ -75,6 +96,7 @@ export function Composer({
           <SettingsLink tab="model" label="Pick a model" />
         </View>
       )}
+      {unsentSlot}
       <View className="flex-row items-end gap-2">
         {/*
           The box's name. A placeholder is not one, and `Textarea` takes no `aria-label`,
@@ -97,6 +119,7 @@ export function Composer({
           value={draft}
           onChangeText={onDraft}
           onSubmitEditing={onSend}
+          onKeyPress={queueOnCtrlEnter}
           placeholder={activeModel ? "Send a message…" : "Pick a model to start"}
           className="min-h-11 flex-1 py-2.5"
         />
@@ -142,16 +165,19 @@ export function Composer({
             onPress={onStop}
             iconSlot={<Square aria-hidden className="size-4" />}
           />
-        ) : (
-          <Button
-            size="icon-lg"
-            aria-label="Send"
-            disabled={!draft.trim()}
-            onPress={onSend}
-            iconSlot={<Send aria-hidden className="size-4" />}
-          />
-        )}
+        ) : null}
+        {/* While a turn runs, what is sent joins it once its current step is done. */}
+        <Button
+          size="icon-lg"
+          aria-label={busy ? "Send into this turn" : "Send"}
+          disabled={!draft.trim()}
+          onPress={onSend}
+          iconSlot={<Send aria-hidden className="size-4" />}
+        />
       </View>
+      {busy && Platform.OS === "web" ? (
+        <Text className={MUTED}>Enter adds to this turn. Ctrl+Enter sends after it.</Text>
+      ) : null}
     </View>
   );
 }

@@ -2,6 +2,7 @@ import type { Elicitation, ElicitationAction } from "../shared/elicitation.ts";
 import { messageOf } from "../shared/errors.ts";
 import type { HookNote, StreamEvent, TurnStats } from "../shared/types.ts";
 import { runTurn, type TurnDeps } from "./agent.ts";
+import type { Inbox } from "./inbox.ts";
 import type { Store } from "./store.ts";
 
 /**
@@ -26,15 +27,20 @@ export interface TurnEvent {
   title?: string;
   stats?: TurnStats;
   items?: string[];
+  ids?: string[];
   message?: string;
   hook?: HookNote;
   elicitation?: Elicitation;
   action?: ElicitationAction;
 }
 
-/** What a streamed turn talks to: the turn's own, and the store it reads the chat from. */
+/**
+ * What a streamed turn talks to: the turn's own, the store it reads the chat from, and the
+ * inbox what is typed while it runs comes through.
+ */
 export type TurnEventsDeps = TurnDeps & {
   store: TurnDeps["store"] & Pick<Store, "getSession">;
+  inbox: Pick<Inbox, "open">;
 };
 
 const flatten = (event: StreamEvent, seq: number): TurnEvent => ({ seq, ...event });
@@ -83,6 +89,8 @@ export async function* runTurnEvents(
     wake = null;
   };
 
+  // Open from the start, so what is typed while the turn is still setting up is not refused.
+  const inbox = deps.inbox.open(args.sessionId);
   const turn = runTurn(
     {
       session,
@@ -90,6 +98,7 @@ export async function* runTurnEvents(
       model: args.model ?? undefined,
       onEvent: push,
       signal: controller.signal,
+      inbox,
     },
     deps,
   )
@@ -101,6 +110,8 @@ export async function* runTurnEvents(
       push({ type: "error", message: messageOf(error) });
     })
     .finally(() => {
+      // `runTurn` closes it once its loop returns; this covers a turn that failed before that.
+      inbox.close();
       done = true;
       wake?.();
       wake = null;

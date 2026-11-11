@@ -1023,6 +1023,8 @@ export type Mutation = {
   saveMcpServers: Array<McpServerState>;
   /** Writes the API key. Separate from the settings update because the key is write-only: it is excluded from `Setting` so it can never be read back out. An empty string clears it and falls back to $OPENAI_API_KEY. */
   setApiKey: Scalars['Boolean']['output'];
+  /** Hands a message to this chat's running turn, which takes it once the tool calls in flight have answered and goes on with it as a user message; its `steer` event names `id` when it lands. False when no turn there can take it any more — send it as a turn of its own. */
+  steerTurn: Scalars['Boolean']['output'];
   /** Forgets every message from `fromIdx` on, and answers with how many are left. The only write that removes a message: retrying a reply and editing a question both mean going again from a point, and what follows that point is an answer to something no longer being asked. A suffix only, so `idx` stays dense. */
   truncateSession: Scalars['Int']['output'];
   updateSession: Array<Session>;
@@ -1076,6 +1078,13 @@ export type MutationSaveMcpServersArgs = {
 
 export type MutationSetApiKeyArgs = {
   apiKey: Scalars['String']['input'];
+};
+
+
+export type MutationSteerTurnArgs = {
+  id: Scalars['String']['input'];
+  sessionId: Scalars['String']['input'];
+  text: Scalars['String']['input'];
 };
 
 
@@ -2032,6 +2041,8 @@ export type TurnEvent = {
   /** A `HookNote`: what one hook added, or why not. */
   hook?: Maybe<Scalars['JSON']['output']>;
   id?: Maybe<Scalars['String']['output']>;
+  /** On `steer`, the ids of the `steerTurn` messages the turn took, sent as one user message whose text is `text`. */
+  ids?: Maybe<Array<Scalars['String']['output']>>;
   input?: Maybe<Scalars['String']['output']>;
   isError?: Maybe<Scalars['Boolean']['output']>;
   items?: Maybe<Array<Scalars['String']['output']>>;
@@ -2045,7 +2056,7 @@ export type TurnEvent = {
   text?: Maybe<Scalars['String']['output']>;
   title?: Maybe<Scalars['String']['output']>;
   toolUseId?: Maybe<Scalars['String']['output']>;
-  /** reasoning_delta | text_delta | tool_use | tool_result | server_log | elicitation | elicitation_end | title | stats | hook | done | followups | error. */
+  /** reasoning_delta | text_delta | tool_use | tool_result | server_log | elicitation | elicitation_end | steer | title | stats | hook | done | followups | error. */
   type: Scalars['String']['output'];
 };
 
@@ -2223,7 +2234,16 @@ export type TurnSubscriptionVariables = Exact<{
 }>;
 
 
-export type TurnSubscription = { turn: { seq: number, type: string, text?: string | null, id?: string | null, name?: string | null, input?: string | null, toolUseId?: string | null, content?: string | null, isError?: boolean | null, level?: string | null, title?: string | null, stats?: unknown | null, hook?: unknown | null, elicitation?: unknown | null, action?: string | null, items?: Array<string> | null, message?: string | null } };
+export type TurnSubscription = { turn: { seq: number, type: string, text?: string | null, id?: string | null, name?: string | null, input?: string | null, toolUseId?: string | null, content?: string | null, isError?: boolean | null, level?: string | null, title?: string | null, stats?: unknown | null, hook?: unknown | null, elicitation?: unknown | null, action?: string | null, items?: Array<string> | null, ids?: Array<string> | null, message?: string | null } };
+
+export type SteerTurnMutationVariables = Exact<{
+  sessionId: Scalars['String']['input'];
+  id: Scalars['String']['input'];
+  text: Scalars['String']['input'];
+}>;
+
+
+export type SteerTurnMutation = { steerTurn: boolean };
 
 export type AnswerElicitationMutationVariables = Exact<{
   sessionId: Scalars['String']['input'];
@@ -2585,10 +2605,16 @@ export const TurnDocument = new TypedDocumentString(`
     elicitation
     action
     items
+    ids
     message
   }
 }
     `) as unknown as TypedDocumentString<TurnSubscription, TurnSubscriptionVariables>;
+export const SteerTurnDocument = new TypedDocumentString(`
+    mutation SteerTurn($sessionId: String!, $id: String!, $text: String!) {
+  steerTurn(sessionId: $sessionId, id: $id, text: $text)
+}
+    `) as unknown as TypedDocumentString<SteerTurnMutation, SteerTurnMutationVariables>;
 export const AnswerElicitationDocument = new TypedDocumentString(`
     mutation AnswerElicitation($sessionId: String!, $id: String!, $action: ElicitationAction!, $content: JSON) {
   answerElicitation(

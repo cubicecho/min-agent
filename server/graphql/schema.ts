@@ -22,8 +22,9 @@ import { listModels } from "../agent.ts";
 import { assertLlmConfigPatch, hasApiKey, type Settings } from "../config.ts";
 import type { Db } from "../db/client.ts";
 import { settings } from "../db/schema.ts";
-import { surfaced } from "../errors.ts";
+import { surfaced, UserError } from "../errors.ts";
 import { sessionDeleted } from "../hooks.ts";
+import { createInbox, type Inbox } from "../inbox.ts";
 import type { Mcp } from "../mcp.ts";
 import * as mcpPrompts from "../mcp-prompts.ts";
 import { settingsSpec } from "../spec.ts";
@@ -137,7 +138,7 @@ const TurnEventType = new GraphQLObjectType({
       type: new GraphQLNonNull(GraphQLString),
       description:
         "reasoning_delta | text_delta | tool_use | tool_result | server_log | elicitation | " +
-        "elicitation_end | title | stats | hook | done | followups | error.",
+        "elicitation_end | steer | title | stats | hook | done | followups | error.",
     },
     text: { type: GraphQLString },
     id: { type: GraphQLString },
@@ -166,6 +167,12 @@ const TurnEventType = new GraphQLObjectType({
         "On `elicitation_end`, how the question with this `id` ended: accept | decline | cancel.",
     },
     items: { type: new GraphQLList(new GraphQLNonNull(GraphQLString)) },
+    ids: {
+      type: new GraphQLList(new GraphQLNonNull(GraphQLString)),
+      description:
+        "On `steer`, the ids of the `steerTurn` messages the turn took, sent as one user " +
+        "message whose text is `text`.",
+    },
     message: { type: GraphQLString },
   },
 });
@@ -216,6 +223,11 @@ export interface SchemaDeps {
   store: Store;
   /** The settings row, cached, and the MCP servers saved beside it. */
   settings: Settings;
+  /**
+   * What is typed into a chat while its turn runs, on its way to that turn. The mutation and
+   * the turns share one, so absent is a new one of the schema's own.
+   */
+  inbox?: Inbox;
 }
 
 /**
@@ -224,7 +236,13 @@ export interface SchemaDeps {
  * @param deps - What the resolvers talk to.
  * @returns The schema.
  */
-export function createSchema({ db, mcp, store, settings: config }: SchemaDeps): GraphQLSchema {
+export function createSchema({
+  db,
+  mcp,
+  store,
+  settings: config,
+  inbox = createInbox(),
+}: SchemaDeps): GraphQLSchema {
   /**
    * The CRUD half of the API is generated from the Drizzle schema — sessions, messages and the
    * settings row all get their queries, filters and mutations for free, and stay in step with the
@@ -467,6 +485,26 @@ export function createSchema({ db, mcp, store, settings: config }: SchemaDeps): 
               content: args.content as ElicitationContent | null | undefined,
             }),
         },
+        steerTurn: {
+          type: new GraphQLNonNull(GraphQLBoolean),
+          description:
+            "Hands a message to this chat's running turn, which takes it once the tool calls in " +
+            "flight have answered and goes on with it as a user message; its `steer` event " +
+            "names `id` when it lands. False when no turn there can take it any more — send it " +
+            "as a turn of its own.",
+          args: {
+            sessionId: { type: new GraphQLNonNull(GraphQLString) },
+            id: { type: new GraphQLNonNull(GraphQLString) },
+            text: { type: new GraphQLNonNull(GraphQLString) },
+          },
+          resolve: (_source, args: { sessionId: string; id: string; text: string }) => {
+            const isBlank = args.text.trim() === "";
+            if (isBlank) {
+              throw new UserError("A message to steer a turn with needs some text.");
+            }
+            return inbox.post(args.sessionId, { id: args.id, text: args.text });
+          },
+        },
         truncateSession: {
           type: new GraphQLNonNull(GraphQLInt),
           description:
@@ -500,7 +538,7 @@ export function createSchema({ db, mcp, store, settings: config }: SchemaDeps): 
             },
           },
           subscribe: (_source, args: TurnArgs) =>
-            runTurnEvents(args, { mcp, store, settings: config }),
+            runTurnEvents(args, { mcp, store, settings: config, inbox }),
           resolve: (event: unknown) => event,
         },
       },

@@ -22,6 +22,7 @@ import {
   SessionsDocument,
   SetApiKeyDocument,
   SpecDocument,
+  SteerTurnDocument,
   TruncateSessionDocument,
   TurnDocument,
   type UpdateSettingInput,
@@ -268,6 +269,13 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
           content,
         })
       ).answerElicitation,
+
+    /**
+     * Hands what was typed to this chat's running turn, under the client's own `id` for it.
+     * `false` when no turn there can take it, and then it is the client's to send as a turn.
+     */
+    steerTurn: async (sessionId: string, id: string, text: string) =>
+      (await request(SteerTurnDocument, { sessionId, id, text })).steerTurn,
 
     mcp: async () => (await request(McpStatusDocument)).mcpStatus.map(mcpState),
 

@@ -473,6 +473,9 @@ const LiveRow = memo(function LiveRow({
   if (part.kind === "hook") {
     return <HookLine hook={part.hook} />;
   }
+  if (part.kind === "input") {
+    return <Bubble from="user" text={part.text} />;
+  }
   // Thinking that is arriving right now is worth watching; stored thinking is not.
   if (part.kind === "reasoning") {
     return <Reasoning defaultOpen text={part.text} />;
