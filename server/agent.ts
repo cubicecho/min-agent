@@ -54,7 +54,7 @@ import {
   type TokenUsage,
   type TurnStats,
 } from "../shared/types.ts";
-import { planFold } from "./compaction.ts";
+import { appendLedger, planFold } from "./compaction.ts";
 import { endpoint, type Settings } from "./config.ts";
 import {
   compactionHooks,
@@ -76,7 +76,7 @@ import {
   read as readResource,
 } from "./mcp-resources.ts";
 import { clearedChars, planPrune, sentWithStubs } from "./pruning.ts";
-import type { Store } from "./store.ts";
+import type { SessionPatch, Store } from "./store.ts";
 
 /**
  * What a turn talks to outside itself. `server/index.ts` hands in the real ones, and a test its
@@ -143,6 +143,9 @@ async function compact(
   contextLimit: number,
   signal?: AbortSignal,
 ): Promise<string> {
+  // Whether to fold is decided by what the last turn reported using, which is the server's own
+  // count of the request the next one extends. Where to cut is weighed message by message, from
+  // the session's ledger where a pair of readings covers them (`planFold`).
   const used = latestCount(session, "contextTokens");
   // No plan when the window is not three quarters used, or no legal cut folds enough.
   const plan = planFold(session, contextLimit, used);
@@ -971,12 +974,12 @@ export async function runTurn(
   // The turn's usage is banked once the loop hands back its sum: on its answer, or on what it
   // throws, which carries what the steps before the failure cost.
   const banked = session.usage ?? emptyUsage();
-  const bank = async (usage: TokenUsage | undefined) => {
+  const bank = async (usage: TokenUsage | undefined, patch: SessionPatch = {}) => {
     if (!usage) {
       return;
     }
     session.usage = add(banked, usage);
-    await deps.store.updateSession(session.id, { usage: session.usage });
+    await deps.store.updateSession(session.id, { usage: session.usage, ...patch });
   };
   let streamedMs = 0;
   // Measured on the way out, in characters, because nothing on the way back reports it: a
@@ -1228,7 +1231,10 @@ export async function runTurn(
     );
   }
 
-  await bank(result.usage);
+  // What the turn's requests reported, kept for the next fold to weigh the messages by. A turn
+  // that fails keeps none: the loop hands back no ledger with what it throws.
+  session.ledger = appendLedger(session, result.messages, result.ledger);
+  await bank(result.usage, { ledger: session.ledger });
   // The loop returns on the step that asked for no tools, whose reply is the last row written.
   const assistant = session.messages[session.messages.length - 1];
   const breakdown = lastRequest ? splitContext(lastRequest, result.turn.usage.prompt) : undefined;

@@ -685,7 +685,12 @@ describe("a plain answer", () => {
       { role: "assistant", content: "Hello.", stats },
     ]);
     const usage = { promptTokens: 100, completionTokens: 10, totalTokens: 110 };
-    expect(updates).toEqual([{ title: "hi there", model: "m" }, { usage }]);
+    // The turn's one request, which carried the question: kept for the next fold to weigh by.
+    const ledger = [{ through: 0, prompt: 100, epoch: 0 }];
+    expect(updates).toEqual([
+      { title: "hi there", model: "m" },
+      { usage, ledger },
+    ]);
     expect(chat).toMatchObject({ title: "hi there", model: "m", usage });
   });
 });

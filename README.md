@@ -180,7 +180,7 @@ Four tables, created by the migrations in `drizzle/`, which `runMigrations()` ap
 ```
 settings      one row, id 'default' — Settings → Agent
 mcp_servers   one row per server, ordered by position — Settings → MCP
-sessions      one per chat: title, dates, token totals, compaction and pruning state
+sessions      one per chat: title, dates, token totals, compaction and pruning state, ledger
 messages      one per message, ordered by (session_id, idx), cascade-deleted with the session
 ```
 
@@ -682,6 +682,14 @@ forward to the next `user` message. If that leaves fewer than two messages folde
 inside the last question's tool loop instead — at a reply after the question, which is kept whole
 and sent after the summary — and gives up only if that folds too little as well. A fold that
 would not pay for itself is not worth a round trip.
+
+What a message weighs in that walk is measured where it can be. Every request reports its prompt
+tokens, and two requests of one turn where the second only appended to the first differ by exactly
+what was appended — the chat template's tokens, the hooks' context and a tool result's real density
+included. agent-core keeps those readings as a token ledger, and min-agent stores each turn's on
+the session (`sessions.ledger`, indexed into the stored transcript, kept out of the API), so the
+next fold weighs the messages it covers by what the server said they cost and estimates only the
+rest. Whether to fold at all is still the last turn's reported total.
 
 Like titling, a failure is swallowed: the turn proceeds on the full transcript, which is the
 behaviour you had before compaction existed.

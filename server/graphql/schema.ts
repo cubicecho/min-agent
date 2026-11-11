@@ -263,8 +263,9 @@ export function createSchema({ db, mcp, store, settings: config }: SchemaDeps): 
       delete: (table) => table === "sessions",
     },
     exclude: {
-      // The key never needs to travel back to the browser; the UI only ever writes it.
-      columns: { settings: ["apiKey"] },
+      // The key never needs to travel back to the browser; the UI only ever writes it. The
+      // ledger is the runner's own reading of what a chat's messages cost, and no client's.
+      columns: { settings: ["apiKey"], sessions: ["ledger"] },
     },
     mapColumnType: (column) => (column.columnType === "PgTimestamp" ? GraphQLDateTime : undefined),
     onWrite: {

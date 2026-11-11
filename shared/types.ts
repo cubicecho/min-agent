@@ -1,5 +1,10 @@
 // Types only, from here: agent-core is the server's, and nothing of it may reach the app's bundle.
-import type { CompactionRecord, ReasoningField, ReasoningReplay } from "@cubicecho/agent-core";
+import type {
+  CompactionRecord,
+  ReasoningField,
+  ReasoningReplay,
+  TokenLedger,
+} from "@cubicecho/agent-core";
 import type { HookEvent, McpStatus } from "@cubicecho/agent-mcp-pool";
 import { HOOK_EVENTS, INJECT_EVENTS } from "@cubicecho/agent-mcp-pool/hooks";
 import type OpenAI from "openai";
@@ -445,6 +450,11 @@ export interface Session {
    * without one is sent whole. See `PruningRecord`.
    */
   pruning?: PruningRecord;
+  /**
+   * What the requests of earlier turns reported their prompts as, indexed into `messages`.
+   * Server-side only: it is the runner's, and the API leaves it out. Absent is no readings yet.
+   */
+  ledger?: TokenLedger;
   /** Raw chat-completions turns — replayed verbatim on the next request. */
   messages: StoredMessage[];
 }
@@ -455,7 +465,7 @@ export interface Session {
  * turn, and it has no business touching the messages table to draw a column of titles.
  */
 
-export type SessionSummary = Omit<Session, "messages"> & { messageCount: number };
+export type SessionSummary = Omit<Session, "messages" | "ledger"> & { messageCount: number };
 
 /**
  * `idle` is registered-but-not-connected: a success state, not a failure. min-agent runs the pool
