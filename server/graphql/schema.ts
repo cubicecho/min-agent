@@ -12,6 +12,11 @@ import {
   GraphQLString,
 } from "graphql";
 import { GraphQLJSON } from "graphql-scalars";
+import {
+  ELICITATION_ACTIONS,
+  type ElicitationAction,
+  type ElicitationContent,
+} from "../../shared/elicitation.ts";
 import type { McpServerConfig } from "../../shared/types.ts";
 import { listModels } from "../agent.ts";
 import { assertLlmConfigPatch, hasApiKey, type Settings } from "../config.ts";
@@ -56,6 +61,11 @@ const McpServerConfigType = new GraphQLObjectType({
     url: { type: new GraphQLNonNull(GraphQLString) },
     headers: { type: new GraphQLNonNull(GraphQLJSON) },
     hiddenTools: { type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(GraphQLString))) },
+    trustAnnotations: {
+      type: new GraphQLNonNull(GraphQLBoolean),
+      description:
+        "Believe its tools' `readOnlyHint`, so its reads run beside a step's other reads. Off, every call to it runs alone.",
+    },
     hooks: {
       type: new GraphQLNonNull(GraphQLJSON),
       description: "The server's own tools, called at points in a session. See `ToolHookConfig`.",
@@ -76,6 +86,7 @@ const McpServerInput = new GraphQLInputObjectType({
     url: { type: GraphQLString },
     headers: { type: GraphQLJSON },
     hiddenTools: { type: new GraphQLList(new GraphQLNonNull(GraphQLString)) },
+    trustAnnotations: { type: GraphQLBoolean },
     hooks: { type: GraphQLJSON },
   },
 });
@@ -125,8 +136,8 @@ const TurnEventType = new GraphQLObjectType({
     type: {
       type: new GraphQLNonNull(GraphQLString),
       description:
-        "reasoning_delta | text_delta | tool_use | tool_result | title | stats | hook | " +
-        "done | followups | error.",
+        "reasoning_delta | text_delta | tool_use | tool_result | server_log | elicitation | " +
+        "elicitation_end | title | stats | hook | done | followups | error.",
     },
     text: { type: GraphQLString },
     id: { type: GraphQLString },
@@ -135,12 +146,35 @@ const TurnEventType = new GraphQLObjectType({
     toolUseId: { type: GraphQLString },
     content: { type: GraphQLString },
     isError: { type: GraphQLBoolean },
+    level: {
+      type: GraphQLString,
+      description: "On `server_log`, the level the tool's server logged at; `text` is the message.",
+    },
     title: { type: GraphQLString },
     stats: { type: GraphQLJSON },
     hook: { type: GraphQLJSON, description: "A `HookNote`: what one hook added, or why not." },
+    elicitation: {
+      type: GraphQLJSON,
+      description:
+        "On `elicitation`, a question a tool's server is asking the person mid-call: `id`, " +
+        "`toolUseId`, `serverId`, `server` (its label), `message` and `schema` (the form " +
+        "`requestedSchema`). Answer it with `answerElicitation`.",
+    },
+    action: {
+      type: GraphQLString,
+      description:
+        "On `elicitation_end`, how the question with this `id` ended: accept | decline | cancel.",
+    },
     items: { type: new GraphQLList(new GraphQLNonNull(GraphQLString)) },
     message: { type: GraphQLString },
   },
+});
+
+const ElicitationActionEnum = new GraphQLEnumType({
+  name: "ElicitationAction",
+  description:
+    "An answer to a server's question: give it the content, refuse, or put the question away.",
+  values: Object.fromEntries(ELICITATION_ACTIONS.map((action) => [action, { value: action }])),
 });
 
 const McpPromptArgumentType = new GraphQLObjectType({
@@ -229,8 +263,9 @@ export function createSchema({ db, mcp, store, settings: config }: SchemaDeps): 
       delete: (table) => table === "sessions",
     },
     exclude: {
-      // The key never needs to travel back to the browser; the UI only ever writes it.
-      columns: { settings: ["apiKey"] },
+      // The key never needs to travel back to the browser; the UI only ever writes it. The
+      // ledger is the runner's own reading of what a chat's messages cost, and no client's.
+      columns: { settings: ["apiKey"], sessions: ["ledger"] },
     },
     mapColumnType: (column) => (column.columnType === "PgTimestamp" ? GraphQLDateTime : undefined),
     onWrite: {
@@ -304,6 +339,36 @@ export function createSchema({ db, mcp, store, settings: config }: SchemaDeps): 
           },
           resolve: (_root, { server, name, args }) =>
             mcpPrompts.get(mcp, server, name, (args ?? {}) as Record<string, string>),
+        },
+        mcpPromptCompletions: {
+          type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(GraphQLString))),
+          description:
+            "What the server suggests for one argument of a prompt, given its text so far and the " +
+            "other arguments. Empty from a server that cannot complete, or that failed to.",
+          args: {
+            server: { type: new GraphQLNonNull(GraphQLString) },
+            name: { type: new GraphQLNonNull(GraphQLString), description: "The prompt's name." },
+            argument: {
+              type: new GraphQLNonNull(GraphQLString),
+              description: "The argument being filled in.",
+            },
+            value: {
+              type: new GraphQLNonNull(GraphQLString),
+              description: "What is in it now.",
+            },
+            args: {
+              type: GraphQLJSON,
+              description: "The other arguments by name, which a server may narrow by.",
+            },
+          },
+          resolve: (_root, { server, name, argument, value, args }) =>
+            mcpPrompts.complete(
+              mcp,
+              server,
+              name,
+              { name: argument, value },
+              (args ?? {}) as Record<string, string>,
+            ),
         },
         health: {
           type: new GraphQLNonNull(HealthType),
@@ -379,6 +444,28 @@ export function createSchema({ db, mcp, store, settings: config }: SchemaDeps): 
             await mcp.reconnect(args.id, await config.loadMcpServers());
             return mcp.state();
           },
+        },
+        answerElicitation: {
+          type: new GraphQLNonNull(GraphQLBoolean),
+          description:
+            "Answers a question a tool's server asked in this chat's turn, by the `id` of its " +
+            "`elicitation` event. `content` is the form's fields by name, for `accept` only, and " +
+            "is checked against the question's schema. False when the question is no longer " +
+            "waiting — answered, or put away because its call ended first.",
+          args: {
+            sessionId: { type: new GraphQLNonNull(GraphQLString) },
+            id: { type: new GraphQLNonNull(GraphQLString) },
+            action: { type: new GraphQLNonNull(ElicitationActionEnum) },
+            content: { type: GraphQLJSON },
+          },
+          resolve: (
+            _source,
+            args: { sessionId: string; id: string; action: ElicitationAction; content?: unknown },
+          ) =>
+            mcp.answer(args.sessionId, args.id, {
+              action: args.action,
+              content: args.content as ElicitationContent | null | undefined,
+            }),
         },
         truncateSession: {
           type: new GraphQLNonNull(GraphQLInt),

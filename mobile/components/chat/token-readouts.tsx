@@ -198,7 +198,16 @@ export function ContextMeter({ fill }: { fill: NonNullable<ReturnType<typeof con
  * clock and a character-derived token estimate — marked "~" so it is never mistaken
  * for the exact numbers that replace it.
  */
-export function LiveMeter({ startedAt, live }: { startedAt: number; live: LivePart[] }) {
+export function LiveMeter({
+  startedAt,
+  live,
+  waiting = false,
+}: {
+  startedAt: number;
+  live: LivePart[];
+  /** A tool's server has asked the person something, and the turn will not move until they answer. */
+  waiting?: boolean;
+}) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -216,6 +225,14 @@ export function LiveMeter({ startedAt, live }: { startedAt: number; live: LivePa
   return (
     <View className="mt-2 flex-row items-center gap-2">
       <Text className={MUTED}>{formatDuration(elapsed)}</Text>
+      {waiting ? (
+        <>
+          <Text className={MUTED}>·</Text>
+          <Text role="status" className="text-warning text-xs">
+            Waiting on you
+          </Text>
+        </>
+      ) : null}
       {tokens > 0 ? (
         <>
           <Text className={MUTED}>·</Text>

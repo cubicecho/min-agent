@@ -1,11 +1,14 @@
 import {
-  type HookContext,
-  type HookEvent,
+  type ElicitHandler,
+  type HookRunnerOptions,
   McpPool,
-  type RunHooksOptions,
+  type McpPoolOptions,
+  type ServerLogEntry,
   serversWith,
 } from "@cubicecho/agent-mcp-pool";
+import { ELICITATION_DEFAULTS } from "../shared/defaults.ts";
 import type { McpServerConfig, McpServerState } from "../shared/types.ts";
+import { createElicitations } from "./elicitations.ts";
 import { VERSION } from "./paths.ts";
 
 /**
@@ -21,6 +24,9 @@ import { VERSION } from "./paths.ts";
  * are stored.
  */
 
+/** How long a tool call gets to do its own work. See `callTimeoutMs` below. */
+const CALL_TIMEOUT_MS = 120_000;
+
 /** A server's id and the name it is shown under. */
 const idAndLabel = ({ id, label }: { id: string; label: string }) => ({ id, label });
 
@@ -28,9 +34,11 @@ const idAndLabel = ({ id, label }: { id: string; label: string }) => ({ id, labe
  * Builds the app's MCP servers: one pool, and min-agent's view of it. `server/index.ts` builds the
  * one the process runs on and hands it to whatever talks to the servers.
  *
+ * @param options - Pool options laid over min-agent's own. For tests, which reach in-process
+ *   servers through `createTransport` rather than spawning one.
  * @returns The servers, as the rest of the server reaches them.
  */
-export function createMcp() {
+export function createMcp(options: McpPoolOptions = {}) {
   /**
    * `connectTimeoutMs` because a reconcile is serialised and a wedged server holds the whole of
    * it: the SDK waits a minute for an `initialize` that is not coming, and Save on the MCP tab
@@ -61,13 +69,76 @@ export function createMcp() {
    * stopping a turn abandons its calls — so what is left for the timeout is a tool that wedges while
    * nobody is watching, and two minutes is generous to real work without leaving a turn hung for good.
    * It is not reset by progress notifications: a server that keeps talking is still cut off.
+   *
+   * `logLevel` is what a server that declares `logging` is asked to send, and warning is the floor
+   * because a warning is what the chat shows: a tool card is read by a person looking for why a
+   * call went the way it did, and a server left at its own default can say a hundred `debug` lines
+   * during one search. A server that ignores the level is shown what it sends anyway.
+   *
+   * `elicitation` declares that a server may ask the person something mid-call, with no pool-wide
+   * handler behind it: every question is answered by the call that caused it, through its own
+   * `onElicit`, in the chat whose turn made the call. One the pool cannot pin on a call — two in
+   * flight on one connection — is declined, since there is nobody it could be shown to that would
+   * know what it was about.
    */
   const pool = new McpPool({
     clientName: "min-agent",
     clientVersion: VERSION,
     connectTimeoutMs: 15_000,
-    callTimeoutMs: 120_000,
+    callTimeoutMs: CALL_TIMEOUT_MS,
+    logLevel: "warning",
+    elicitation: true,
+    ...options,
   });
+
+  const questions = createElicitations();
+  /** A call's own working time: min-agent's two minutes, or what a test laid over them. */
+  const callTimeoutMs = options.callTimeoutMs ?? CALL_TIMEOUT_MS;
+
+  /**
+   * A call that may wait on a person: the pool's call with its working time bounded by a clock
+   * that stops while a question is open.
+   *
+   * The pool cannot stop its own clock — the SDK's request timeout is set once, when the request
+   * goes out — so the call is sent with a longer one and this keeps the two minutes. The clock
+   * firing aborts the call, and the abort is said as the timeout it is.
+   */
+  async function callAsking(
+    qualifiedName: string,
+    input: unknown,
+    onElicit: ElicitHandler,
+    signal?: AbortSignal,
+    onLog?: (entry: ServerLogEntry) => void,
+  ) {
+    const clock = workingClock(callTimeoutMs);
+    try {
+      return await pool.call(qualifiedName, input, {
+        signal: signal ? AbortSignal.any([signal, clock.signal]) : clock.signal,
+        timeoutMs: callTimeoutMs + ELICITATION_DEFAULTS.answerWaitMs,
+        ...(onLog ? { onLog } : {}),
+        onElicit: async (serverId, params, extra) => {
+          clock.pause();
+          try {
+            return await onElicit(serverId, params, extra);
+          } finally {
+            clock.resume();
+          }
+        },
+      });
+    } catch (error) {
+      const timedOut = clock.signal.aborted && signal?.aborted !== true;
+      if (timedOut) {
+        throw new Error(`"${qualifiedName}" timed out after ${callTimeoutMs}ms`);
+      }
+      throw error;
+    } finally {
+      clock.stop();
+    }
+  }
+
+  /** The name a server is shown under, by its id; the id itself for one that has none. */
+  const labelOf = (id: string) =>
+    pool.state().find((server) => server.config.id === id)?.config.label || id;
 
   return {
     /**
@@ -97,51 +168,62 @@ export function createMcp() {
      */
     tools: (names?: string[]) => pool.tools({ names }),
 
-    /** Names and descriptions only — what the model browses before loading anything. */
+    /**
+     * Names and descriptions only — what the model browses before loading anything.
+     *
+     * Each server also carries the `instructions` its `initialize` answered with (pool 3.11), which
+     * agent-core's `serverInstructions` writes into the system prompt. Servers use that text for
+     * what a tool description has no room for — which tool to call first, what its ids look like —
+     * and a model without it learns the same rule by making the call and reading the error.
+     */
     catalog: () => pool.catalog(),
 
     /**
-     * What each connected server said about itself when it connected, for the system prompt.
+     * Whether a call to this tool only reads, which is what lets it run beside the step's other
+     * reads. Anything else — a write, a tool its server does not annotate, a server whose row has
+     * `trustAnnotations` off, a name nothing offers — answers false, and the turn runs that call
+     * alone, after everything asked before it and before everything asked after.
      *
-     * `initialize` carries an `instructions` string, and servers use it for the things a tool
-     * description has no room for — which tool to call first, what its ids look like, which of two
-     * overlapping tools is the cheap one. Dropping it is why a model reaches for the right server and
-     * still uses it wrongly: it learns the same rule by making the call, reading the error and trying
-     * again, at a round trip a lesson and nothing carried into the next turn.
-     *
-     * Synchronous since pool 2.5.0 reports it on `state()` (cubicecho/agent-mcp-pool#70). It went
-     * through `pool.client()` before, which is the call path's own door and dials a server sitting at
-     * `idle` — safe here only because this pool is built neither `lazy` nor with an `idleTimeoutMs`,
-     * which is a long way to reach for a string the handshake had already returned.
+     * No `servers` scope: min-agent does not scope runs, so every enabled server's tools are the
+     * turn's. Synchronous and off the pool's index, so it is asked once per call without a round
+     * trip.
      */
-    instructions: () =>
-      pool
-        .state()
-        .flatMap(({ label, instructions: text }) =>
-          text?.trim() ? [{ label, text: text.trim() }] : [],
-        ),
-
-    /*
-     * The connected servers that declared a capability, in configuration order — via the pool's
-     * `serversWith`. Asking a server that never claimed the capability is an error round trip per
-     * server per surface, and — worse for a model — an error it has to read and discount before it
-     * can conclude anything about what is actually available.
-     */
-    /** The servers whose resources `list_resources` and `read_resource` reach. */
-    resourceServers: () => serversWith(pool.state(), "resources").map(idAndLabel),
-
-    /** The servers whose prompts the composer's picker offers. */
-    promptServers: () => serversWith(pool.state(), "prompts").map(idAndLabel),
+    readsOnly: (qualifiedName: string) => pool.readsOnly(qualifiedName),
 
     /**
-     * The connected MCP client for one server.
-     *
-     * The pool's own last mile is shaped for a tool call, and `resources/read` and `prompts/get` are
-     * not one; this is the door it documents for the rest of the protocol. It bypasses the scope
-     * check `call()` makes, which is a guard against a model reaching a server the run was not scoped
-     * to — min-agent does not scope runs, so there is nothing here for it to bypass.
+     * The connected servers that declared `resources`, in configuration order — via the pool's
+     * `serversWith`. Whether `list_resources` and `read_resource` are declared at all, and the
+     * servers a read tries in turn for a uri no listing named.
      */
-    client: (id: string) => pool.client(id),
+    resourceServers: () => serversWith(pool.state(), "resources").map(idAndLabel),
+
+    labelOf,
+
+    /*
+     * The rest of the protocol, as the pool reads it. Each listing is read to its last page — a
+     * single `listResources()` here once showed a model only the first page of a server that
+     * paginates — and only servers whose handshake declared the capability are asked, so a server
+     * without prompts is not an error per listing.
+     */
+    /** Every prompt, per server. A server that failed to list has an empty list and `error`. */
+    prompts: () => pool.prompts(),
+    /** One prompt expanded and flattened to one string, by the pool's `promptText`. */
+    expandPrompt: (serverId: string, name: string, args: Record<string, string>) =>
+      pool.expandPrompt(serverId, name, args),
+    /** Every resource and resource template, per server, as `prompts()` lists them. */
+    resources: () => pool.resources(),
+    /** One resource read back as text. */
+    readResource: (serverId: string, uri: string) => pool.readResource(serverId, uri),
+    /**
+     * What a server suggests for one argument of a prompt, given what is typed so far. `[]`, not
+     * an error, from a server that cannot complete, so the picker can ask on every pause.
+     */
+    complete: (
+      serverId: string,
+      prompt: string,
+      argument: { name: string; value: string },
+      context: Record<string, string>,
+    ) => pool.complete(serverId, { type: "ref/prompt", name: prompt }, argument, context),
 
     /**
      * Runs one tool call and returns text for a tool result.
@@ -151,16 +233,42 @@ export function createMcp() {
      *
      * `signal` is the turn's: a reader who stops the turn has no use for the answers it was waiting on,
      * and without it a slow tool kept running — and kept the turn's `finally` waiting — until it was done.
+     *
+     * `onLog` hears what the server logs while the call runs, which the turn passes on to the chat
+     * as the call's own: agent-core's `report.log`, taken as it stands.
+     *
+     * `onElicit` answers what the server asks the person while the call runs. A person reading a
+     * question is not the tool wedging, so a call that can be asked one is not held to the pool's
+     * two minutes end to end: it runs on a clock of its own that stops while a question waits, and
+     * the pool's bound is moved out by one question's wait behind it. A call that never asks
+     * anything is cut off exactly where it was.
      */
-    call: (qualifiedName: string, input: unknown, signal?: AbortSignal) =>
-      pool.call(qualifiedName, input, { signal }),
+    call: (
+      qualifiedName: string,
+      input: unknown,
+      signal?: AbortSignal,
+      onLog?: (entry: ServerLogEntry) => void,
+      onElicit?: ElicitHandler,
+    ) =>
+      onElicit
+        ? callAsking(qualifiedName, input, onElicit, signal, onLog)
+        : pool.call(qualifiedName, input, { signal, ...(onLog ? { onLog } : {}) }),
+
+    /** Puts a server's question in front of the chat and waits for the person. */
+    ask: questions.ask,
 
     /**
-     * Runs every enabled server's hooks for one event. Never rejects; see `server/hooks.ts`, which
-     * is the only caller.
+     * The person's answer to a question, from the chat it was asked in. `false` for one that is
+     * no longer waiting.
      */
-    runHooks: (event: HookEvent, context: HookContext, options?: RunHooksOptions) =>
-      pool.runHooks(event, context, options),
+    answer: questions.answer,
+
+    /**
+     * What runs one event's hooks on every enabled server, as agent-core's hooks take it, with
+     * `onNotice` bound for the life of the runner and the signal left to each call. Never rejects;
+     * see `server/hooks.ts`, which is the only caller.
+     */
+    hookRunner: (options?: HookRunnerOptions) => pool.hookRunner(options),
 
     /**
      * Closes every connection, for a process on its way out.
@@ -204,3 +312,38 @@ export function createMcp() {
 
 /** The app's MCP servers. */
 export type Mcp = ReturnType<typeof createMcp>;
+
+/**
+ * A timeout that can be paused: `signal` aborts once `ms` of running time has passed. Pauses
+ * nest, so two questions open at once resume the clock only when both are answered.
+ */
+function workingClock(ms: number) {
+  const controller = new AbortController();
+  let left = ms;
+  let since = Date.now();
+  let paused = 0;
+  let stopped = false;
+  let timer = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    pause() {
+      paused += 1;
+      if (paused === 1) {
+        clearTimeout(timer);
+        left -= Date.now() - since;
+      }
+    },
+    resume() {
+      paused -= 1;
+      // A question answered after its call has settled starts nothing.
+      if (paused === 0 && !stopped) {
+        since = Date.now();
+        timer = setTimeout(() => controller.abort(), Math.max(left, 0));
+      }
+    },
+    stop() {
+      stopped = true;
+      clearTimeout(timer);
+    },
+  };
+}

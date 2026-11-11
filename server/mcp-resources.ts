@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@cubicecho/agent-mcp-pool";
+import type { ResourceText, ServerResources, ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import { messageOf } from "../shared/errors.ts";
 
 /**
@@ -18,27 +18,20 @@ import { messageOf } from "../shared/errors.ts";
  * otherwise, and the model pays for the listing on the turns it actually wants one.
  */
 
-/** One part of what `resources/read` returns. */
-interface ResourceContents {
-  uri?: string | undefined;
-  text?: string | undefined;
-  mimeType?: string | undefined;
-}
-
-/** The two calls of an MCP client this module makes. The SDK's `Client` is one. */
-interface ResourceClient {
-  listResources(): Promise<{
-    resources: { uri: string; name?: string | undefined; mimeType?: string | undefined }[];
-  }>;
-  readResource(request: { uri: string }): Promise<{ contents: ResourceContents[] }>;
-}
-
-/** The part of the app's MCP servers that resources are read from. `Mcp` is one. */
+/**
+ * The part of the app's MCP servers that resources are read from. `Mcp` is one.
+ *
+ * The listing and the read are the pool's, which reads every page of both `resources/list` and
+ * `resources/templates/list`. min-agent called `listResources()` once and so showed a model only
+ * the first page of a server that paginates — with nothing in the answer to say there was more.
+ */
 export interface ResourceSource {
   /** The connected servers that offer resources, in configuration order. */
   resourceServers(): { id: string; label: string }[];
-  /** One server's connected client. */
-  client(id: string): Promise<ResourceClient>;
+  resources(): Promise<ServerResources[]>;
+  readResource(serverId: string, uri: string): Promise<ResourceText>;
+  /** The name a server is shown under. */
+  labelOf(id: string): string;
 }
 
 /** Shallow freezing these would leave `.function.description` — the part worth editing. */
@@ -66,9 +59,10 @@ export const RESOURCE_TOOLS: ToolDefinition[] = deepFreeze([
       name: LIST_RESOURCES,
       description:
         "List the resources the connected MCP servers hold — files, schemas, documents — as " +
-        "uris you can then read with `read_resource`. Takes no arguments and lists every " +
-        "server. Call it when you need context a tool does not return; do not call it twice in " +
-        "a turn, and do not mention this mechanism in your answer.",
+        "uris you can then read with `read_resource`, and the uri templates they answer, whose " +
+        "`{variables}` you fill in to make a uri. Takes no arguments and lists every server. " +
+        "Call it when you need context a tool does not return; do not call it twice in a turn, " +
+        "and do not mention this mechanism in your answer.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
     },
   },
@@ -78,8 +72,8 @@ export const RESOURCE_TOOLS: ToolDefinition[] = deepFreeze([
       name: READ_RESOURCE,
       description:
         "Read one MCP resource by uri and get its contents. The uri comes from " +
-        "`list_resources`, or from a `[resource_link ...]` in a tool result — either is a uri " +
-        "you can read directly, and a link in a result does not need listing first.",
+        "`list_resources` — as listed, or a template with its variables filled in — or from a " +
+        "`[resource_link ...]` in a tool result, which does not need listing first.",
       parameters: {
         type: "object",
         properties: {
@@ -107,64 +101,55 @@ export const RESOURCE_TOOLS: ToolDefinition[] = deepFreeze([
 const owners = new Map<string, string>();
 
 /** One resource as a line under its server, in the shape `catalogList` uses for tools. */
-const line = (resource: { uri: string; name?: string; mimeType?: string }) => {
-  const named = [resource.name, resource.mimeType].filter(Boolean).join(", ");
-  return `  ${resource.uri}${named ? ` — ${named}` : ""}`;
+const line = (uri: string, ...about: (string | undefined)[]) => {
+  const named = about.filter(Boolean).join(", ");
+  return `  ${uri}${named ? ` — ${named}` : ""}`;
 };
 
 /**
- * Every resource-serving server's listing, as text for a tool result.
+ * Every resource-serving server's listing, as text for a tool result: its resources, then its
+ * templates, each list to its last page.
  *
- * Servers are asked in parallel and a server that fails is reported rather than thrown for: one
- * server being unable to list is not a reason to withhold the four that could, and a model told
- * "this server errored" can work with the rest instead of concluding it has no resources at all.
+ * A server that fails is reported rather than thrown for: one server being unable to list is not
+ * a reason to withhold the four that could, and a model told "this server errored" can work with
+ * the rest instead of concluding it has no resources at all.
  *
  * @param mcp - The servers to ask.
  * @returns The listing, or why there is none.
  */
 export async function list(mcp: ResourceSource): Promise<string> {
-  const servers = mcp.resourceServers();
-  if (servers.length === 0) {
+  const listings = await mcp.resources();
+  if (listings.length === 0) {
     return "No connected MCP server offers resources.";
   }
 
-  const listings = await Promise.all(
-    servers.map(async ({ id, label }) => {
-      try {
-        const { resources } = await (await mcp.client(id)).listResources();
-        for (const resource of resources) {
-          owners.set(resource.uri, id);
-        }
-        return resources.length > 0
-          ? `${label}:\n${resources.map(line).join("\n")}`
-          : `${label}: no resources.`;
-      } catch (error) {
-        return `${label}: could not be listed — ${messageOf(error)}`;
+  return listings
+    .map(({ serverId, resources, templates, error }) => {
+      const label = mcp.labelOf(serverId);
+      if (error) {
+        return `${label}: could not be listed — ${error}`;
       }
-    }),
-  );
-  return listings.join("\n\n");
+      for (const resource of resources) {
+        owners.set(resource.uri, serverId);
+      }
+      const lines = [
+        ...resources.map((resource) => line(resource.uri, resource.name, resource.mimeType)),
+        ...templates.map((template) =>
+          line(template.uriTemplate, "template", template.name, template.mimeType),
+        ),
+      ];
+      return lines.length > 0 ? `${label}:\n${lines.join("\n")}` : `${label}: no resources.`;
+    })
+    .join("\n\n");
 }
-
-/** The text of one `resources/read`, with what has none named rather than dropped. */
-const contentsText = (contents: ResourceContents[]) =>
-  contents
-    .map((part) =>
-      typeof part.text === "string"
-        ? part.text
-        : `[${part.mimeType ?? "binary"} content at ${part.uri ?? "unknown uri"}]`,
-    )
-    .join("\n")
-    .trim();
 
 /**
  * Reads one resource, from whichever server holds it.
  *
  * The remembered owner is tried first and the rest only if that fails or there was none, so the
  * common path is one request and the uncommon one is bounded by the number of resource-serving
- * servers. Trying them all is what makes a uri lifted out of a `resource_link` readable without
- * a listing first — which, since the pool started surfacing those links in tool results, is how
- * a model most often comes by a uri at all.
+ * servers. Trying them all is what makes a uri lifted out of a `resource_link`, or filled in from
+ * a template, readable without a listing having named it.
  *
  * @param mcp - The servers to ask.
  * @param uri - The resource's uri, as the model was given it.
@@ -184,9 +169,8 @@ export async function read(mcp: ResourceSource, uri: string): Promise<string> {
   let last: unknown;
   for (const id of order) {
     try {
-      const { contents } = await (await mcp.client(id)).readResource({ uri });
+      const { text } = await mcp.readResource(id, uri);
       owners.set(uri, id);
-      const text = contentsText(contents);
       return text || "(the resource is empty)";
     } catch (error) {
       last = error;

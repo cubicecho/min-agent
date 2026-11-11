@@ -10,6 +10,7 @@ fragment McpState on McpServerState {
     url
     headers
     hiddenTools
+    trustAnnotations
     hooks
   }
   status
@@ -56,4 +57,20 @@ query McpPrompts {
 
 query McpPrompt($server: String!, $name: String!, $args: JSON) {
   mcpPrompt(server: $server, name: $name, args: $args)
+}
+
+query McpPromptCompletions(
+  $server: String!
+  $name: String!
+  $argument: String!
+  $value: String!
+  $args: JSON
+) {
+  mcpPromptCompletions(
+    server: $server
+    name: $name
+    argument: $argument
+    value: $value
+    args: $args
+  )
 }

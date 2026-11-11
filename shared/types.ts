@@ -1,10 +1,16 @@
 // Types only, from here: agent-core is the server's, and nothing of it may reach the app's bundle.
-import type { CompactionRecord } from "@cubicecho/agent-core";
+import type {
+  CompactionRecord,
+  ReasoningField,
+  ReasoningReplay,
+  TokenLedger,
+} from "@cubicecho/agent-core";
 import type { HookEvent, McpStatus } from "@cubicecho/agent-mcp-pool";
 import { HOOK_EVENTS, INJECT_EVENTS } from "@cubicecho/agent-mcp-pool/hooks";
 import type OpenAI from "openai";
 import { z } from "zod";
 import { MODEL_CEILINGS, MODEL_DEFAULTS } from "./defaults.ts";
+import type { Elicitation, ElicitationAction } from "./elicitation.ts";
 import type { ModelTask } from "./model-tasks.ts";
 
 /**
@@ -42,6 +48,22 @@ export const REASONING_EFFORTS = [
 ] as const satisfies readonly ("off" | NonNullable<OpenAI.ReasoningEffort>)[];
 
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
+/**
+ * Which assistant messages send the model's thinking back to it, as agent-core's
+ * `ReasoningReplay`: every one (`all`, its default and so this one), only those that end in tool
+ * calls and only during the turn that made them (`tool-loop`), or none.
+ *
+ * Written out rather than imported because this file is in the app's bundle and agent-core is
+ * not; the `satisfies` holds it to the type, so a policy agent-core drops is caught here.
+ */
+export const REASONING_REPLAYS = [
+  "all",
+  "tool-loop",
+  "none",
+] as const satisfies readonly ReasoningReplay[];
+
+export type ReasoningReplayPolicy = (typeof REASONING_REPLAYS)[number];
 
 export const llmConfigSchema = z.object({
   /** Any OpenAI-compatible endpoint: OpenAI, Ollama, LM Studio, vLLM, OpenRouter, ... */
@@ -92,6 +114,11 @@ export const llmConfigSchema = z.object({
    * `off` — the default — leaves the parameter off it entirely. See `REASONING_EFFORTS`.
    */
   reasoningEffort: z.enum(REASONING_EFFORTS).default("off"),
+  /**
+   * Which earlier assistant messages carry the model's thinking back to it. See
+   * `REASONING_REPLAYS`.
+   */
+  reasoningReplay: z.enum(REASONING_REPLAYS).default("all"),
   /**
    * Per-task model overrides, keyed by the entries in `MODEL_TASKS`. A missing or empty value
    * means the task is off (or falls back to `model`, per the task). Kept as an open record so
@@ -225,6 +252,11 @@ export const mcpServerSchema = z
     headers: z.record(z.string(), z.string()).default({}),
     /** Tools only hooks may call. The model is never offered them and cannot call them. */
     hiddenTools: z.array(z.string()).default([]),
+    /**
+     * Believe what this server's tools say about themselves: a `readOnlyHint` call runs beside the
+     * step's other reads. Off, every call to it runs alone. See `trustAnnotations` in the schema.
+     */
+    trustAnnotations: z.boolean().default(true),
     hooks: z.array(toolHookSchema).default([]),
   })
   .superRefine((server, ctx) => {
@@ -360,12 +392,16 @@ export interface ModelInfo {
 }
 
 /**
- * A stored turn. `reasoning_content` is ours — servers that stream chain-of-thought
- * on that side channel get it kept here so the panel survives a reload, and it is
- * stripped again before the history is replayed to the model.
+ * A stored turn. `reasoning_content` is what the model thought before it, whichever field it
+ * streamed in: kept so the panel survives a reload, and sent back as `reasoningReplay` says,
+ * under `reasoning_field`.
  */
 export type StoredMessage = OpenAI.ChatCompletionMessageParam & {
   reasoning_content?: string;
+  /** The field the thinking arrived in and goes back under. Absent is `reasoning_content`. */
+  reasoning_field?: ReasoningField;
+  /** OpenRouter's reasoning blocks, sent back as they came, under the same policy. */
+  reasoning_details?: Record<string, unknown>[];
   /** What the servers' hooks added to a user message. Ours; see `withContext`. */
   hook_context?: string;
   /** Attached to the last assistant message of a turn. */
@@ -414,6 +450,11 @@ export interface Session {
    * without one is sent whole. See `PruningRecord`.
    */
   pruning?: PruningRecord;
+  /**
+   * What the requests of earlier turns reported their prompts as, indexed into `messages`.
+   * Server-side only: it is the runner's, and the API leaves it out. Absent is no readings yet.
+   */
+  ledger?: TokenLedger;
   /** Raw chat-completions turns — replayed verbatim on the next request. */
   messages: StoredMessage[];
 }
@@ -424,7 +465,7 @@ export interface Session {
  * turn, and it has no business touching the messages table to draw a column of titles.
  */
 
-export type SessionSummary = Omit<Session, "messages"> & { messageCount: number };
+export type SessionSummary = Omit<Session, "messages" | "ledger"> & { messageCount: number };
 
 /**
  * `idle` is registered-but-not-connected: a success state, not a failure. min-agent runs the pool
@@ -469,6 +510,15 @@ export type StreamEvent =
   | { type: "text_delta"; text: string }
   | { type: "tool_use"; id: string; name: string; input: string }
   | { type: "tool_result"; toolUseId: string; content: string; isError: boolean }
+  // What the call's server logged while it ran, at `level` — a warning or worse, since that is
+  // what the servers are asked to send. Shown on the call's card; never stored, never sent to
+  // the model.
+  | { type: "server_log"; toolUseId: string; level: string; text: string }
+  // A call's server asking the person something mid-call. The call waits on the answer, which
+  // goes back through `answerElicitation`; `elicitation_end` says the question is gone — answered,
+  // or put away because the call ended first. Neither is stored or shown to the model.
+  | { type: "elicitation"; elicitation: Elicitation }
+  | { type: "elicitation_end"; id: string; action: ElicitationAction }
   | { type: "title"; title: string }
   | { type: "stats"; stats: TurnStats }
   // A hook that injected context or failed. The before-turn ones arrive ahead of the first

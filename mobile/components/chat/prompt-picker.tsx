@@ -1,4 +1,4 @@
-import type { McpPrompt } from "@shared/types.ts";
+import type { McpPrompt, McpPromptArgument } from "@shared/types.ts";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { View } from "react-native";
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button.tsx";
 import { Field, FieldLabel } from "@/components/ui/field.tsx";
 import { Input } from "@/components/ui/input";
+import { SEARCH_DEBOUNCE_MS, useSettledText } from "@/components/ui/search-input-base";
 import { api } from "@/lib/client.ts";
 import { queryKeys } from "@/lib/queries.ts";
 
@@ -37,6 +38,81 @@ export const useMcpPrompts = () =>
 
 /** A prompt's own name for itself, falling back to the id the server addresses it by. */
 const titleOf = (prompt: McpPrompt) => prompt.title?.trim() || prompt.name;
+
+/** The most suggestions drawn under a field. A server may send a hundred. */
+const MAX_SUGGESTIONS = 8;
+
+/**
+ * One of a prompt's arguments, with what its server suggests for it under the box.
+ *
+ * Asked once on opening, for an empty box — a server can list a repository's branches before a
+ * letter is typed — and again each time typing pauses, through the registry's own settle timer
+ * rather than a request per key. The other arguments go with the question, so a server can narrow
+ * by what is already filled in; they are read when it is asked, not part of when it is asked, so
+ * typing in one field does not set the others asking. A server that cannot complete answers
+ * nothing and the field is a plain box.
+ */
+function ArgumentField({
+  prompt,
+  arg,
+  values,
+  onChange,
+}: {
+  prompt: McpPrompt;
+  arg: McpPromptArgument;
+  values: Record<string, string>;
+  onChange: (next: string) => void;
+}) {
+  const value = values[arg.name] ?? "";
+  const [asked, setAsked] = useState("");
+  const settled = useSettledText(setAsked, SEARCH_DEBOUNCE_MS);
+  const suggestions = useQuery({
+    queryKey: [...queryKeys.mcpPrompts, "complete", prompt.server, prompt.name, arg.name, asked],
+    queryFn: () =>
+      api.mcpPromptCompletions(
+        prompt.server,
+        prompt.name,
+        { name: arg.name, value: asked },
+        values,
+      ),
+    staleTime: 30_000,
+  });
+  // Nothing to offer once the box already holds the one suggestion there is.
+  const shown = (suggestions.data ?? [])
+    .filter((suggestion) => suggestion !== value)
+    .slice(0, MAX_SUGGESTIONS);
+
+  const set = (next: string) => {
+    onChange(next);
+    settled.later(next);
+  };
+
+  return (
+    <Field>
+      <FieldLabel>{arg.required ? arg.name : `${arg.name} (optional)`}</FieldLabel>
+      <Input
+        aria-label={arg.name}
+        value={value}
+        onChangeText={set}
+        placeholder={arg.description ?? ""}
+      />
+      {shown.length > 0 ? (
+        <View className="flex-row flex-wrap gap-1.5">
+          {shown.map((suggestion) => (
+            <Button
+              key={suggestion}
+              variant="outline"
+              size="xs"
+              className="h-auto rounded-full py-1"
+              onPress={() => set(suggestion)}
+              content={suggestion}
+            />
+          ))}
+        </View>
+      ) : null}
+    </Field>
+  );
+}
 
 export function PromptPicker({
   visible,
@@ -121,15 +197,13 @@ export function PromptPicker({
 
           {chosen ? (
             chosen.arguments.map((arg) => (
-              <Field key={arg.name}>
-                <FieldLabel>{arg.required ? arg.name : `${arg.name} (optional)`}</FieldLabel>
-                <Input
-                  aria-label={arg.name}
-                  value={values[arg.name] ?? ""}
-                  onChangeText={(next) => setValues((held) => ({ ...held, [arg.name]: next }))}
-                  placeholder={arg.description ?? ""}
-                />
-              </Field>
+              <ArgumentField
+                key={arg.name}
+                prompt={chosen}
+                arg={arg}
+                values={values}
+                onChange={(next) => setValues((held) => ({ ...held, [arg.name]: next }))}
+              />
             ))
           ) : (
             <>

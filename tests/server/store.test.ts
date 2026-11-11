@@ -93,6 +93,25 @@ describe("session store", () => {
     expect((await store.getSession(session.id))?.pruning).toEqual({ ...marker, through: 1 });
   });
 
+  it("keeps the ledger, and forgets the readings that reached past a cut", async () => {
+    const session = await store.createSession();
+    expect((await store.getSession(session.id))?.ledger).toBeUndefined();
+    for (let idx = 0; idx < 6; idx++) {
+      await store.addMessage(session.id, idx, { role: "user", content: `message ${idx}` });
+    }
+    const ledger = [
+      { through: 0, prompt: 100, epoch: 0 },
+      { through: 2, prompt: 180, epoch: 0 },
+      { through: 4, prompt: 260, epoch: 1 },
+    ];
+    await store.updateSession(session.id, { ledger });
+    expect((await store.getSession(session.id))?.ledger).toEqual(ledger);
+
+    // A reading through message 4 counted messages that are gone once the transcript ends at 3.
+    await store.truncateSession(session.id, 3);
+    expect((await store.getSession(session.id))?.ledger).toEqual(ledger.slice(0, 2));
+  });
+
   it("returns null for a session that is not there", async () => {
     expect(await store.getSession("00000000-0000-0000-0000-000000000000")).toBeNull();
   });

@@ -1,3 +1,4 @@
+import { NO_KEY } from "@cubicecho/agent-core";
 import { graphql } from "graphql";
 import {
   assertLlmConfigPatch,
@@ -8,7 +9,7 @@ import {
 import { createSchema } from "../../server/graphql/schema.ts";
 import { createMcp } from "../../server/mcp.ts";
 import { createStore } from "../../server/store.ts";
-import { llmConfigSchema, modelForTask } from "../../shared/types.ts";
+import { llmConfigSchema, mcpServerSchema, modelForTask } from "../../shared/types.ts";
 import { isRecord } from "../helpers.ts";
 import { createTestDb } from "./db.ts";
 import { storedSettings } from "./helpers.ts";
@@ -146,15 +147,15 @@ describe("endpoint", () => {
   });
 
   /**
-   * Empty, not a placeholder. `@cubicecho/agent-core` fills one in for the SDK where it builds
-   * a client, but its probes for a local server's window send no `Authorization` header at all
-   * when the key is empty — so what this hands over with no key is something a server can see.
+   * The package's own placeholder, which it reads as no key everywhere: the SDK is handed it, and
+   * neither a request nor a probe for a local server's window carries an `Authorization` header
+   * for it. An empty string used to stand in for it here, from before the probes knew it.
    */
-  it("sends an empty key when neither the row nor the environment holds one", () => {
+  it("hands over agent-core's NO_KEY when neither the row nor the environment holds one", () => {
     const previous = process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_API_KEY;
     try {
-      expect(endpoint(llmConfigSchema.parse({})).apiKey).toBe("");
+      expect(endpoint(llmConfigSchema.parse({})).apiKey).toBe(NO_KEY);
     } finally {
       if (previous !== undefined) {
         process.env.OPENAI_API_KEY = previous;
@@ -212,5 +213,23 @@ describe("hasApiKey", () => {
     await storedSettings(settings, {});
     process.env.OPENAI_API_KEY = "sk-from-env";
     expect(await asked()).toEqual({ query: true, health: true });
+  });
+});
+
+describe("the MCP servers", () => {
+  const server = { id: "fs", command: "npx" };
+
+  it("trusts a server's tool annotations unless it is told not to", async () => {
+    await settings.saveMcpServers([
+      mcpServerSchema.parse(server),
+      mcpServerSchema.parse({ ...server, id: "mail", trustAnnotations: false }),
+    ]);
+
+    const saved = await settings.loadMcpServers();
+
+    expect(saved.map(({ id, trustAnnotations }) => ({ id, trustAnnotations }))).toEqual([
+      { id: "fs", trustAnnotations: true },
+      { id: "mail", trustAnnotations: false },
+    ]);
   });
 });

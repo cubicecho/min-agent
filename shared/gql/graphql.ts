@@ -136,6 +136,13 @@ export type DateTimeFilter = {
   startsWith?: InputMaybe<Scalars['String']['input']>;
 };
 
+/** An answer to a server's question: give it the content, refuse, or put the question away. */
+export enum ElicitationAction {
+  Accept = 'accept',
+  Cancel = 'cancel',
+  Decline = 'decline'
+}
+
 export type FloatFilter = {
   /** Every branch matches */
   AND?: InputMaybe<Array<FloatFilter>>;
@@ -306,6 +313,7 @@ export type McpServer = {
   label: Scalars['String']['output'];
   position: Scalars['Int']['output'];
   transport: McpServersTransportEnum;
+  trustAnnotations: Scalars['Boolean']['output'];
   url: Scalars['String']['output'];
 };
 
@@ -340,6 +348,8 @@ export type McpServerConfig = {
   id: Scalars['String']['output'];
   label: Scalars['String']['output'];
   transport: McpTransport;
+  /** Believe its tools' `readOnlyHint`, so its reads run beside a step's other reads. Off, every call to it runs alone. */
+  trustAnnotations: Scalars['Boolean']['output'];
   url: Scalars['String']['output'];
 };
 
@@ -373,6 +383,7 @@ export type McpServerCountNonNullAggregate = {
   label: Scalars['Int']['output'];
   position: Scalars['Int']['output'];
   transport: Scalars['Int']['output'];
+  trustAnnotations: Scalars['Int']['output'];
   url: Scalars['Int']['output'];
 };
 
@@ -388,6 +399,7 @@ export type McpServerCountNonNullHaving = {
   label?: InputMaybe<AggregateNumberFilter>;
   position?: InputMaybe<AggregateNumberFilter>;
   transport?: InputMaybe<AggregateNumberFilter>;
+  trustAnnotations?: InputMaybe<AggregateNumberFilter>;
   url?: InputMaybe<AggregateNumberFilter>;
 };
 
@@ -404,6 +416,7 @@ export enum McpServerDistinctColumn {
   Label = 'label',
   Position = 'position',
   Transport = 'transport',
+  TrustAnnotations = 'trustAnnotations',
   Url = 'url'
 }
 
@@ -425,6 +438,7 @@ export type McpServerFilters = {
   label?: InputMaybe<StringFilter>;
   position?: InputMaybe<IntFilter>;
   transport?: InputMaybe<McpServersTransportEnumFilter>;
+  trustAnnotations?: InputMaybe<BooleanFilter>;
   url?: InputMaybe<StringFilter>;
 };
 
@@ -447,6 +461,7 @@ export enum McpServerGroupByColumn {
   Label = 'label',
   Position = 'position',
   Transport = 'transport',
+  TrustAnnotations = 'trustAnnotations',
   Url = 'url'
 }
 
@@ -458,6 +473,7 @@ export type McpServerGroupKeys = {
   label?: Maybe<Scalars['String']['output']>;
   position?: Maybe<Scalars['Int']['output']>;
   transport?: Maybe<McpServersTransportEnum>;
+  trustAnnotations?: Maybe<Scalars['Boolean']['output']>;
   url?: Maybe<Scalars['String']['output']>;
 };
 
@@ -484,6 +500,7 @@ export type McpServerInput = {
   id: Scalars['String']['input'];
   label?: InputMaybe<Scalars['String']['input']>;
   transport?: InputMaybe<McpTransport>;
+  trustAnnotations?: InputMaybe<Scalars['Boolean']['input']>;
   url?: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -525,6 +542,7 @@ export type McpServerOrderBy = {
   label?: InputMaybe<InnerOrder>;
   position?: InputMaybe<InnerOrder>;
   transport?: InputMaybe<InnerOrder>;
+  trustAnnotations?: InputMaybe<InnerOrder>;
   url?: InputMaybe<InnerOrder>;
 };
 
@@ -621,6 +639,8 @@ export type Message = {
   id: Scalars['String']['output'];
   idx: Scalars['Int']['output'];
   reasoningContent?: Maybe<Scalars['String']['output']>;
+  reasoningDetails?: Maybe<Scalars['JSON']['output']>;
+  reasoningField?: Maybe<MessagesReasoningFieldEnum>;
   role: MessagesRoleEnum;
   session: Session;
   sessionId: Scalars['String']['output'];
@@ -658,6 +678,7 @@ export type MessageCountDistinctAggregate = {
   id: Scalars['Int']['output'];
   idx: Scalars['Int']['output'];
   reasoningContent: Scalars['Int']['output'];
+  reasoningField: Scalars['Int']['output'];
   role: Scalars['Int']['output'];
   sessionId: Scalars['Int']['output'];
   toolCallId: Scalars['Int']['output'];
@@ -669,6 +690,7 @@ export type MessageCountDistinctHaving = {
   id?: InputMaybe<AggregateNumberFilter>;
   idx?: InputMaybe<AggregateNumberFilter>;
   reasoningContent?: InputMaybe<AggregateNumberFilter>;
+  reasoningField?: InputMaybe<AggregateNumberFilter>;
   role?: InputMaybe<AggregateNumberFilter>;
   sessionId?: InputMaybe<AggregateNumberFilter>;
   toolCallId?: InputMaybe<AggregateNumberFilter>;
@@ -682,6 +704,8 @@ export type MessageCountNonNullAggregate = {
   id: Scalars['Int']['output'];
   idx: Scalars['Int']['output'];
   reasoningContent: Scalars['Int']['output'];
+  reasoningDetails: Scalars['Int']['output'];
+  reasoningField: Scalars['Int']['output'];
   role: Scalars['Int']['output'];
   sessionId: Scalars['Int']['output'];
   stats: Scalars['Int']['output'];
@@ -697,6 +721,8 @@ export type MessageCountNonNullHaving = {
   id?: InputMaybe<AggregateNumberFilter>;
   idx?: InputMaybe<AggregateNumberFilter>;
   reasoningContent?: InputMaybe<AggregateNumberFilter>;
+  reasoningDetails?: InputMaybe<AggregateNumberFilter>;
+  reasoningField?: InputMaybe<AggregateNumberFilter>;
   role?: InputMaybe<AggregateNumberFilter>;
   sessionId?: InputMaybe<AggregateNumberFilter>;
   stats?: InputMaybe<AggregateNumberFilter>;
@@ -713,6 +739,8 @@ export enum MessageDistinctColumn {
   Id = 'id',
   Idx = 'idx',
   ReasoningContent = 'reasoningContent',
+  ReasoningDetails = 'reasoningDetails',
+  ReasoningField = 'reasoningField',
   Role = 'role',
   SessionId = 'sessionId',
   Stats = 'stats',
@@ -734,6 +762,8 @@ export type MessageFilters = {
   id?: InputMaybe<StringFilter>;
   idx?: InputMaybe<IntFilter>;
   reasoningContent?: InputMaybe<StringFilter>;
+  reasoningDetails?: InputMaybe<JsonFilter>;
+  reasoningField?: InputMaybe<MessagesReasoningFieldEnumFilter>;
   role?: InputMaybe<MessagesRoleEnumFilter>;
   /** Matches rows whose session matches these filters */
   session?: InputMaybe<SessionFilters>;
@@ -761,6 +791,7 @@ export enum MessageGroupByColumn {
   Id = 'id',
   Idx = 'idx',
   ReasoningContent = 'reasoningContent',
+  ReasoningField = 'reasoningField',
   Role = 'role',
   SessionId = 'sessionId',
   ToolCallId = 'toolCallId'
@@ -773,6 +804,7 @@ export type MessageGroupKeys = {
   id?: Maybe<Scalars['String']['output']>;
   idx?: Maybe<Scalars['Int']['output']>;
   reasoningContent?: Maybe<Scalars['String']['output']>;
+  reasoningField?: Maybe<MessagesReasoningFieldEnum>;
   role?: Maybe<MessagesRoleEnum>;
   sessionId?: Maybe<Scalars['String']['output']>;
   toolCallId?: Maybe<Scalars['String']['output']>;
@@ -805,6 +837,7 @@ export type MessageMaxAggregate = {
   id?: Maybe<Scalars['String']['output']>;
   idx?: Maybe<Scalars['Int']['output']>;
   reasoningContent?: Maybe<Scalars['String']['output']>;
+  reasoningField?: Maybe<MessagesReasoningFieldEnum>;
   role?: Maybe<MessagesRoleEnum>;
   sessionId?: Maybe<Scalars['String']['output']>;
   toolCallId?: Maybe<Scalars['String']['output']>;
@@ -820,6 +853,7 @@ export type MessageMinAggregate = {
   id?: Maybe<Scalars['String']['output']>;
   idx?: Maybe<Scalars['Int']['output']>;
   reasoningContent?: Maybe<Scalars['String']['output']>;
+  reasoningField?: Maybe<MessagesReasoningFieldEnum>;
   role?: Maybe<MessagesRoleEnum>;
   sessionId?: Maybe<Scalars['String']['output']>;
   toolCallId?: Maybe<Scalars['String']['output']>;
@@ -837,6 +871,8 @@ export type MessageOrderBy = {
   id?: InputMaybe<InnerOrder>;
   idx?: InputMaybe<InnerOrder>;
   reasoningContent?: InputMaybe<InnerOrder>;
+  reasoningDetails?: InputMaybe<InnerOrder>;
+  reasoningField?: InputMaybe<InnerOrder>;
   role?: InputMaybe<InnerOrder>;
   /** Order by columns of the related session row */
   session?: InputMaybe<SessionOrderBy>;
@@ -852,6 +888,60 @@ export type MessageSumAggregate = {
 
 export type MessageSumHaving = {
   idx?: InputMaybe<AggregateNumberFilter>;
+};
+
+export enum MessagesReasoningFieldEnum {
+  /** Value: reasoning */
+  Reasoning = 'reasoning',
+  /** Value: reasoning_content */
+  ReasoningContent = 'reasoning_content'
+}
+
+export type MessagesReasoningFieldEnumFilter = {
+  /** Every branch matches */
+  AND?: InputMaybe<Array<MessagesReasoningFieldEnumFilter>>;
+  /** Negates the nested operators */
+  NOT?: InputMaybe<MessagesReasoningFieldEnumFilter>;
+  /** At least one branch matches; ANDed with any sibling operators */
+  OR?: InputMaybe<Array<MessagesReasoningFieldEnumFilter>>;
+  /** Matches values containing the given string. `%`, `_` and `\` are matched literally. */
+  contains?: InputMaybe<Scalars['String']['input']>;
+  /** Matches values ending with the given string. `%`, `_` and `\` are matched literally. */
+  endsWith?: InputMaybe<Scalars['String']['input']>;
+  /** Equal to */
+  eq?: InputMaybe<MessagesReasoningFieldEnum>;
+  /** Greater than */
+  gt?: InputMaybe<MessagesReasoningFieldEnum>;
+  /** Greater than or equal to */
+  gte?: InputMaybe<MessagesReasoningFieldEnum>;
+  /** Case-insensitive `contains`. */
+  iContains?: InputMaybe<Scalars['String']['input']>;
+  /** Case-insensitive `endsWith`. */
+  iEndsWith?: InputMaybe<Scalars['String']['input']>;
+  /** Case-insensitive `startsWith`. */
+  iStartsWith?: InputMaybe<Scalars['String']['input']>;
+  ilike?: InputMaybe<Scalars['String']['input']>;
+  /** Matches any one of these values (SQL `IN`) */
+  inArray?: InputMaybe<Array<MessagesReasoningFieldEnum>>;
+  /** When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own. */
+  insensitive?: InputMaybe<Scalars['Boolean']['input']>;
+  /** When true, matches rows where the column is not NULL */
+  isNotNull?: InputMaybe<Scalars['Boolean']['input']>;
+  /** When true, matches rows where the column is NULL */
+  isNull?: InputMaybe<Scalars['Boolean']['input']>;
+  like?: InputMaybe<Scalars['String']['input']>;
+  /** Less than */
+  lt?: InputMaybe<MessagesReasoningFieldEnum>;
+  /** Less than or equal to */
+  lte?: InputMaybe<MessagesReasoningFieldEnum>;
+  /** Not equal to */
+  ne?: InputMaybe<MessagesReasoningFieldEnum>;
+  notIlike?: InputMaybe<Scalars['String']['input']>;
+  /** Matches none of these values (SQL `NOT IN`) */
+  notInArray?: InputMaybe<Array<MessagesReasoningFieldEnum>>;
+  notLike?: InputMaybe<Scalars['String']['input']>;
+  /** Matches values starting with the given string. `%`, `_` and `\` are matched literally. */
+  startsWith?: InputMaybe<Scalars['String']['input']>;
 };
 
 export enum MessagesRoleEnum {
@@ -921,6 +1011,8 @@ export type ModelInfo = {
 };
 
 export type Mutation = {
+  /** Answers a question a tool's server asked in this chat's turn, by the `id` of its `elicitation` event. `content` is the form's fields by name, for `accept` only, and is checked against the question's schema. False when the question is no longer waiting — answered, or put away because its call ended first. */
+  answerElicitation: Scalars['Boolean']['output'];
   createSession: Session;
   createSessions: Array<Session>;
   deleteSession: Array<Session>;
@@ -941,6 +1033,14 @@ export type Mutation = {
   updateSettingSingle?: Maybe<Setting>;
   /** Each entry's updated rows, in entry order. An entry whose `where` matched no rows contributes `null` in its slot; an entry that matched several contributes each of its rows. */
   updateSettingsMany: Array<Maybe<Setting>>;
+};
+
+
+export type MutationAnswerElicitationArgs = {
+  action: ElicitationAction;
+  content?: InputMaybe<Scalars['JSON']['input']>;
+  id: Scalars['String']['input'];
+  sessionId: Scalars['String']['input'];
 };
 
 
@@ -1041,6 +1141,8 @@ export type Query = {
   health: Health;
   /** One prompt expanded with the given arguments, flattened to the single string a composer draft is. A multi-message prompt comes back with its roles labelled. */
   mcpPrompt: Scalars['String']['output'];
+  /** What the server suggests for one argument of a prompt, given its text so far and the other arguments. Empty from a server that cannot complete, or that failed to. */
+  mcpPromptCompletions: Array<Scalars['String']['output']>;
   /** The prompts the connected servers offer, for a picker. Empty when none of them does; a server that cannot be listed is omitted rather than failing the query. */
   mcpPrompts: Array<McpPrompt>;
   mcpServer?: Maybe<McpServer>;
@@ -1072,6 +1174,15 @@ export type QueryMcpPromptArgs = {
   args?: InputMaybe<Scalars['JSON']['input']>;
   name: Scalars['String']['input'];
   server: Scalars['String']['input'];
+};
+
+
+export type QueryMcpPromptCompletionsArgs = {
+  args?: InputMaybe<Scalars['JSON']['input']>;
+  argument: Scalars['String']['input'];
+  name: Scalars['String']['input'];
+  server: Scalars['String']['input'];
+  value: Scalars['String']['input'];
 };
 
 
@@ -1419,6 +1530,7 @@ export type Setting = {
   model: Scalars['String']['output'];
   pricing: Scalars['JSON']['output'];
   reasoningEffort: SettingsReasoningEffortEnum;
+  reasoningReplay: Scalars['String']['output'];
   speakReplies: Scalars['Boolean']['output'];
   sttModel: Scalars['String']['output'];
   systemPrompt: Scalars['String']['output'];
@@ -1462,6 +1574,7 @@ export type SettingCountDistinctAggregate = {
   maxToolIterations: Scalars['Int']['output'];
   model: Scalars['Int']['output'];
   reasoningEffort: Scalars['Int']['output'];
+  reasoningReplay: Scalars['Int']['output'];
   sttModel: Scalars['Int']['output'];
   systemPrompt: Scalars['Int']['output'];
   temperature: Scalars['Int']['output'];
@@ -1479,6 +1592,7 @@ export type SettingCountDistinctHaving = {
   maxToolIterations?: InputMaybe<AggregateNumberFilter>;
   model?: InputMaybe<AggregateNumberFilter>;
   reasoningEffort?: InputMaybe<AggregateNumberFilter>;
+  reasoningReplay?: InputMaybe<AggregateNumberFilter>;
   sttModel?: InputMaybe<AggregateNumberFilter>;
   systemPrompt?: InputMaybe<AggregateNumberFilter>;
   temperature?: InputMaybe<AggregateNumberFilter>;
@@ -1497,6 +1611,7 @@ export type SettingCountNonNullAggregate = {
   model: Scalars['Int']['output'];
   pricing: Scalars['Int']['output'];
   reasoningEffort: Scalars['Int']['output'];
+  reasoningReplay: Scalars['Int']['output'];
   speakReplies: Scalars['Int']['output'];
   sttModel: Scalars['Int']['output'];
   systemPrompt: Scalars['Int']['output'];
@@ -1517,6 +1632,7 @@ export type SettingCountNonNullHaving = {
   model?: InputMaybe<AggregateNumberFilter>;
   pricing?: InputMaybe<AggregateNumberFilter>;
   reasoningEffort?: InputMaybe<AggregateNumberFilter>;
+  reasoningReplay?: InputMaybe<AggregateNumberFilter>;
   speakReplies?: InputMaybe<AggregateNumberFilter>;
   sttModel?: InputMaybe<AggregateNumberFilter>;
   systemPrompt?: InputMaybe<AggregateNumberFilter>;
@@ -1538,6 +1654,7 @@ export enum SettingDistinctColumn {
   Model = 'model',
   Pricing = 'pricing',
   ReasoningEffort = 'reasoningEffort',
+  ReasoningReplay = 'reasoningReplay',
   SpeakReplies = 'speakReplies',
   SttModel = 'sttModel',
   SystemPrompt = 'systemPrompt',
@@ -1564,6 +1681,7 @@ export type SettingFilters = {
   model?: InputMaybe<StringFilter>;
   pricing?: InputMaybe<JsonFilter>;
   reasoningEffort?: InputMaybe<SettingsReasoningEffortEnumFilter>;
+  reasoningReplay?: InputMaybe<StringFilter>;
   speakReplies?: InputMaybe<BooleanFilter>;
   sttModel?: InputMaybe<StringFilter>;
   systemPrompt?: InputMaybe<StringFilter>;
@@ -1595,6 +1713,7 @@ export enum SettingGroupByColumn {
   MaxToolIterations = 'maxToolIterations',
   Model = 'model',
   ReasoningEffort = 'reasoningEffort',
+  ReasoningReplay = 'reasoningReplay',
   SpeakReplies = 'speakReplies',
   SttModel = 'sttModel',
   SystemPrompt = 'systemPrompt',
@@ -1614,6 +1733,7 @@ export type SettingGroupKeys = {
   maxToolIterations?: Maybe<Scalars['Int']['output']>;
   model?: Maybe<Scalars['String']['output']>;
   reasoningEffort?: Maybe<SettingsReasoningEffortEnum>;
+  reasoningReplay?: Maybe<Scalars['String']['output']>;
   speakReplies?: Maybe<Scalars['Boolean']['output']>;
   sttModel?: Maybe<Scalars['String']['output']>;
   systemPrompt?: Maybe<Scalars['String']['output']>;
@@ -1644,6 +1764,7 @@ export type SettingMaxAggregate = {
   maxToolIterations?: Maybe<Scalars['Int']['output']>;
   model?: Maybe<Scalars['String']['output']>;
   reasoningEffort?: Maybe<SettingsReasoningEffortEnum>;
+  reasoningReplay?: Maybe<Scalars['String']['output']>;
   sttModel?: Maybe<Scalars['String']['output']>;
   systemPrompt?: Maybe<Scalars['String']['output']>;
   temperature?: Maybe<Scalars['Float']['output']>;
@@ -1668,6 +1789,7 @@ export type SettingMinAggregate = {
   maxToolIterations?: Maybe<Scalars['Int']['output']>;
   model?: Maybe<Scalars['String']['output']>;
   reasoningEffort?: Maybe<SettingsReasoningEffortEnum>;
+  reasoningReplay?: Maybe<Scalars['String']['output']>;
   sttModel?: Maybe<Scalars['String']['output']>;
   systemPrompt?: Maybe<Scalars['String']['output']>;
   temperature?: Maybe<Scalars['Float']['output']>;
@@ -1693,6 +1815,7 @@ export type SettingOrderBy = {
   model?: InputMaybe<InnerOrder>;
   pricing?: InputMaybe<InnerOrder>;
   reasoningEffort?: InputMaybe<InnerOrder>;
+  reasoningReplay?: InputMaybe<InnerOrder>;
   speakReplies?: InputMaybe<InnerOrder>;
   sttModel?: InputMaybe<InnerOrder>;
   systemPrompt?: InputMaybe<InnerOrder>;
@@ -1901,13 +2024,19 @@ export type SubscriptionTurnArgs = {
 
 /** Something a turn did while it was running — a token, a tool call, its final cost. `type` discriminates; the fields that do not belong to it are null. */
 export type TurnEvent = {
+  /** On `elicitation_end`, how the question with this `id` ended: accept | decline | cancel. */
+  action?: Maybe<Scalars['String']['output']>;
   content?: Maybe<Scalars['String']['output']>;
+  /** On `elicitation`, a question a tool's server is asking the person mid-call: `id`, `toolUseId`, `serverId`, `server` (its label), `message` and `schema` (the form `requestedSchema`). Answer it with `answerElicitation`. */
+  elicitation?: Maybe<Scalars['JSON']['output']>;
   /** A `HookNote`: what one hook added, or why not. */
   hook?: Maybe<Scalars['JSON']['output']>;
   id?: Maybe<Scalars['String']['output']>;
   input?: Maybe<Scalars['String']['output']>;
   isError?: Maybe<Scalars['Boolean']['output']>;
   items?: Maybe<Array<Scalars['String']['output']>>;
+  /** On `server_log`, the level the tool's server logged at; `text` is the message. */
+  level?: Maybe<Scalars['String']['output']>;
   message?: Maybe<Scalars['String']['output']>;
   name?: Maybe<Scalars['String']['output']>;
   /** Per-turn counter from 1. */
@@ -1916,7 +2045,7 @@ export type TurnEvent = {
   text?: Maybe<Scalars['String']['output']>;
   title?: Maybe<Scalars['String']['output']>;
   toolUseId?: Maybe<Scalars['String']['output']>;
-  /** reasoning_delta | text_delta | tool_use | tool_result | title | stats | hook | done | followups | error. */
+  /** reasoning_delta | text_delta | tool_use | tool_result | server_log | elicitation | elicitation_end | title | stats | hook | done | followups | error. */
   type: Scalars['String']['output'];
 };
 
@@ -1949,6 +2078,7 @@ export type UpdateSettingInput = {
   model?: InputMaybe<Scalars['String']['input']>;
   pricing?: InputMaybe<Scalars['JSON']['input']>;
   reasoningEffort?: InputMaybe<SettingsReasoningEffortEnum>;
+  reasoningReplay?: InputMaybe<Scalars['String']['input']>;
   speakReplies?: InputMaybe<Scalars['Boolean']['input']>;
   sttModel?: InputMaybe<Scalars['String']['input']>;
   systemPrompt?: InputMaybe<Scalars['String']['input']>;
@@ -1967,26 +2097,26 @@ export type UpdateSettingManyInput = {
   where?: InputMaybe<SettingFilters>;
 };
 
-export type McpStateFragment = { status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> };
+export type McpStateFragment = { status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, trustAnnotations: boolean, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> };
 
 export type McpStatusQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type McpStatusQuery = { mcpStatus: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
+export type McpStatusQuery = { mcpStatus: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, trustAnnotations: boolean, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
 
 export type SaveMcpServersMutationVariables = Exact<{
   servers: Array<McpServerInput> | McpServerInput;
 }>;
 
 
-export type SaveMcpServersMutation = { saveMcpServers: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
+export type SaveMcpServersMutation = { saveMcpServers: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, trustAnnotations: boolean, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
 
 export type ReconnectMcpServerMutationVariables = Exact<{
   id: Scalars['String']['input'];
 }>;
 
 
-export type ReconnectMcpServerMutation = { reconnectMcpServer: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
+export type ReconnectMcpServerMutation = { reconnectMcpServer: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, trustAnnotations: boolean, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
 
 export type McpPromptsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -2001,6 +2131,17 @@ export type McpPromptQueryVariables = Exact<{
 
 
 export type McpPromptQuery = { mcpPrompt: string };
+
+export type McpPromptCompletionsQueryVariables = Exact<{
+  server: Scalars['String']['input'];
+  name: Scalars['String']['input'];
+  argument: Scalars['String']['input'];
+  value: Scalars['String']['input'];
+  args?: InputMaybe<Scalars['JSON']['input']>;
+}>;
+
+
+export type McpPromptCompletionsQuery = { mcpPromptCompletions: Array<string> };
 
 export type SessionSummaryFragment = { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, compaction?: unknown | null, messageCount: number };
 
@@ -2049,7 +2190,7 @@ export type TruncateSessionMutation = { truncateSession: number };
 export type ConfigQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type ConfigQuery = { hasApiKey: boolean, setting?: { baseUrl: string, model: string, maxTokens: number, temperature: number, maxToolIterations: number, systemPrompt: string, contextLimit: number, toolDiscovery: SettingsToolDiscoveryEnum, reasoningEffort: SettingsReasoningEffortEnum, taskModels: unknown, pricing: unknown, voiceBaseUrl: string, sttModel: string, ttsModel: string, ttsVoice: string, speakReplies: boolean } | null };
+export type ConfigQuery = { hasApiKey: boolean, setting?: { baseUrl: string, model: string, maxTokens: number, temperature: number, maxToolIterations: number, systemPrompt: string, contextLimit: number, toolDiscovery: SettingsToolDiscoveryEnum, reasoningEffort: SettingsReasoningEffortEnum, reasoningReplay: string, taskModels: unknown, pricing: unknown, voiceBaseUrl: string, sttModel: string, ttsModel: string, ttsVoice: string, speakReplies: boolean } | null };
 
 export type SaveConfigMutationVariables = Exact<{
   set: UpdateSettingInput;
@@ -2082,7 +2223,17 @@ export type TurnSubscriptionVariables = Exact<{
 }>;
 
 
-export type TurnSubscription = { turn: { seq: number, type: string, text?: string | null, id?: string | null, name?: string | null, input?: string | null, toolUseId?: string | null, content?: string | null, isError?: boolean | null, title?: string | null, stats?: unknown | null, hook?: unknown | null, items?: Array<string> | null, message?: string | null } };
+export type TurnSubscription = { turn: { seq: number, type: string, text?: string | null, id?: string | null, name?: string | null, input?: string | null, toolUseId?: string | null, content?: string | null, isError?: boolean | null, level?: string | null, title?: string | null, stats?: unknown | null, hook?: unknown | null, elicitation?: unknown | null, action?: string | null, items?: Array<string> | null, message?: string | null } };
+
+export type AnswerElicitationMutationVariables = Exact<{
+  sessionId: Scalars['String']['input'];
+  id: Scalars['String']['input'];
+  action: ElicitationAction;
+  content?: InputMaybe<Scalars['JSON']['input']>;
+}>;
+
+
+export type AnswerElicitationMutation = { answerElicitation: boolean };
 
 export class TypedDocumentString<TResult, TVariables>
   extends String
@@ -2115,6 +2266,7 @@ export const McpStateFragmentDoc = new TypedDocumentString(`
     url
     headers
     hiddenTools
+    trustAnnotations
     hooks
   }
   status
@@ -2170,6 +2322,7 @@ export const McpStatusDocument = new TypedDocumentString(`
     url
     headers
     hiddenTools
+    trustAnnotations
     hooks
   }
   status
@@ -2198,6 +2351,7 @@ export const SaveMcpServersDocument = new TypedDocumentString(`
     url
     headers
     hiddenTools
+    trustAnnotations
     hooks
   }
   status
@@ -2226,6 +2380,7 @@ export const ReconnectMcpServerDocument = new TypedDocumentString(`
     url
     headers
     hiddenTools
+    trustAnnotations
     hooks
   }
   status
@@ -2257,6 +2412,17 @@ export const McpPromptDocument = new TypedDocumentString(`
   mcpPrompt(server: $server, name: $name, args: $args)
 }
     `) as unknown as TypedDocumentString<McpPromptQuery, McpPromptQueryVariables>;
+export const McpPromptCompletionsDocument = new TypedDocumentString(`
+    query McpPromptCompletions($server: String!, $name: String!, $argument: String!, $value: String!, $args: JSON) {
+  mcpPromptCompletions(
+    server: $server
+    name: $name
+    argument: $argument
+    value: $value
+    args: $args
+  )
+}
+    `) as unknown as TypedDocumentString<McpPromptCompletionsQuery, McpPromptCompletionsQueryVariables>;
 export const SessionsDocument = new TypedDocumentString(`
     query Sessions {
   sessions {
@@ -2363,6 +2529,7 @@ export const ConfigDocument = new TypedDocumentString(`
     contextLimit
     toolDiscovery
     reasoningEffort
+    reasoningReplay
     taskModels
     pricing
     voiceBaseUrl
@@ -2411,11 +2578,24 @@ export const TurnDocument = new TypedDocumentString(`
     toolUseId
     content
     isError
+    level
     title
     stats
     hook
+    elicitation
+    action
     items
     message
   }
 }
     `) as unknown as TypedDocumentString<TurnSubscription, TurnSubscriptionVariables>;
+export const AnswerElicitationDocument = new TypedDocumentString(`
+    mutation AnswerElicitation($sessionId: String!, $id: String!, $action: ElicitationAction!, $content: JSON) {
+  answerElicitation(
+    sessionId: $sessionId
+    id: $id
+    action: $action
+    content: $content
+  )
+}
+    `) as unknown as TypedDocumentString<AnswerElicitationMutation, AnswerElicitationMutationVariables>;

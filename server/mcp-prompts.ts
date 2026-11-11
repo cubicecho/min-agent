@@ -1,4 +1,4 @@
-import { resultText } from "@cubicecho/agent-mcp-pool";
+import type { ServerPrompts } from "@cubicecho/agent-mcp-pool";
 import type { McpPrompt } from "../shared/types.ts";
 
 /**
@@ -17,85 +17,64 @@ import type { McpPrompt } from "../shared/types.ts";
  * never use. Expanding into the draft costs nothing until someone opens the picker, and leaves
  * the expansion editable before it is sent — which matters, because a template is a starting
  * point and the argument the user typed is rarely the whole of what they meant.
+ *
+ * The protocol is the pool's: listing every page, asking only servers that declared `prompts`,
+ * expanding and flattening. task-server had the same copy of it, and the two had begun to differ.
+ * What is left here is min-agent's shape for a picker.
  */
-
-/** One prompt as a server lists it: the fields of `prompts/list` the picker reads. */
-interface ListedPrompt {
-  name: string;
-  title?: string | undefined;
-  description?: string | undefined;
-  arguments?:
-    | { name: string; description?: string | undefined; required?: boolean | undefined }[]
-    | undefined;
-}
-
-/** The two calls of an MCP client this module makes. The SDK's `Client` is one. */
-interface PromptClient {
-  listPrompts(): Promise<{ prompts: ListedPrompt[] }>;
-  getPrompt(request: {
-    name: string;
-    arguments: Record<string, string>;
-  }): Promise<{ messages: { role: string; content: unknown }[] }>;
-}
 
 /** The part of the app's MCP servers that prompts are read from. `Mcp` is one. */
 export interface PromptSource {
-  /** The connected servers that offer prompts, in configuration order. */
-  promptServers(): { id: string; label: string }[];
-  /** One server's connected client. */
-  client(id: string): Promise<PromptClient>;
+  prompts(): Promise<ServerPrompts[]>;
+  expandPrompt(serverId: string, name: string, args: Record<string, string>): Promise<string>;
+  complete(
+    serverId: string,
+    prompt: string,
+    argument: { name: string; value: string },
+    context: Record<string, string>,
+  ): Promise<string[]>;
+  /** The name a server is shown under. */
+  labelOf(id: string): string;
 }
 
 /**
  * The prompts every connected prompt-serving server offers, in configuration order.
  *
+ * A server that could not list its prompts is a server with none, as far as a picker is
+ * concerned. The MCP tab is where a broken connection is diagnosed, and it already says so;
+ * failing the whole query here would empty the picker of the servers that answered.
+ *
  * @param mcp - The servers to ask.
  * @returns Every prompt, each with the server it came from.
  */
 export async function list(mcp: PromptSource): Promise<McpPrompt[]> {
-  const servers = mcp.promptServers();
-  if (servers.length === 0) {
-    return [];
-  }
-
-  const listings = await Promise.all(
-    servers.map(async ({ id, label }) => {
-      try {
-        const { prompts } = await (await mcp.client(id)).listPrompts();
-        return prompts.map((prompt) => ({
-          server: id,
-          serverLabel: label,
-          name: prompt.name,
-          title: prompt.title,
-          description: prompt.description,
-          arguments: (prompt.arguments ?? []).map((argument) => ({
-            name: argument.name,
-            description: argument.description,
-            required: argument.required ?? false,
-          })),
-        }));
-      } catch {
-        // A server that cannot list its prompts is a server with none, as far as a picker is
-        // concerned. The MCP tab is where a broken connection is diagnosed, and it already says
-        // so; failing the whole query here would empty the picker of the servers that answered.
-        return [];
-      }
-    }),
-  );
-  return listings.flat();
+  const listings = await mcp.prompts();
+  return listings.flatMap(({ serverId, prompts }) => {
+    const serverLabel = mcp.labelOf(serverId);
+    return prompts.map((prompt) => ({
+      server: serverId,
+      serverLabel,
+      name: prompt.name,
+      title: prompt.title,
+      description: prompt.description,
+      arguments: (prompt.arguments ?? []).map((argument) => ({
+        name: argument.name,
+        description: argument.description,
+        required: argument.required ?? false,
+      })),
+    }));
+  });
 }
 
 /**
  * One prompt expanded, flattened to the single string a composer draft is.
  *
- * `prompts/get` answers with *messages* — a list, each with a role — and the composer sends one
- * user message. The common case is a template that returns exactly one, and that one arrives
- * verbatim. Where a server returns several the roles are labelled and the text joined, which is
- * lossy: an `assistant` turn in a prompt is a worked example the server wanted in the history,
- * and as a line inside a user message it is a quotation of one. Labelling it at least leaves the
- * model able to read it as one, where dropping the roles would not. Worth revisiting if a server
- * that leans on multi-message prompts turns up; the fix is a session that can be seeded with
- * messages, which min-agent does not have.
+ * `prompts/get` answers with *messages* and the composer sends one user message. The pool's
+ * `promptText` returns a lone message verbatim and labels the roles where there are several,
+ * which is lossy: an `assistant` turn in a prompt is a worked example the server wanted in the
+ * history, and as a line inside a user message it is a quotation of one. Worth revisiting if a
+ * server that leans on multi-message prompts turns up; the fix is a session that can be seeded
+ * with messages, which min-agent does not have.
  *
  * @param mcp - The servers to ask.
  * @param server - The id of the server that offers the prompt.
@@ -103,33 +82,44 @@ export async function list(mcp: PromptSource): Promise<McpPrompt[]> {
  * @param args - The prompt's arguments, as typed.
  * @returns The expansion, as one string.
  */
-export async function get(
+export const get = (
   mcp: PromptSource,
   server: string,
   name: string,
   args: Record<string, string>,
-): Promise<string> {
-  const isUnknownServer = mcp.promptServers().some((offered) => offered.id === server) === false;
-  if (isUnknownServer) {
-    throw new Error(`${server} is not a connected MCP server that offers prompts`);
-  }
-
-  const { messages } = await (await mcp.client(server)).getPrompt({ name, arguments: args });
-  if (messages.length === 1) {
-    return messageText(messages[0].content);
-  }
-  return messages
-    .map((message) => `${message.role}: ${messageText(message.content)}`)
-    .join("\n\n")
-    .trim();
-}
+): Promise<string> => mcp.expandPrompt(server, name, args);
 
 /**
- * One message's content as text, with what has none named rather than dropped.
+ * What the server suggests for one of a prompt's arguments, given what is in it now and the
+ * arguments already filled in — which a server may narrow by, a repository's branches once its
+ * owner is known.
  *
- * A prompt message carries the same content blocks a tool result does, minus the list: an image
- * a server pasted in, a file it embedded. So it is flattened by the pool's own `resultText` as a
- * one-block result — a person reading the draft sees the same placeholder a model reads in a tool
- * result, and a `resource_link` keeps the uri and name that make it worth following.
+ * A failure is no suggestions rather than an error. The picker asks as the person pauses typing,
+ * and a refusal there has nowhere useful to go: the field still takes whatever is typed, and the
+ * expansion is where a bad argument is said.
+ *
+ * @param mcp - The servers to ask.
+ * @param server - The id of the server that offers the prompt.
+ * @param name - The prompt's name.
+ * @param argument - The argument being filled in, and its text so far.
+ * @param args - The other arguments, as typed.
+ * @returns The suggestions, in the server's order.
  */
-const messageText = (content: unknown) => resultText({ content: [content] });
+export async function complete(
+  mcp: PromptSource,
+  server: string,
+  name: string,
+  argument: { name: string; value: string },
+  args: Record<string, string>,
+): Promise<string[]> {
+  // Only the others: the argument being completed is `argument.value`, and a context that also
+  // carried it would hand the server the same text twice under two meanings.
+  const context = Object.fromEntries(
+    Object.entries(args).filter(([key, value]) => key !== argument.name && value !== ""),
+  );
+  try {
+    return await mcp.complete(server, name, argument, context);
+  } catch {
+    return [];
+  }
+}

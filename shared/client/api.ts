@@ -1,7 +1,11 @@
+import type { ElicitationAction, ElicitationContent } from "../elicitation.ts";
 import {
+  AnswerElicitationDocument,
   ConfigDocument,
   CreateSessionDocument,
   DeleteSessionDocument,
+  type ElicitationAction as ElicitationActionEnum,
+  McpPromptCompletionsDocument,
   McpPromptDocument,
   McpPromptsDocument,
   type McpServerInput,
@@ -130,6 +134,7 @@ const WRITABLE_COLUMNS: Record<keyof Omit<LlmConfig, "apiKey">, true> = {
   contextLimit: true,
   toolDiscovery: true,
   reasoningEffort: true,
+  reasoningReplay: true,
   taskModels: true,
   pricing: true,
   voiceBaseUrl: true,
@@ -173,9 +178,11 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
     // Deliberately not re-validated. Every one of these columns is non-null in the schema and
     // the query names them one at a time, so a field this client asks for either arrives
     // typed or the whole request fails — there is no partial answer for a parse to repair.
-    // The two casts are the JSON scalars, which GraphQL cannot describe more precisely.
+    // The two casts are the JSON scalars, which GraphQL cannot describe more precisely, and the
+    // third a string column whose values are checked on the way in (see the settings schema).
     return {
       ...setting,
+      reasoningReplay: setting.reasoningReplay as LlmConfig["reasoningReplay"],
       taskModels: setting.taskModels as LlmConfig["taskModels"],
       pricing: setting.pricing as LlmConfig["pricing"],
       hasApiKey,
@@ -242,6 +249,26 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
     truncateSession: async (id: string, idx: number) =>
       (await request(TruncateSessionDocument, { id, fromIdx: idx })).truncateSession,
 
+    /**
+     * Answers a question a tool's server asked during this chat's turn. `false` when it is no
+     * longer waiting, which a form takes as "gone", not as a failure.
+     */
+    answerElicitation: async (
+      sessionId: string,
+      id: string,
+      action: ElicitationAction,
+      content?: ElicitationContent,
+    ) =>
+      (
+        await request(AnswerElicitationDocument, {
+          sessionId,
+          id,
+          // The generated enum's members are these same three strings.
+          action: action as ElicitationActionEnum,
+          content,
+        })
+      ).answerElicitation,
+
     mcp: async () => (await request(McpStatusDocument)).mcpStatus.map(mcpState),
 
     saveMcp: async (servers: McpServerConfig[]) =>
@@ -264,6 +291,23 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
      */
     mcpPrompt: async (server: string, name: string, args: Record<string, string>) =>
       (await request(McpPromptDocument, { server, name, args })).mcpPrompt,
+
+    /** Suggestions for one of a prompt's arguments, given what is typed so far. */
+    mcpPromptCompletions: async (
+      server: string,
+      name: string,
+      argument: { name: string; value: string },
+      args: Record<string, string>,
+    ) =>
+      (
+        await request(McpPromptCompletionsDocument, {
+          server,
+          name,
+          argument: argument.name,
+          value: argument.value,
+          args,
+        })
+      ).mcpPromptCompletions,
   };
 
   /**

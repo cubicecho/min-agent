@@ -7,6 +7,7 @@ import {
   type StoredMessage,
 } from "../../shared/types.ts";
 import { jsonBody, messagesOf, sessionOf, turnStats } from "../helpers.ts";
+import { hookRunnerOver } from "./helpers.ts";
 
 /**
  * Compaction as a turn does it, pinned from outside: when the summary is asked for, what the
@@ -28,20 +29,27 @@ const SUMMARY_PROMPT =
   "facts, file paths, names, numbers, and anything still unresolved. Drop pleasantries and " +
   "anything already superseded. Write compact prose or bullets — no preamble, no sign-off.";
 
-/** How the message that stands in for the folded head opens. */
+/** How the user message that stands in for the folded head opens. */
 const SUMMARY_LEAD =
   "Summary of the earlier part of this conversation, which is no longer shown in full:\n\n";
+
+/** The assistant's reply to it, which closes the pair a fold is sent as since agent-core 4.23.1. */
+const SUMMARY_ACK = "Understood. I will continue from these notes.";
 
 let settings: LlmConfig;
 
 const mcp = {
   catalog: vi.fn(),
   tools: vi.fn(),
-  instructions: vi.fn(),
+  readsOnly: vi.fn(),
   resourceServers: vi.fn(),
   call: vi.fn(),
   runHooks: vi.fn(),
-  client: vi.fn(),
+  hookRunner: vi.fn(),
+  ask: vi.fn(),
+  resources: vi.fn(),
+  readResource: vi.fn(),
+  labelOf: vi.fn((id: string) => id),
 };
 
 /** Every `updateSession` patch, in order. */
@@ -208,9 +216,11 @@ beforeEach(() => {
   for (const mock of Object.values(mcp)) {
     mock.mockReset();
   }
+  // The pool binds the notice and passes each call its signal; the runs are `runHooks`.
+  mcp.hookRunner.mockImplementation(hookRunnerOver(mcp.runHooks));
   mcp.catalog.mockReturnValue([]);
   mcp.tools.mockReturnValue([]);
-  mcp.instructions.mockReturnValue([]);
+  mcp.readsOnly.mockReturnValue(false);
   mcp.resourceServers.mockReturnValue([]);
   mcp.runHooks.mockResolvedValue([]);
 });
@@ -267,20 +277,22 @@ describe("a turn that finds the window filling", () => {
     const [chatRequest] = chatted();
     expect(chatRequest.messages).toEqual([
       { role: "system", content: "Be brief." },
-      { role: "system", content: `${SUMMARY_LEAD}the notes` },
+      { role: "user", content: `${SUMMARY_LEAD}the notes` },
+      { role: "assistant", content: SUMMARY_ACK },
       { role: "user", content: long("q5") },
-      { role: "assistant", content: long("a5") },
+      { role: "assistant", content: long("a5"), reasoning_content: "thinking" },
       { role: "user", content: "and now?" },
     ]);
 
-    // And the readout counts the summary as its own part, not as history.
+    // And the readout counts the summary as its own part, not as history — the acknowledgement
+    // that closes it included.
     expect(stats.breakdown).toEqual({
       system: 1,
       guidance: 0,
       catalogue: 0,
       tools: 0,
-      summary: 12,
-      history: 84,
+      summary: 18,
+      history: 78,
       historyTools: 0,
       input: 3,
       inputTools: 0,
@@ -335,10 +347,10 @@ describe("a turn that finds the window filling", () => {
       through: 12,
       at: "2026-01-01T00:00:00.000Z",
     });
-    expect(messagesOf(chatted()[0])[1]).toEqual({
-      role: "system",
-      content: `${SUMMARY_LEAD}newer notes`,
-    });
+    expect(messagesOf(chatted()[0]).slice(1, 3)).toEqual([
+      { role: "user", content: `${SUMMARY_LEAD}newer notes` },
+      { role: "assistant", content: SUMMARY_ACK },
+    ]);
   });
 
   it("goes on folding when a beforeCompact hook answers with a veto", async () => {

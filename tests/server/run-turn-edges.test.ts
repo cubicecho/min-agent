@@ -14,6 +14,7 @@ import {
   type TurnStats,
 } from "../../shared/types.ts";
 import { declaredTools, errorOf, jsonBody, sessionOf } from "../helpers.ts";
+import { hookRunnerOver } from "./helpers.ts";
 
 /**
  * The edges of `runTurn`'s loop that `run-turn.test.ts` leaves alone: what a stop does at each
@@ -36,11 +37,15 @@ let offered: ToolDefinition[] = [];
 const mcp = {
   catalog: vi.fn(),
   tools: vi.fn(),
-  instructions: vi.fn(),
+  readsOnly: vi.fn(),
   resourceServers: vi.fn(),
   call: vi.fn(),
-  client: vi.fn(),
+  resources: vi.fn(),
+  readResource: vi.fn(),
+  labelOf: vi.fn((id: string) => id),
   runHooks: vi.fn(),
+  hookRunner: vi.fn(),
+  ask: vi.fn(),
 };
 
 /** Every row `addMessage` was handed, as it was at that moment. */
@@ -123,6 +128,13 @@ const refuses = (refusal: string): Reply => ({ refusal });
 const loses = (lost: string): Reply => ({ lost });
 
 async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  // The turn runs under the chat's id, so it asks llama.cpp's `/props` once for slots to pin it
+  // to, and an overflow asks it and LM Studio's route for the window it serves. None here;
+  // `run-turn.test.ts` is where the pinning and the served window are pinned.
+  const { pathname } = new URL(String(url));
+  if (pathname.endsWith("/props") || pathname.endsWith("/api/v0/models")) {
+    return new Response("{}", { status: 404 });
+  }
   requests.push(String(init?.body ?? url));
   log.push("request");
   const reply = String(url).endsWith("/chat/completions") ? script.shift() : undefined;
@@ -260,13 +272,15 @@ beforeEach(() => {
   for (const mock of Object.values(mcp)) {
     mock.mockReset();
   }
+  // The pool binds the notice and passes each call its signal; the runs are `runHooks`.
+  mcp.hookRunner.mockImplementation(hookRunnerOver(mcp.runHooks));
   mcp.catalog.mockImplementation(catalog);
   mcp.tools.mockImplementation((names?: string[]) =>
     names
       ? names.flatMap((name) => offered.filter((each) => each.function.name === name))
       : offered,
   );
-  mcp.instructions.mockReturnValue([]);
+  mcp.readsOnly.mockReturnValue(false);
   mcp.resourceServers.mockReturnValue([]);
   mcp.runHooks.mockResolvedValue([]);
 });
@@ -280,6 +294,8 @@ afterEach(() => {
 describe("the order a tool step is written and said in", () => {
   it("stores the reply before announcing its calls, and every result before the next request", async () => {
     offered = [READ, LS];
+    // Two reads, so they run as one batch: both announced and called before either answers.
+    mcp.readsOnly.mockReturnValue(true);
     mcp.call.mockImplementation(async (name: string) => {
       log.push(`call ${name}`);
       return name;
@@ -312,6 +328,8 @@ describe("the order a tool step is written and said in", () => {
 describe("stopping a turn while its tools run", () => {
   it("lets every call in flight answer, and stores each answer in call order", async () => {
     offered = [READ, LS, NOW];
+    // All three read, so all three are in flight when the stop arrives.
+    mcp.readsOnly.mockReturnValue(true);
     const controller = new AbortController();
     mcp.call.mockImplementation((name: string, _input: unknown, signal: AbortSignal) => {
       // One is back before the stop; the other two are ended by it.
@@ -557,7 +575,9 @@ describe("arguments a model gets wrong", () => {
   /**
    * The call is refused as it is in eager mode, but the loop has loaded the tool by then: it
    * loads a catalogued tool the moment it is called by name. Before #52 the arguments were read
-   * first and nothing was declared. Nothing is carried either way, since the tool never ran.
+   * first and nothing was declared. It is carried, as the loop's `used` has it: the model did
+   * call it, and only the arguments were what min-agent refused. Before the loop said which
+   * calls it had repaired, the refusal came ahead of min-agent's own count of what was called.
    */
   it("refuses a catalogued tool called with almost-JSON arguments, having loaded it", async () => {
     configure({ toolDiscovery: "ondemand" });
@@ -572,7 +592,7 @@ describe("arguments a model gets wrong", () => {
       ["c1", "model produced invalid tool arguments: {'path': '/a',}", true],
     ]);
     expect(bodies().map(declaredTools)).toEqual([["load_tools"], ["load_tools", "fs__read"]]);
-    expect(chat.loadedTools).toEqual([]);
+    expect(chat.loadedTools).toEqual(["fs__read"]);
   });
 
   /** Before #52 the pool was handed them as they were: `mcp.call("fs__read", ["/a"])`. */
@@ -586,6 +606,25 @@ describe("arguments a model gets wrong", () => {
     expect(mcp.call).not.toHaveBeenCalled();
     expect(results(events)).toEqual([
       ["c1", 'model produced tool arguments that are not an object: ["/a"]', true],
+    ]);
+  });
+
+  /**
+   * The loop opens JSON inside a string and says it took a repair, and that is what is refused.
+   * Before it said so, `JSON.parse` read the outer string, and the pool was handed a string where
+   * the tool had asked for an object.
+   */
+  it("refuses an object written inside a string, as it refuses any repair", async () => {
+    offered = [READ];
+    mcp.call.mockResolvedValue("contents");
+    const written = JSON.stringify(JSON.stringify({ path: "/a" }));
+    script = [asks(["c1", "fs__read", written]), says("Sorry.")];
+
+    const { events } = await run(sessionOf(), "read it");
+
+    expect(mcp.call).not.toHaveBeenCalled();
+    expect(results(events)).toEqual([
+      ["c1", `model produced invalid tool arguments: ${written}`, true],
     ]);
   });
 

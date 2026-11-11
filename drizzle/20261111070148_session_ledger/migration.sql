@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" ADD COLUMN "ledger" jsonb DEFAULT '[]' NOT NULL;

@@ -247,6 +247,20 @@ export const CHAT_DEFAULTS: Readonly<ChatSettings> = Object.freeze({
   copiedForMs: 1500,
 });
 
+export interface ElicitationSettings {
+  /**
+   * How long a server's question waits on the person before it is put away unanswered.
+   *
+   * The call that asked is held open while it waits, and a turn left running in a chat nobody is
+   * looking at has nobody to answer it. Ten minutes is time to go and look something up.
+   */
+  answerWaitMs: number;
+}
+
+export const ELICITATION_DEFAULTS: Readonly<ElicitationSettings> = Object.freeze({
+  answerWaitMs: 10 * 60_000,
+});
+
 export interface SessionListSettings {
   /** Below this many chats the search box is just something in the way, so the list hides it. */
   searchAfter: number;

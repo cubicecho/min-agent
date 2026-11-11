@@ -1,4 +1,5 @@
 import { AGENT_SPEC, type AgentSpec } from "@cubicecho/agent-core/spec";
+import { defineSpecColumns } from "@cubicecho/agent-core/spec/columns";
 import { MODEL_TASKS } from "../shared/model-tasks.ts";
 import type { LlmConfig } from "../shared/types.ts";
 
@@ -39,44 +40,55 @@ function tasksOf(taskModels: LlmConfig["taskModels"]): NonNullable<AgentSpec["ta
   return tasks;
 }
 
+/** Where in the extension each of min-agent's own columns lives. */
+const own = (key: string) => ["extensions", SPEC_EXTENSION, key] as const;
+
+/**
+ * The settings row's columns, each mapped to its field. A settings row is a host's bottom layer,
+ * so no column has an "inherit" marker: every value it holds is said, an empty one included.
+ *
+ * `taskModels` is one record over many fields, which a column table cannot map, so it is read by
+ * hand (`tasksOf`) and named as handled. `apiKey` has no row here and so no way into a document.
+ */
+const COLUMNS = defineSpecColumns<LlmConfig>(
+  {
+    baseUrl: { path: "endpoint.baseUrl" },
+    model: { path: "model.model" },
+    maxTokens: { path: "model.maxTokens" },
+    temperature: { path: "model.temperature" },
+    reasoningEffort: { path: "model.reasoningEffort" },
+    reasoningReplay: { path: "model.reasoningReplay" },
+    // Zero means "ask the server" on both sides, so it crosses as it is.
+    contextLimit: { path: "model.contextLength" },
+    systemPrompt: { path: `prompt.${PROMPT_PART}` },
+    toolDiscovery: { path: "tools.discovery" },
+    maxToolIterations: { path: "tools.maxIterations" },
+    pricing: {
+      path: own("pricing"),
+      // The two prices by name, so a field the row grows does not leave with it unasked.
+      toSpec: ({ inputPer1M, outputPer1M }) => ({ inputPer1M, outputPer1M }),
+    },
+    voiceBaseUrl: { path: own("voiceBaseUrl") },
+    sttModel: { path: own("sttModel") },
+    ttsModel: { path: own("ttsModel") },
+    ttsVoice: { path: own("ttsVoice") },
+    speakReplies: { path: own("speakReplies") },
+  },
+  { handled: ["tasks"] },
+);
+
 /**
  * Builds the agent spec for a settings row.
- * @param config The row. Every field is read by name and the row is never spread, so `apiKey`
- * has no way into the document.
+ * @param config The row. Only the columns `COLUMNS` names are read, so `apiKey` has no way into
+ * the document.
  * @returns A `cubicecho.agent/1` document with no `tools.servers` key, which means every server.
  */
 export function settingsSpec(config: LlmConfig): AgentSpec {
   return {
+    ...COLUMNS.toLayer(config),
     spec: AGENT_SPEC,
     id: "default",
     name: "min-agent",
-    endpoint: { baseUrl: config.baseUrl },
-    model: {
-      model: config.model,
-      maxTokens: config.maxTokens,
-      temperature: config.temperature,
-      reasoningEffort: config.reasoningEffort,
-      // Zero means "ask the server" on both sides, so it crosses as it is.
-      contextLength: config.contextLimit,
-    },
-    prompt: [{ id: PROMPT_PART, text: config.systemPrompt }],
-    tools: {
-      discovery: config.toolDiscovery,
-      maxIterations: config.maxToolIterations,
-    },
     tasks: tasksOf(config.taskModels),
-    extensions: {
-      [SPEC_EXTENSION]: {
-        pricing: {
-          inputPer1M: config.pricing.inputPer1M,
-          outputPer1M: config.pricing.outputPer1M,
-        },
-        voiceBaseUrl: config.voiceBaseUrl,
-        sttModel: config.sttModel,
-        ttsModel: config.ttsModel,
-        ttsVoice: config.ttsVoice,
-        speakReplies: config.speakReplies,
-      },
-    },
   };
 }

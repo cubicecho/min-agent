@@ -8,6 +8,7 @@ import {
   type StreamEvent,
 } from "../../shared/types.ts";
 import { declaredTools, jsonBody, messagesOf, sessionOf, textOf, turnStats } from "../helpers.ts";
+import { hookRunnerOver } from "./helpers.ts";
 
 /**
  * Pruning as a turn does it, read off the requests themselves: what the endpoint is posted on each
@@ -28,11 +29,15 @@ let offered: ToolDefinition[] = [];
 const mcp = {
   catalog: vi.fn(),
   tools: vi.fn(),
-  instructions: vi.fn(),
+  readsOnly: vi.fn(),
   resourceServers: vi.fn(),
   call: vi.fn(),
   runHooks: vi.fn(),
-  client: vi.fn(),
+  hookRunner: vi.fn(),
+  ask: vi.fn(),
+  resources: vi.fn(),
+  readResource: vi.fn(),
+  labelOf: vi.fn((id: string) => id),
 };
 
 /** Every row `addMessage` was handed, as it was at that moment. */
@@ -259,6 +264,8 @@ beforeEach(() => {
   for (const mock of Object.values(mcp)) {
     mock.mockReset();
   }
+  // The pool binds the notice and passes each call its signal; the runs are `runHooks`.
+  mcp.hookRunner.mockImplementation(hookRunnerOver(mcp.runHooks));
   mcp.catalog.mockImplementation(() => [
     {
       id: "fs",
@@ -274,7 +281,7 @@ beforeEach(() => {
       ? names.flatMap((name) => offered.filter((each) => each.function.name === name))
       : offered,
   );
-  mcp.instructions.mockReturnValue([]);
+  mcp.readsOnly.mockReturnValue(false);
   mcp.resourceServers.mockReturnValue([]);
   mcp.runHooks.mockResolvedValue([]);
   mcp.call.mockImplementation(async (_name: string, args: { path: string }) =>
@@ -577,7 +584,7 @@ describe("a turn that compacts", () => {
     expect(order).toEqual(["compaction", "pruning"]);
 
     const [first] = chatted();
-    expect(first.messages[1].role).toBe("system");
+    expect(first.messages[1].role).toBe("user");
     expect(first.messages[1].content).toContain("the notes");
     expect(resultsOf(first)).toEqual([
       "[result cleared, 400 chars]",

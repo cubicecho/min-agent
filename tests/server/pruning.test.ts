@@ -1,9 +1,8 @@
-import { expandNames, loadResult } from "@cubicecho/agent-core";
+import { expandNames, loadResult, proxyLoadResult } from "@cubicecho/agent-core";
 import type OpenAI from "openai";
 import { forApi } from "../../server/agent.ts";
 import { textTokens } from "../../server/compaction.ts";
 import { clampPruning, clearedChars, planPrune, sentWithStubs } from "../../server/pruning.ts";
-import { proxyLoadResult } from "../../server/tool-proxy.ts";
 import { PRUNING_DEFAULTS } from "../../shared/defaults.ts";
 import type { Session, StoredMessage } from "../../shared/types.ts";
 import { sessionOf, textOf } from "../helpers.ts";
@@ -220,7 +219,9 @@ describe("planPrune", () => {
   it("puts the marker on the earliest of the latest five results", () => {
     const messages = turn("q", 12);
     const at = results(messages);
-    expect(planPrune(session(messages), 1000)).toBe(at[at.length - PRUNING_DEFAULTS.keepLast]);
+    expect(planPrune(session(messages), 1000)?.through).toBe(
+      at[at.length - PRUNING_DEFAULTS.keepLast],
+    );
     // So the five from there on are sent whole and the seven before are not.
     const sent = sentWithStubs(messages, { through: at[7] });
     expect(at.map((index) => sent[index].content === messages[index].content)).toEqual([
@@ -232,8 +233,8 @@ describe("planPrune", () => {
   it("does not move with five results or fewer, whatever they weigh", () => {
     for (const count of [0, 1, 5]) {
       const messages = turn("q", count, 40_000);
-      expect(planPrune(session(messages), 1000)).toBeUndefined();
-      expect(planPrune(session(messages), 1000, { compacted: true })).toBeUndefined();
+      expect(planPrune(session(messages), 1000)?.through).toBeUndefined();
+      expect(planPrune(session(messages), 1000, { compacted: true })?.through).toBeUndefined();
     }
   });
 
@@ -243,28 +244,28 @@ describe("planPrune", () => {
     const cleared = clearedTokens(messages, 0, target);
     expect(cleared).toBeGreaterThan(0);
 
-    expect(planPrune(session(messages), windowFor(cleared))).toBe(target);
-    expect(planPrune(session(messages), windowFor(cleared + 1))).toBeUndefined();
-    expect(planPrune(session(messages), 1_000_000)).toBeUndefined();
+    expect(planPrune(session(messages), windowFor(cleared))?.through).toBe(target);
+    expect(planPrune(session(messages), windowFor(cleared + 1))?.through).toBeUndefined();
+    expect(planPrune(session(messages), 1_000_000)?.through).toBeUndefined();
   });
 
   it("moves with a compaction however little that clears", () => {
     const messages = turn("q", 6);
     const target = results(messages)[1];
-    expect(planPrune(session(messages), 1_000_000)).toBeUndefined();
-    expect(planPrune(session(messages), 1_000_000, { compacted: true })).toBe(target);
+    expect(planPrune(session(messages), 1_000_000)?.through).toBeUndefined();
+    expect(planPrune(session(messages), 1_000_000, { compacted: true })?.through).toBe(target);
   });
 
   it("does not move with a compaction when there is nothing to clear", () => {
     const messages = turn("q", 12, 100);
-    expect(planPrune(session(messages), 1000, { compacted: true })).toBeUndefined();
+    expect(planPrune(session(messages), 1000, { compacted: true })?.through).toBeUndefined();
   });
 
   it("does not move on its own when the window is unknown", () => {
     const messages = turn("q", 30, 40_000);
-    expect(planPrune(session(messages), 0)).toBeUndefined();
-    expect(planPrune(session(messages), Number.NaN)).toBeUndefined();
-    expect(planPrune(session(messages), -1)).toBeUndefined();
+    expect(planPrune(session(messages), 0)?.through).toBeUndefined();
+    expect(planPrune(session(messages), Number.NaN)?.through).toBeUndefined();
+    expect(planPrune(session(messages), -1)?.through).toBeUndefined();
   });
 
   it("never moves backwards, or to where it already is", () => {
@@ -272,8 +273,8 @@ describe("planPrune", () => {
     const target = results(messages)[7];
     for (const through of [target, target + 1, messages.length, messages.length + 50]) {
       const held = session(messages, { pruning: { through, at: AT } });
-      expect(planPrune(held, 1000)).toBeUndefined();
-      expect(planPrune(held, 1000, { compacted: true })).toBeUndefined();
+      expect(planPrune(held, 1000)?.through).toBeUndefined();
+      expect(planPrune(held, 1000, { compacted: true })?.through).toBeUndefined();
     }
   });
 
@@ -287,9 +288,9 @@ describe("planPrune", () => {
     const seven = clearedTokens(messages, 0, target);
     expect(seven).toBeGreaterThan(four);
 
-    expect(planPrune(held, windowFor(four))).toBe(target);
-    expect(planPrune(held, windowFor(four + 1))).toBeUndefined();
-    expect(planPrune(session(messages), windowFor(four + 1))).toBe(target);
+    expect(planPrune(held, windowFor(four))?.through).toBe(target);
+    expect(planPrune(held, windowFor(four + 1))?.through).toBeUndefined();
+    expect(planPrune(session(messages), windowFor(four + 1))?.through).toBe(target);
   });
 
   it("does not count results a fold ahead of the marker has already taken out", () => {
@@ -304,18 +305,18 @@ describe("planPrune", () => {
     expect(everything).toBeGreaterThan(sentOnly);
 
     const held = session(messages, { compaction: folded });
-    expect(planPrune(held, windowFor(sentOnly))).toBe(target);
-    expect(planPrune(held, windowFor(sentOnly + 1))).toBeUndefined();
+    expect(planPrune(held, windowFor(sentOnly))?.through).toBe(target);
+    expect(planPrune(held, windowFor(sentOnly + 1))?.through).toBeUndefined();
     // Without the fold the same window is passed easily.
-    expect(planPrune(session(messages), windowFor(sentOnly + 1))).toBe(target);
+    expect(planPrune(session(messages), windowFor(sentOnly + 1))?.through).toBe(target);
   });
 
   it("does not move for a target the fold has already passed", () => {
     const messages: StoredMessage[] = [...turn("q0", 12), { role: "user", content: "q1" }];
     const folded = { summary: "notes", through: messages.length - 1, at: AT };
     const held = session(messages, { compaction: folded });
-    expect(planPrune(held, 1000)).toBeUndefined();
-    expect(planPrune(held, 1000, { compacted: true })).toBeUndefined();
+    expect(planPrune(held, 1000)?.through).toBeUndefined();
+    expect(planPrune(held, 1000, { compacted: true })?.through).toBeUndefined();
   });
 
   it("counts from the marker when the fold is behind it", () => {
@@ -330,8 +331,8 @@ describe("planPrune", () => {
     });
     const between = clearedTokens(messages, marker, target);
 
-    expect(planPrune(held, windowFor(between))).toBe(target);
-    expect(planPrune(held, windowFor(between + 1))).toBeUndefined();
+    expect(planPrune(held, windowFor(between))?.through).toBe(target);
+    expect(planPrune(held, windowFor(between + 1))?.through).toBeUndefined();
   });
 
   it("does not count what would be left whole: short results and a proxied load", () => {
@@ -349,8 +350,8 @@ describe("planPrune", () => {
     expect(cleared).toBe(
       textTokens(messages[6]) - textTokens({ ...messages[6], content: stub(2000) }),
     );
-    expect(planPrune(session(messages), windowFor(cleared))).toBe(target);
-    expect(planPrune(session(messages), windowFor(cleared + 1))).toBeUndefined();
+    expect(planPrune(session(messages), windowFor(cleared))?.through).toBe(target);
+    expect(planPrune(session(messages), windowFor(cleared + 1))?.through).toBeUndefined();
   });
 });
 
@@ -435,7 +436,12 @@ describe("forApi with a pruning marker", () => {
       stub(2000),
       ...at.slice(3).map((index) => messages[index].content),
     ]);
-    expect(sent[sent.length - 1]).toEqual({ role: "assistant", content: "Done." });
+    // The thinking is not min-agent's own: it goes back, as `reasoningReplay` defaults to.
+    expect(sent[sent.length - 1]).toEqual({
+      role: "assistant",
+      content: "Done.",
+      reasoning_content: "hm",
+    });
     expect(chat.messages).toBe(messages);
     expect(messages).toEqual(before);
   });
@@ -451,9 +457,10 @@ describe("forApi with a pruning marker", () => {
 
     const sent = forApi(chat);
 
-    // The summary, then the second turn: its first three results cleared, its last five whole.
-    expect(sent).toHaveLength(1 + messages.length - first.length);
-    expect(sent[0].role).toBe("system");
+    // The summary and its acknowledgement, then the second turn: its first three results
+    // cleared, its last five whole.
+    expect(sent).toHaveLength(2 + messages.length - first.length);
+    expect(sent.slice(0, 2).map((message) => message.role)).toEqual(["user", "assistant"]);
     const tools = sent.filter((message) => message.role === "tool");
     expect(tools.map((message) => message.content)).toEqual([
       stub(2000),
@@ -482,7 +489,7 @@ describe("forApi with a pruning marker", () => {
     const next = (messages: StoredMessage[]) => {
       chat.messages.push(...messages);
       // The rule, where a turn runs it: after a step's results are in.
-      const through = planPrune(chat, limit);
+      const through = planPrune(chat, limit)?.through;
       const from = chat.pruning?.through ?? 0;
       if (through !== undefined) {
         chat.pruning = { through, at: AT };

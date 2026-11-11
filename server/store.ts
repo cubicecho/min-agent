@@ -33,7 +33,7 @@ const summarize = (row: SessionRow): SessionSummary => ({
 
 /** The session's own columns — never its messages, which are only ever appended. */
 export type SessionPatch = Partial<
-  Pick<Session, "title" | "model" | "usage" | "loadedTools" | "compaction" | "pruning">
+  Pick<Session, "title" | "model" | "usage" | "loadedTools" | "compaction" | "pruning" | "ledger">
 >;
 
 /**
@@ -65,7 +65,11 @@ export function createStore(db: Db) {
       .where(eq(messages.sessionId, id))
       .orderBy(asc(messages.idx));
     const { messageCount, ...summary } = summarize(row);
-    return { ...summary, messages: rows.map(toStored) };
+    return {
+      ...summary,
+      ...(row.ledger.length ? { ledger: row.ledger } : {}),
+      messages: rows.map(toStored),
+    };
   }
 
   /** Every chat, most recently active first, without their transcripts. */
@@ -162,6 +166,8 @@ export function createStore(db: Db) {
         compaction:
           session.compaction && session.compaction.through <= from ? session.compaction : null,
         pruning: clampPruning(session.pruning, from) ?? null,
+        // A reading that reached past the cut counted messages that are gone.
+        ledger: (session.ledger ?? []).filter((entry) => entry.through < from),
       })
       .where(eq(sessions.id, id));
 

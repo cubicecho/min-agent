@@ -1,4 +1,10 @@
-import { messageText, planFold, textTokens } from "../../server/compaction.ts";
+import {
+  appendLedger,
+  costOf,
+  messageText,
+  planFold,
+  textTokens,
+} from "../../server/compaction.ts";
 import type { Session, StoredMessage } from "../../shared/types.ts";
 
 const say = (role: "user" | "assistant", text: string): StoredMessage => ({ role, content: text });
@@ -187,6 +193,86 @@ describe("planFold", () => {
   });
 });
 
+describe("what a message costs", () => {
+  it("is what the server reported between two readings, and the estimate elsewhere", () => {
+    const messages = conversation(3);
+    // Two requests of one epoch, the second carrying one more exchange: 300 tokens between them.
+    const ledger = [
+      { through: 0, prompt: 1000, epoch: 0 },
+      { through: 2, prompt: 1300, epoch: 0 },
+    ];
+    const cost = costOf({ messages, ledger });
+
+    // The pair between the readings shares the 300 by length, which is near enough even here.
+    expect(cost(messages[1]) + cost(messages[2])).toBeCloseTo(300);
+    expect(Math.round(cost(messages[1]) / 10)).toBe(15);
+    // Nothing covers the first question or what came after the last reading.
+    expect(cost(messages[0])).toBe(textTokens(messages[0]));
+    expect(cost(messages[5])).toBe(textTokens(messages[5]));
+  });
+
+  it("moves the cut to where the measured tail fits", () => {
+    const messages = conversation(20);
+    const limit = 4000;
+    const estimated = cutOf(messages, limit);
+    // Every exchange measured at three times its estimate: the tail that fits is shorter.
+    const ledger = Array.from({ length: 20 }, (_, at) => ({
+      through: at * 2,
+      prompt: 500 + at * 6 * textTokens(messages[0]),
+      epoch: 0,
+    }));
+    const measured = planFold({ messages, ledger }, limit, limit)?.cut;
+    expect(estimated).toBeDefined();
+    expect(measured).toBeGreaterThan(estimated as number);
+  });
+});
+
+describe("appendLedger", () => {
+  const stored = conversation(3);
+
+  it("re-indexes a turn's readings from the transcript it was sent as into the stored one", () => {
+    // Folded through message 2, the loop was sent the summary pair and the last two exchanges,
+    // after an empty system prompt.
+    const sent = [
+      { role: "system" },
+      say("user", "notes"),
+      say("assistant", "noted"),
+      ...stored.slice(2),
+    ];
+    const ledger = [
+      { through: 1, prompt: 200, epoch: 0 },
+      { through: 4, prompt: 400, epoch: 0 },
+    ];
+    const compaction = { summary: "notes", through: 2, at: "2026-01-01T00:00:00.000Z" };
+    expect(appendLedger({ messages: stored, compaction }, sent, ledger)).toEqual([
+      // The first reading reached only into the summary, and is not of anything stored.
+      { through: 3, prompt: 400, epoch: 0 },
+    ]);
+  });
+
+  it("puts a turn's readings in epochs after the session's own", () => {
+    const kept = [{ through: 0, prompt: 100, epoch: 2 }];
+    const ledger = [
+      { through: 2, prompt: 300, epoch: 0 },
+      { through: 4, prompt: 500, epoch: 1 },
+    ];
+    expect(appendLedger({ messages: stored, ledger: kept }, stored, ledger)).toEqual([
+      ...kept,
+      { through: 2, prompt: 300, epoch: 3 },
+      { through: 4, prompt: 500, epoch: 4 },
+    ]);
+  });
+
+  it("keeps only the session's own where the two transcripts do not line up", () => {
+    const kept = [{ through: 0, prompt: 100, epoch: 0 }];
+    // A reply split into one message per call is stored whole, so the loop's is one longer.
+    const sent = [...stored.slice(0, 5), say("assistant", "piece"), stored[5]];
+    expect(
+      appendLedger({ messages: stored, ledger: kept }, sent, [{ through: 6, prompt: 9, epoch: 0 }]),
+    ).toBe(kept);
+  });
+});
+
 /**
  * The cut, for fixed inputs, as min-agent's own planner made it before agent-core's replaced it
  * (#50). Each expected value was read off that planner, so a row that changes is a long chat
@@ -232,21 +318,26 @@ describe("where a long chat is cut", () => {
     { limit: 2500, from: 5, cut: 25 },
     { limit: 2500, from: 20, cut: 25 },
     { limit: 2500, from: 23, cut: 25 },
-    // One message ahead of the cut is not worth a summary.
-    { limit: 2500, from: 24, cut: undefined },
+    // One message ahead of the user cut is not worth a summary, so since agent-core 4.5 the fold
+    // goes inside the last question's loop instead, keeping the question whole.
+    { limit: 2500, from: 24, cut: 35 },
     // The walk back stops short of `from`, so a later start is a later cut.
     { limit: 2500, from: 25, cut: 27 },
     { limit: 2500, from: 30, cut: 34 },
     { limit: 5000, from: 5, cut: 16 },
     { limit: 5000, from: 14, cut: 16 },
-    { limit: 5000, from: 15, cut: undefined },
+    { limit: 5000, from: 15, cut: 35 },
     { limit: 5000, from: 16, cut: 18 },
     { limit: 5000, from: 20, cut: 25 },
   ])("tool groups: $limit window, from $from → $cut", ({ cut, limit, ...at }) => {
     expect(cutOf(tools, limit, at)).toBe(cut);
-    // Never inside a group: a result with no call ahead of it is a request servers refuse.
+    // Never inside a group: a result with no call ahead of it is a request servers refuse. A cut
+    // that is not at a user message is a reply in the last question's loop.
     if (cut !== undefined) {
-      expect(tools[cut].role).toBe("user");
+      const inLastLoop = tools.slice(cut).every((message) => message.role !== "user");
+      expect(tools[cut].role === "user" || (tools[cut].role === "assistant" && inLastLoop)).toBe(
+        true,
+      );
     }
   });
 });

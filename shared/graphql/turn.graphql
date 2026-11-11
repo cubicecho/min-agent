@@ -11,10 +11,24 @@ subscription Turn($sessionId: String!, $prompt: String!, $model: String) {
     toolUseId
     content
     isError
+    level
     title
     stats
     hook
+    elicitation
+    action
     items
     message
   }
+}
+
+# A question a tool's server asked during the turn, answered from the chat it was asked in. False
+# when the question is no longer waiting: the call it belongs to may have ended first.
+mutation AnswerElicitation(
+  $sessionId: String!
+  $id: String!
+  $action: ElicitationAction!
+  $content: JSON
+) {
+  answerElicitation(sessionId: $sessionId, id: $id, action: $action, content: $content)
 }

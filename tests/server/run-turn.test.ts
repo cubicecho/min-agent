@@ -1,11 +1,16 @@
 import {
   type CatalogServer,
   catalogPrompt,
+  holdsDefinitions,
   LOAD_TOOLS_DEFINITION,
+  PROXY_TOOLS,
+  proxyCatalogPrompt,
   resetAll,
+  SESSION_HEADER,
   sanitizeTools,
+  serverInstructionsPrompt,
 } from "@cubicecho/agent-core";
-import type { HookOutcome, ToolDefinition } from "@cubicecho/agent-mcp-pool";
+import type { ElicitHandler, HookOutcome, ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import {
   type LlmConfig,
   llmConfigSchema,
@@ -23,6 +28,7 @@ import {
   textOf,
   turnStats,
 } from "../helpers.ts";
+import { hookRunnerOver } from "./helpers.ts";
 
 /**
  * `runTurn` as it behaves today, pinned from outside: what it posts to the endpoint, what it
@@ -45,14 +51,21 @@ let settings: LlmConfig;
 /** What the pool offers, in the pool's own order. Replaced per test by `offer`. */
 let offered: ToolDefinition[] = [];
 
+/** What each server's `initialize` said, by id, as the catalogue carries it. Emptied per test. */
+let guidance: Record<string, string> = {};
+
 const mcp = {
   catalog: vi.fn(),
   tools: vi.fn(),
-  instructions: vi.fn(),
+  readsOnly: vi.fn(),
   resourceServers: vi.fn(),
   call: vi.fn(),
-  client: vi.fn(),
+  resources: vi.fn(),
+  readResource: vi.fn(),
+  labelOf: vi.fn((id: string) => id),
   runHooks: vi.fn(),
+  hookRunner: vi.fn(),
+  ask: vi.fn(),
 };
 
 /** Every row `addMessage` was handed, as it was at that moment: the message is patched later. */
@@ -75,16 +88,25 @@ const store = {
   },
 };
 
-const { instructionsPrompt, runTurn } = await import("../../server/agent.ts");
+const { runTurn } = await import("../../server/agent.ts");
 const { RESOURCE_TOOLS } = await import("../../server/mcp-resources.ts");
-const { PROXY_TOOLS, proxyCatalogPrompt } = await import("../../server/tool-proxy.ts");
 
-/** One scripted answer: a stream of chunks, or a 400 with the endpoint's reason. */
-type Reply = { chunks: object[]; hangs?: boolean } | { refusal: string };
+/**
+ * One scripted answer: a stream of chunks, a 400 with the endpoint's reason, or a whole
+ * completion, which is how a side task such as a preselection is answered.
+ */
+type Reply = { chunks: object[]; hangs?: boolean } | { refusal: string } | { answer: string };
 
 /** What the endpoint will answer, in order, and every body it was posted. */
 let script: Reply[] = [];
 let requests: string[] = [];
+/** The `SESSION_HEADER` each chat completion carried, in order. */
+let sessions: (string | null)[] = [];
+/** Every `/props` probe, and the slots it answers with: none, unless a test says so. */
+let probes: string[] = [];
+let slots = 0;
+/** The window `/props` says the model was loaded in: none, unless a test says so. */
+let served = 0;
 
 /**
  * @param delta What this chunk adds to the reply.
@@ -142,6 +164,12 @@ const stalls = (...parts: string[]): Reply => ({
 });
 
 /**
+ * @param answer What a side task's model replies, whole.
+ * @returns A completion that is not streamed.
+ */
+const answers = (answer: string): Reply => ({ answer });
+
+/**
  * @param refusal The endpoint's reason, as the `error.message` of a 400.
  * @returns A request refused outright.
  */
@@ -149,17 +177,46 @@ const refuses = (refusal: string): Reply => ({ refusal });
 
 /**
  * The endpoint. Anything but a chat completion is a 404, and is recorded all the same, so a
- * request nobody scripted shows up in `requests` rather than passing unseen.
+ * request nobody scripted shows up in `requests` rather than passing unseen. The exceptions are
+ * the two routes a server says what it serves on: llama.cpp's `/props`, which a turn asks once
+ * for its slots because it runs under the chat's id, and LM Studio's `/api/v0/models`, which an
+ * overflow asks after it for the window. Both are kept apart in `probes`; `/props` answers a
+ * `total_slots` only where a test set `slots`, and an `n_ctx` only where it set `served`.
  *
  * @param url Where the SDK posted.
  * @param init The request, whose body is the JSON exactly as it went out.
  * @returns The next scripted reply.
  */
 async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const { pathname } = new URL(String(url));
+  if (pathname.endsWith("/api/v0/models")) {
+    probes.push(String(url));
+    return new Response("{}", { status: 404 });
+  }
+  if (pathname.endsWith("/props")) {
+    probes.push(String(url));
+    const props = {
+      ...(slots > 0 ? { total_slots: slots } : {}),
+      ...(served > 0 ? { default_generation_settings: { n_ctx: served } } : {}),
+    };
+    return Object.keys(props).length ? Response.json(props) : new Response("{}", { status: 404 });
+  }
   requests.push(String(init?.body ?? url));
+  sessions.push(new Headers(init?.headers).get(SESSION_HEADER));
   const reply = String(url).endsWith("/chat/completions") ? script.shift() : undefined;
   if (!reply) {
     return new Response("{}", { status: 404 });
+  }
+  if ("answer" in reply) {
+    return Response.json({
+      id: "completion",
+      object: "chat.completion",
+      created: 0,
+      model: "small",
+      choices: [
+        { index: 0, message: { role: "assistant", content: reply.answer }, finish_reason: "stop" },
+      ],
+    });
   }
   if ("refusal" in reply) {
     return new Response(JSON.stringify({ error: { message: reply.refusal } }), {
@@ -215,6 +272,7 @@ const tool = (name: string, description: string, properties = {}): ToolDefinitio
 const READ = tool("fs__read", "Read a file", { path: { type: "string", pattern: "^/" } });
 const LS = tool("fs__ls", "List a directory", { path: { type: "string" } });
 const NOW = tool("clock__now", "The time");
+const WRITE = tool("fs__write", "Write a file", { path: { type: "string" } });
 
 /**
  * @returns The catalogue the pool would list for `offered`: one server per name prefix, in the
@@ -224,7 +282,12 @@ function catalog(): CatalogServer[] {
   const servers = new Map<string, CatalogServer>();
   for (const { function: fn } of offered) {
     const id = fn.name.split("__")[0];
-    const server = servers.get(id) ?? { id, label: id === "fs" ? "Files" : "Clock", tools: [] };
+    const server = servers.get(id) ?? {
+      id,
+      label: id === "fs" ? "Files" : "Clock",
+      ...(guidance[id] ? { instructions: guidance[id] } : {}),
+      tools: [],
+    };
     server.tools.push({ name: fn.name, description: fn.description ?? "" });
     servers.set(id, server);
   }
@@ -309,15 +372,22 @@ beforeEach(() => {
 
   script = [];
   requests = [];
+  sessions = [];
+  probes = [];
+  slots = 0;
+  served = 0;
   stored = [];
   patches = [];
   updates = [];
   offered = [];
+  guidance = {};
   configure();
 
   for (const mock of Object.values(mcp)) {
     mock.mockReset();
   }
+  // The pool binds the notice and passes each call its signal; the runs are `runHooks`.
+  mcp.hookRunner.mockImplementation(hookRunnerOver(mcp.runHooks));
   mcp.catalog.mockImplementation(catalog);
   // Caller order when names are given, as the pool keeps it; a name nothing offers is skipped.
   mcp.tools.mockImplementation((names?: string[]) =>
@@ -325,7 +395,7 @@ beforeEach(() => {
       ? names.flatMap((name) => offered.filter((each) => each.function.name === name))
       : offered,
   );
-  mcp.instructions.mockReturnValue([]);
+  mcp.readsOnly.mockReturnValue(false);
   mcp.resourceServers.mockReturnValue([]);
   mcp.runHooks.mockResolvedValue([]);
 });
@@ -358,7 +428,8 @@ describe("the request body", () => {
         messages: [
           { role: "system", content: "" },
           { role: "user", content: "earlier" },
-          { role: "assistant", content: "before" },
+          // The thinking goes back on an earlier turn's reply too, as `reasoningReplay` defaults.
+          { role: "assistant", content: "before", reasoning_content: "thinking" },
           { role: "user", content: "hi" },
         ],
         stream: true,
@@ -386,7 +457,7 @@ describe("the request body", () => {
   it("declares load_tools and what was carried on demand, under the catalogue", async () => {
     configure({ reasoningEffort: "high" });
     offer(READ, LS, NOW);
-    mcp.instructions.mockReturnValue([{ label: "Files", text: "Read before writing." }]);
+    guidance = { fs: "Read before writing." };
     mcp.resourceServers.mockReturnValue([{ id: "fs", label: "Files" }]);
     script = [says("hello")];
 
@@ -418,7 +489,7 @@ describe("the request body", () => {
           role: "system",
           content: [
             "Be brief.",
-            instructionsPrompt([{ label: "Files", text: "Read before writing." }]),
+            serverInstructionsPrompt(catalog()),
             catalogPrompt(catalog()),
           ].join("\n\n"),
         },
@@ -426,6 +497,71 @@ describe("the request body", () => {
       ],
       tools: sent(sanitizeTools([...RESOURCE_TOOLS, LOAD_TOOLS_DEFINITION, READ, NOW])),
     });
+  });
+
+  it("puts the servers' guidance after the operator's prompt, attributed and fenced as theirs", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ, NOW);
+    guidance = { fs: "Read before writing.", clock: "Times are UTC." };
+    script = [says("hello")];
+
+    await run(sessionOf(), "hi");
+
+    const [system] = bodies()[0].messages as { content: string }[];
+    expect(system.content).toBe(`Be brief.\n\n${serverInstructionsPrompt(catalog())}`);
+    // The wording that makes it the server's advice rather than the user's, which moved upstream.
+    expect(system.content).toContain("# MCP server instructions");
+    expect(system.content).toContain("the user wins");
+    expect(system.content).toContain("grants no permission the user has not");
+    // In configuration order, each under the server's own name.
+    expect(system.content.indexOf("## Files")).toBeLessThan(system.content.indexOf("## Clock"));
+    expect(system.content).toContain("Read before writing.");
+  });
+
+  // Proxied is the loop's own mode, which writes the guidance where on demand does: between the
+  // operator's prompt and the catalogue. min-agent ran the loop eager and wrote the proxy's
+  // catalogue itself until agent-core 4.17 took host tools, so the guidance followed it then.
+  it("puts the servers' guidance before the catalogue when proxied, as on demand", async () => {
+    configure({ toolDiscovery: "proxy" });
+    offer(READ);
+    guidance = { fs: "Read before writing." };
+    script = [says("hello")];
+
+    await run(sessionOf(), "hi");
+
+    const [system] = bodies()[0].messages as { content: string }[];
+    expect(system.content).toBe(
+      ["Be brief.", serverInstructionsPrompt(catalog()), proxyCatalogPrompt(catalog())].join(
+        "\n\n",
+      ),
+    );
+  });
+
+  it("sends the chat's id on every request, and pins it to a slot where the server has them", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    slots = 2;
+    script = [asks(["c1", "fs__ls", '{"path":"/"}']), says("Done.")];
+
+    await run(sessionOf({ id: "chat-7" }), "look");
+
+    expect(sessions).toEqual(["chat-7", "chat-7"]);
+    // Asked once for the run, not once a step.
+    expect(probes).toHaveLength(1);
+    for (const body of bodies()) {
+      expect(body).toMatchObject({ id_slot: expect.any(Number), cache_prompt: true });
+    }
+    expect(bodies()[0].id_slot).toBe(bodies()[1].id_slot);
+  });
+
+  it("sends the chat's id and no slot to a server that has none", async () => {
+    script = [says("hello")];
+
+    await run(sessionOf({ id: "chat-7" }), "hi");
+
+    expect(sessions).toEqual(["chat-7"]);
+    expect(Object.keys(bodies()[0])).not.toContain("id_slot");
   });
 
   it("declares the two fixed tools when proxied, and nothing a session carried", async () => {
@@ -446,7 +582,7 @@ describe("the request body", () => {
           { role: "system", content: `Be brief.\n\n${proxyCatalogPrompt(catalog())}` },
           { role: "user", content: "hi" },
         ],
-        tools: sent(sanitizeTools(PROXY_TOOLS)),
+        tools: sent(sanitizeTools([...PROXY_TOOLS])),
       },
     ]);
   });
@@ -507,7 +643,9 @@ describe("a plain answer", () => {
     script = [says("Hel", "lo.")];
     const chat = sessionOf({ title: "New chat" });
 
-    // Half a second between the two deltas, and another after the last.
+    // Half a second between the two deltas, and another after the last. The generation is the
+    // loop's own reading of the request, from its first token to its end, so it counts both: with
+    // no decode time from the server, a turn's last token is known only by its stream closing.
     const { events, stats } = await run(chat, "hi there", {
       onEvent: (event) => {
         if (event.type === "text_delta") {
@@ -525,8 +663,8 @@ describe("a plain answer", () => {
       iterations: 1,
       toolCalls: 0,
       ttftMs: 0,
-      generationMs: 500,
-      tokensPerSecond: 20,
+      generationMs: 1000,
+      tokensPerSecond: 10,
       contextTokens: 110,
       lastPromptTokens: 100,
       contextLimit: 32_768,
@@ -561,7 +699,12 @@ describe("a plain answer", () => {
       { role: "assistant", content: "Hello.", stats },
     ]);
     const usage = { promptTokens: 100, completionTokens: 10, totalTokens: 110 };
-    expect(updates).toEqual([{ title: "hi there", model: "m" }, { usage }]);
+    // The turn's one request, which carried the question: kept for the next fold to weigh by.
+    const ledger = [{ through: 0, prompt: 100, epoch: 0 }];
+    expect(updates).toEqual([
+      { title: "hi there", model: "m" },
+      { usage, ledger },
+    ]);
     expect(chat).toMatchObject({ title: "hi there", model: "m", usage });
   });
 });
@@ -570,6 +713,8 @@ describe("a tool round trip", () => {
   it("runs the calls together, answers each by id, and stores them in call order", async () => {
     configure({ toolDiscovery: "eager" });
     offer(READ, LS);
+    // Both only read, on a server whose annotations are trusted, so nothing waits for anything.
+    mcp.readsOnly.mockReturnValue(true);
     mcp.call.mockImplementation(async (name: string) => {
       if (name === "fs__ls") {
         throw new Error("boom");
@@ -620,8 +765,8 @@ describe("a tool round trip", () => {
 
     // The identical pair shared one call, and each call was handed the turn's own signal.
     expect(mcp.call.mock.calls).toEqual([
-      ["fs__read", { path: "/a" }, controller.signal],
-      ["fs__ls", { path: "/" }, controller.signal],
+      ["fs__read", { path: "/a" }, controller.signal, expect.any(Function), expect.any(Function)],
+      ["fs__ls", { path: "/" }, controller.signal, expect.any(Function), expect.any(Function)],
     ]);
 
     const call = (id: string, name: string, args: string) => ({
@@ -655,6 +800,91 @@ describe("a tool round trip", () => {
     expect(stats).toMatchObject({ iterations: 2, toolCalls: 4, promptTokens: 200 });
   });
 
+  it("runs a write alone, after the reads asked before it and before the reads asked after", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ, LS, WRITE);
+    mcp.readsOnly.mockImplementation((name: string) => name !== "fs__write");
+    const log: string[] = [];
+    mcp.call.mockImplementation(async (name: string, input: { path: string }) => {
+      log.push(`start ${name} ${input.path}`);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      log.push(`end ${name} ${input.path}`);
+      return "ok";
+    });
+    script = [
+      asks(
+        ["c1", "fs__read", '{"path":"/a"}'],
+        ["c2", "fs__ls", '{"path":"/b"}'],
+        ["c3", "fs__write", '{"path":"/c"}'],
+        ["c4", "fs__read", '{"path":"/d"}'],
+        ["c5", "fs__ls", '{"path":"/e"}'],
+      ),
+      says("Done."),
+    ];
+
+    await run(sessionOf(), "tidy up");
+
+    expect(log).toEqual([
+      // [read ‖ read] → write → [read ‖ read]
+      "start fs__read /a",
+      "start fs__ls /b",
+      "end fs__read /a",
+      "end fs__ls /b",
+      "start fs__write /c",
+      "end fs__write /c",
+      "start fs__read /d",
+      "start fs__ls /e",
+      "end fs__read /d",
+      "end fs__ls /e",
+    ]);
+    // Stored in the order the model asked, whichever way they ran.
+    expect(
+      stored.flatMap((message) => (message.role === "tool" ? [message.tool_call_id] : [])),
+    ).toEqual(["c1", "c2", "c3", "c4", "c5"]);
+  });
+
+  it("runs every call alone where no server's annotations are trusted", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ);
+    // What the pool answers for a row with `trustAnnotations` off, whatever its tools declare.
+    mcp.readsOnly.mockReturnValue(false);
+    const log: string[] = [];
+    mcp.call.mockImplementation(async (_name: string, input: { path: string }) => {
+      log.push(`start ${input.path}`);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      log.push(`end ${input.path}`);
+      return "ok";
+    });
+    script = [
+      asks(["c1", "fs__read", '{"path":"/a"}'], ["c2", "fs__read", '{"path":"/b"}']),
+      says("Done."),
+    ];
+
+    await run(sessionOf(), "read both");
+
+    expect(log).toEqual(["start /a", "end /a", "start /b", "end /b"]);
+  });
+
+  it("asks about the tool a call_tool names, and counts its own tools as reads", async () => {
+    configure({ toolDiscovery: "proxy" });
+    offer(READ, LS);
+    mcp.readsOnly.mockReturnValue(true);
+    mcp.call.mockResolvedValue("ok");
+    script = [
+      asks(
+        ["c1", "load_tools", '{"names":["fs__read"]}'],
+        ["c2", "call_tool", '{"name":"fs__read","arguments":{"path":"/a"}}'],
+        ["c3", "call_tool", '{"name":"fs__ls","arguments":{"path":"/"}}'],
+      ),
+      says("Done."),
+    ];
+
+    await run(sessionOf(), "look");
+
+    // Never `call_tool` or `load_tools`: the pool knows neither, and would call each a write.
+    expect(mcp.readsOnly.mock.calls).toEqual([["fs__read"], ["fs__ls"]]);
+  });
+
   it("stops at the iteration cap, keeping what the turn had stored by then", async () => {
     configure({ toolDiscovery: "eager", maxToolIterations: 2 });
     offer(LS);
@@ -684,6 +914,29 @@ describe("a tool round trip", () => {
       "tool_use",
       "tool_result",
     ]);
+  });
+
+  it("keeps what the steps before a failure reported, for the next fold to weigh by", async () => {
+    configure({ toolDiscovery: "eager", maxToolIterations: 2 });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    script = [asks(["c1", "fs__ls", '{"path":"/"}']), asks(["c2", "fs__ls", '{"path":"/tmp"}'])];
+    const chat = sessionOf();
+
+    const { error } = await run(chat, "look around");
+
+    expect(error?.message).toBe("Stopped after 2 tool iterations.");
+    // Both requests, indexed into the stored transcript: the question, then the first result. One
+    // epoch, as the second request only added to the first.
+    const ledger = [
+      { through: 0, prompt: 100, epoch: 0 },
+      { through: 2, prompt: 100, epoch: 0 },
+    ];
+    expect(chat.ledger).toEqual(ledger);
+    expect(updates.at(-1)).toEqual({
+      usage: { promptTokens: 200, completionTokens: 20, totalTokens: 220 },
+      ledger,
+    });
   });
 });
 
@@ -726,7 +979,9 @@ describe("loading tools", () => {
         isError: false,
       },
     ]);
-    expect(mcp.call.mock.calls).toEqual([["clock__now", {}, undefined]]);
+    expect(mcp.call.mock.calls).toEqual([
+      ["clock__now", {}, undefined, expect.any(Function), expect.any(Function)],
+    ]);
     // Loading is bookkeeping: it is a round trip, and not a tool the model used.
     expect(stats).toMatchObject({ iterations: 3, toolCalls: 1 });
 
@@ -771,12 +1026,71 @@ describe("loading tools", () => {
     expect(stored[3]).toMatchObject({
       tool_calls: [{ id: "c2", function: { name: "call_tool", arguments: proxied } }],
     });
-    expect(mcp.call.mock.calls).toEqual([["fs__read", { path: "/a" }, undefined]]);
+    expect(mcp.call.mock.calls).toEqual([
+      ["fs__read", { path: "/a" }, undefined, expect.any(Function), expect.any(Function)],
+    ]);
     expect(stats).toMatchObject({ iterations: 3, toolCalls: 1 });
 
     // Nothing is carried: the session's list is neither read nor written.
     expect(chat.loadedTools).toEqual(["fs__ls"]);
     expect(updates.some((patch) => "loadedTools" in patch)).toBe(false);
+  });
+
+  /**
+   * min-agent hands the loop a transcript of its own on every step, since it sends the stored rows
+   * rather than the loop's copy. Since agent-core 4.23.9 the loop keeps what a proxied run loaded
+   * across a rewrite that left the load in place, so a load repeated on a later step is answered
+   * as already loaded, as min-agent's own answer said before the mode was the loop's. Up to
+   * 4.23.8 it was answered with the definition again.
+   */
+  it("answers a proxied load repeated on a later step as already loaded", async () => {
+    configure({ toolDiscovery: "proxy" });
+    offer(READ, LS);
+    script = [
+      asks(["c1", "load_tools", '{"names":["fs__read"]}']),
+      asks(["c2", "load_tools", '{"names":["fs__read"]}']),
+      says("Loaded."),
+    ];
+
+    const { events } = await run(sessionOf(), "get ready");
+
+    const loads = events.flatMap((event) => (event.type === "tool_result" ? [event.content] : []));
+    expect(loads).toHaveLength(2);
+    expect(holdsDefinitions(loads[0])).toBe(true);
+    expect(holdsDefinitions(loads[1])).toBe(false);
+    expect(loads[1]).toContain("Already loaded earlier in this conversation: fs__read.");
+  });
+
+  it("writes a proxied shortlist after the question as a load nobody made, and stores it", async () => {
+    configure({ toolDiscovery: "proxy", taskModels: { toolSelect: "small" } });
+    offer(READ, LS);
+    // The preselection first, beside the hooks, then the turn.
+    script = [answers('{"tools":["fs__read"]}'), says("Ready.")];
+    const chat = sessionOf();
+
+    const { events } = await run(chat, "read /a");
+
+    // The tool array has nowhere to put it, so the history does: the loop writes the exchange,
+    // and min-agent stores it like any other, between the question and the answer.
+    expect(stored.map(({ role }) => role)).toEqual(["user", "assistant", "tool", "assistant"]);
+    expect(stored[1]).toMatchObject({
+      content: null,
+      tool_calls: [{ function: { name: "load_tools", arguments: '{"names":["fs__read"]}' } }],
+    });
+    const definitions = textOf(stored[2]);
+    expect(holdsDefinitions(definitions)).toBe(true);
+    expect(definitions).toContain('"name":"fs__read"');
+    // Sent after the question, on the turn's one request.
+    const turn = bodies()[1];
+    expect(messagesOf(turn).map(({ role }) => role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "tool",
+    ]);
+    expect(events.slice(0, 2).map(({ type }) => type)).toEqual(["tool_use", "tool_result"]);
+    // Loading is bookkeeping, a shortlist's as much as the model's own.
+    expect(chat.messages.at(-1)?.stats).toMatchObject({ iterations: 1, toolCalls: 0 });
   });
 });
 
@@ -924,22 +1238,25 @@ describe("what the loop decides beyond the common path", () => {
     },
   });
 
-  it("streams reasoning as its own deltas, stores it with the reply, and never sends it back", async () => {
+  /**
+   * @param field Where the endpoint streams its thinking: llama.cpp's field, or Ollama's.
+   * @returns A step that thinks, then lists the directory.
+   */
+  const thinksThenLists = (field = "reasoning_content"): Reply => ({
+    chunks: [
+      chunk({ [field]: "They want " }),
+      chunk({ [field]: "a listing." }),
+      chunk({ tool_calls: [{ index: 0, ...call("c1", "fs__ls", "{}") }] }),
+      chunk({}, "tool_calls"),
+      USAGE,
+    ],
+  });
+
+  it("streams reasoning as its own deltas, stores it with the reply, and sends it back", async () => {
     configure({ toolDiscovery: "eager" });
     offer(LS);
     mcp.call.mockResolvedValue("a.txt");
-    script = [
-      {
-        chunks: [
-          chunk({ reasoning_content: "They want " }),
-          chunk({ reasoning_content: "a listing." }),
-          chunk({ tool_calls: [{ index: 0, ...call("c1", "fs__ls", "{}") }] }),
-          chunk({}, "tool_calls"),
-          USAGE,
-        ],
-      },
-      says("One file."),
-    ];
+    script = [thinksThenLists(), says("One file.")];
 
     const { events } = await run(sessionOf(), "what is here");
 
@@ -958,18 +1275,84 @@ describe("what the loop decides beyond the common path", () => {
     expect(replayed).toEqual({
       role: "assistant",
       content: null,
+      reasoning_content: "They want a listing.",
       tool_calls: [call("c1", "fs__ls", "{}")],
     });
+  });
+
+  it("stores the thinking under none too, and sends it back on nothing", async () => {
+    configure({ toolDiscovery: "eager", reasoningReplay: "none" });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    script = [thinksThenLists(), says("One file.")];
+
+    await run(sessionOf(), "what is here");
+
+    expect(stored[1]).toHaveProperty("reasoning_content", "They want a listing.");
+    const [, , replayed] = messagesOf(bodies()[1]);
+    expect(replayed).toEqual({
+      role: "assistant",
+      content: null,
+      tool_calls: [call("c1", "fs__ls", "{}")],
+    });
+  });
+
+  it("sends an earlier turn's thinking back on the next turn, under the field it arrived in", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    // Ollama's `/v1` streams it as `reasoning`, and reads back only that.
+    script = [thinksThenLists("reasoning"), says("One file."), says("Still one.")];
+    const chat = sessionOf();
+
+    await run(chat, "what is here");
+    expect(stored[1]).toMatchObject({
+      reasoning_content: "They want a listing.",
+      reasoning_field: "reasoning",
+    });
+    await run(chat, "and now?");
+
+    const [, , replayed] = messagesOf(bodies()[2]);
+    expect(replayed).toEqual({
+      role: "assistant",
+      content: null,
+      reasoning: "They want a listing.",
+      tool_calls: [call("c1", "fs__ls", "{}")],
+    });
+  });
+
+  it("drops an earlier turn's thinking under tool-loop, and keeps the loop's own", async () => {
+    configure({ toolDiscovery: "eager", reasoningReplay: "tool-loop" });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    script = [thinksThenLists(), says("One file."), thinksThenLists(), says("Still one.")];
+    const chat = sessionOf();
+
+    await run(chat, "what is here");
+    await run(chat, "and now?");
+
+    const thought = (body: Record<string, unknown>) =>
+      messagesOf(body).flatMap((message) =>
+        message.role === "assistant" ? [message.reasoning_content ?? null] : [],
+      );
+    // The second turn's second step: the first turn's call and answer carry none, its own call
+    // carries its thinking.
+    expect(thought(bodies()[3])).toEqual([null, null, "They want a listing."]);
   });
 
   it("answers the resource tools itself, and declares them ahead of everything else", async () => {
     configure({ toolDiscovery: "eager" });
     offer(READ);
     mcp.resourceServers.mockReturnValue([{ id: "fs", label: "Files" }]);
-    mcp.client.mockResolvedValue({
-      listResources: async () => ({ resources: [{ uri: "file:///a", name: "a" }] }),
-      readResource: async ({ uri }: { uri: string }) => ({ contents: [{ uri, text: "hello" }] }),
-    });
+    mcp.labelOf.mockReturnValue("Files");
+    mcp.resources.mockResolvedValue([
+      { serverId: "fs", resources: [{ uri: "file:///a", name: "a" }], templates: [] },
+    ]);
+    mcp.readResource.mockImplementation(async (_id: string, uri: string) => ({
+      uri,
+      text: "hello",
+      truncated: false,
+    }));
     script = [
       asks(
         ["c1", "list_resources", "{}"],
@@ -1005,6 +1388,82 @@ describe("what the loop decides beyond the common path", () => {
     // Not the pool's to run, and counted as tools the model used all the same.
     expect(mcp.call).not.toHaveBeenCalled();
     expect(stats).toMatchObject({ iterations: 2, toolCalls: 3 });
+  });
+
+  it("passes what a server logs during a call to the chat, on that call, and not to the model", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ);
+    mcp.call.mockImplementation(
+      async (
+        _name: string,
+        _input: unknown,
+        _signal: AbortSignal | undefined,
+        onLog: (entry: { level: string; data: unknown }) => void,
+      ) => {
+        onLog({ level: "warning", data: "index is stale" });
+        onLog({ level: "error", data: { code: 7 } });
+        return "contents";
+      },
+    );
+    script = [asks(["c1", "fs__read", '{"path":"/a"}']), says("Read.")];
+
+    const { events } = await run(sessionOf(), "read it");
+
+    expect(events.filter((event) => event.type === "server_log")).toEqual([
+      { type: "server_log", toolUseId: "c1", level: "warning", text: "index is stale" },
+      { type: "server_log", toolUseId: "c1", level: "error", text: '{"code":7}' },
+    ]);
+    // Before the result it explains, so a card has its warnings by the time it settles.
+    const order = events.flatMap((event) =>
+      event.type === "server_log" || event.type === "tool_result" ? [event.type] : [],
+    );
+    expect(order).toEqual(["server_log", "server_log", "tool_result"]);
+    expect(stored[2]).toEqual({ role: "tool", tool_call_id: "c1", content: "contents" });
+  });
+
+  it("asks the chat whose turn made the call what its server asks, and answers with the person", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ);
+    const question = {
+      message: "Which branch?",
+      requestedSchema: { type: "object" as const, properties: {} },
+    };
+    let answered: unknown;
+    mcp.call.mockImplementation(
+      async (
+        _name: string,
+        _input: unknown,
+        _signal: AbortSignal | undefined,
+        _onLog: unknown,
+        onElicit: ElicitHandler,
+      ) => {
+        answered = await onElicit("fs", question, { signal: new AbortController().signal });
+        return "contents";
+      },
+    );
+    mcp.labelOf.mockImplementation((id: string) => `${id} server`);
+    mcp.ask.mockImplementation(
+      async (_asking, _params, _signal, emit: (event: StreamEvent) => void) => {
+        emit({ type: "elicitation_end", id: "q1", action: "decline" });
+        return { action: "decline" };
+      },
+    );
+    script = [asks(["c1", "fs__read", '{"path":"/a"}']), says("Read.")];
+
+    const chat = sessionOf();
+    const { events } = await run(chat, "read it");
+
+    // Named for the chat and the call, under the name the server is shown by.
+    expect(mcp.ask.mock.calls[0].slice(0, 2)).toEqual([
+      { sessionId: chat.id, toolUseId: "c1", serverId: "fs", server: "fs server" },
+      question,
+    ]);
+    expect(answered).toEqual({ action: "decline" });
+    // What the question said goes on the turn's own stream, ahead of the result it held up.
+    const order = events.flatMap((event) =>
+      event.type === "elicitation_end" || event.type === "tool_result" ? [event.type] : [],
+    );
+    expect(order).toEqual(["elicitation_end", "tool_result"]);
   });
 
   it("loads a catalogued tool that is called without being loaded, and carries it", async () => {
@@ -1177,7 +1636,9 @@ describe("what the loop decides beyond the common path", () => {
       { type: "tool_use", id: "c1", name: "fs__read", input: '{"path":"/a"}' },
       { type: "tool_result", toolUseId: "c1", content: "contents of a", isError: false },
     ]);
-    expect(mcp.call.mock.calls).toEqual([["fs__read", { path: "/a" }, undefined]]);
+    expect(mcp.call.mock.calls).toEqual([
+      ["fs__read", { path: "/a" }, undefined, expect.any(Function), expect.any(Function)],
+    ]);
     expect(bodies().map(declaredTools)).toEqual([["load_tools"], ["load_tools"]]);
     expect(chat.loadedTools).toEqual([]);
   });
@@ -1208,6 +1669,29 @@ describe("what the loop decides beyond the common path", () => {
 
     expect(warn.mock.calls.map(([line]) => line)).toEqual([
       "[agent] prompt cache missed: 100 of 1100 cached, after a 1000-token request",
+    ]);
+  });
+
+  it("says what the loop makes of a miss between two steps of the turn", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    script = [
+      {
+        chunks: [
+          chunk({ tool_calls: [{ index: 0, ...call("c1", "fs__ls", "{}") }] }),
+          chunk({}, "tool_calls"),
+          usage(1100, 0),
+        ],
+      },
+      // 1100 went out on the step before and 100 of them were found, with nothing changed.
+      { chunks: [chunk({ content: "One file." }), chunk({}, "stop"), usage(1200, 100)] },
+    ];
+
+    await run(sessionOf(), "what is here");
+
+    expect(vi.mocked(console.warn).mock.calls.map(([line]) => line)).toEqual([
+      "[agent] prompt cache missed: 100 of 1200 cached, after a 1100-token request (none-known)",
     ]);
   });
 
@@ -1254,6 +1738,31 @@ describe("what the loop decides beyond the common path", () => {
     expect(requests).toHaveLength(1);
     expect(events).toEqual([]);
     expect(stored).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  it("names what the server serves when it is less than the turn was built to", async () => {
+    served = 16_384;
+    script = [refuses("This model's maximum context length is 16384 tokens.")];
+
+    const { error } = await run(sessionOf(), "hi");
+
+    expect(error?.name).toBe("ContextOverflow");
+    expect(error?.message).toBe(
+      "400 This model's maximum context length is 16384 tokens. — this turn was built to 32.8k " +
+        "tokens, so the window in Settings → Agent is larger than what the server actually serves " +
+        "(16.4k).",
+    );
+  });
+
+  it("leaves the setting out of an overflow the window it set was right about", async () => {
+    served = 32_768;
+    script = [refuses("This model's maximum context length is 32768 tokens.")];
+
+    const { error } = await run(sessionOf(), "hi");
+
+    // The server serves what the turn was built to, so the turn outgrew a right window.
+    expect(error?.name).toBe("ContextOverflow");
+    expect(error?.message).toBe("400 This model's maximum context length is 32768 tokens.");
   });
 
   it("stores a stopped tool call's answer before the stop ends the turn", async () => {

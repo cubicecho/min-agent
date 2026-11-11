@@ -180,7 +180,7 @@ Four tables, created by the migrations in `drizzle/`, which `runMigrations()` ap
 ```
 settings      one row, id 'default' — Settings → Agent
 mcp_servers   one row per server, ordered by position — Settings → MCP
-sessions      one per chat: title, dates, token totals, compaction and pruning state
+sessions      one per chat: title, dates, token totals, compaction and pruning state, ledger
 messages      one per message, ordered by (session_id, idx), cascade-deleted with the session
 ```
 
@@ -215,9 +215,11 @@ query    spec            the saved settings as a cubicecho.agent/1 document, wit
 query    mcpStatus       each configured server with its live connection state and tools
 query    mcpPrompts      the prompts the connected servers offer, for the composer's picker
 query    mcpPrompt       one of them expanded with its arguments, as text for a draft
+query    mcpPromptCompletions  what a server suggests for one of a prompt's arguments
 mutation setApiKey       write-only, so the key never comes back out over the API
 mutation saveMcpServers  replaces the whole set and reconnects
 mutation reconnectMcpServer
+mutation answerElicitation  answers a question a tool's server asked during a turn
 subscription turn        runs a turn and streams its events over SSE
 ```
 
@@ -254,7 +256,7 @@ Tools are exposed to the model as `<server id>__<tool name>`, so ids must be uni
 The panel is a list, and editing happens in a dialog over it. What you come here to read is which
 servers answered and what they are offering; a row says that in one line (where it points, its
 status, how many tools), and a broken one gives its second line over to the error instead of
-repeating an address you already typed. The eight fields behind it are for the once you write
+repeating an address you already typed. The nine fields behind it are for the once you write
 them.
 
 There is no Save button. The mutation replaces the whole set, so the dialog is the unit of
@@ -263,6 +265,20 @@ the exception that saves in place, because turning a server off is the one edit 
 without opening anything. A server that falls over while you are on another tab puts a dot on
 the MCP tab — the settings shell polls `mcpStatus` slowly on its own for that, which is all the
 dot costs.
+
+What a server says about itself when it connects — the `instructions` on its `initialize` answer —
+goes into the system prompt, after yours, under *MCP server instructions*. It is agent-core's
+`serverInstructions` that writes it, from the pool's catalogue: each server under its own name,
+fenced as that server's advice rather than the user's, and cut at about a thousand tokens so a
+server that pasted its README cannot crowd out the rest. A server is a third party, and this is
+text it controls landing where a model is most inclined to take it literally.
+
+**Trust what its tools say they do** is on for a new server, and decides which calls a turn runs
+together — see [below](#what-a-turn-does-not-make-you-wait-for). A tool can declare itself
+read-only (`readOnlyHint`); the spec calls that a claim, not a guarantee. It is on by default
+because every server here is one you added yourself, and because a false claim costs no more than
+every call cost before: they all ran together. Turn it off for a server that marks a tool with
+side effects as read-only, and every call to it runs alone.
 
 ### Resources and prompts
 
@@ -276,18 +292,63 @@ where the tool catalogue goes: a tool catalogue is bounded by what the operator 
 resource list is bounded by whatever the server happens to hold — a filesystem server pointed at
 a repository answers with the repository. `read_resource` takes a uri and finds the server
 itself, so a uri lifted out of a `[resource_link ...]` in a tool result is readable without a
-listing first.
+listing first. The listing carries each server's uri templates too, and every page of both: it is
+the pool's `resources()`, which follows the cursor to the end where min-agent once read the first
+page and stopped.
 
 **Prompts** are the server author's phrasing of a job their server is good at, parameterised.
 The protocol calls them user-controlled, so they go to the person rather than to the model: a
 button in the composer opens a picker, you fill in whatever blanks the template declares, and
 the expansion lands in the draft where you can edit it before sending. A prompt that expands to
 several messages is flattened with its roles labelled, which is lossy — the composer sends one
-user message — and is the honest version of a limitation min-agent would otherwise hide.
+user message — and is the honest version of a limitation min-agent would otherwise hide. Each
+blank offers what the server suggests for it (`completion/complete`), asked once as the picker
+opens and again whenever typing pauses; a server that cannot complete leaves a plain box.
 
 Both are capability-gated on the handshake, which the pool reports on `state()` since 2.5.0.
 Asking a server that never claimed the capability costs an error round trip per server per
-surface, and neither button nor tool appears when nothing offers one.
+surface, and neither button nor tool appears when nothing offers one. The listing, expansion,
+reading and completion are all the pool's (`prompts`, `expandPrompt`, `resources`,
+`readResource`, `complete`); what is min-agent's is the shape each takes on the way to a picker
+or a tool result.
+
+### Server logs
+
+What a server logs while one of its tools runs — MCP's `notifications/message` — lands on that
+call's card in the chat: the card says how many warnings, and opens on them. The servers are
+asked for `warning` and worse, since that is what a person reading a card is looking for. The
+log is a run event, passed through agent-core's `report.log` to the pool's `onLog`, and it is
+never stored or sent to the model: a card read back after a reload has none, as with notices.
+The pool can only tell which call a message belongs to when that call is the only request in
+flight on its server's connection, so two reads run together against one server hear nothing.
+
+### Questions from a server
+
+A server may ask the person something in the middle of a call — "which branch?", "overwrite
+it?" — through MCP's `elicitation/create`, and min-agent declares that it can be asked (form
+mode). The question appears in the turn, under the card of the call that caused it, as a form
+drawn from the server's `requestedSchema`: text, numbers, yes/no, and one or several of a list,
+which is all form mode allows. Send, Decline and Cancel are the protocol's three answers.
+
+- **It goes to the chat whose turn made the call.** Each call hands the pool its own `onElicit`,
+  so two chats on one server each hear their own questions. The pool can only tell which call a
+  question belongs to when that call is the only request in flight on the connection, as with a
+  log; one it cannot place is declined.
+- **The turn waits, and says so.** The live meter reads "Waiting on you" while a question is open.
+  A call that may be asked something runs on a clock that stops while a person answers, so the
+  two minutes a tool gets is two minutes of the tool's own time. A question nobody answers in ten
+  minutes is put away as a cancel.
+- **Leaving the chat cancels.** Switching to another chat, or off the chat screen, cancels every
+  open question of that chat's turn, and a question asked in a chat already left is cancelled as
+  it arrives. Stopping the turn cancels too, since the call it held open is gone.
+- **Who is asking is on the card,** as the server's label, and a field named like a password or a
+  token carries a warning: the spec says a server must not use elicitation to ask for a secret.
+- **The answer is checked twice.** `answerElicitation` refuses an accept whose content does not
+  fit the question's schema, with the same rules the form applies (`shared/elicitation.ts`). A
+  question that is no longer waiting answers `false` rather than failing.
+
+URL mode — a link the person opens, for a sign-in the client should not see — is not declared,
+and a server that asks for one anyway is declined.
 
 ### Hooks
 
@@ -330,6 +391,10 @@ A hook with `inject` set adds what the tool returns to the request, as a
 A hook that fails or times out costs the turn its context, never the turn itself. Under the reply,
 a line says what each hook added or why it failed. Context opens like thinking does, to show
 exactly what the model was given. A failed `afterTurn` line is kept with the turn.
+
+`afterTurn` is told the question as you typed it, without the context the hooks added to it, and
+each message under its index in the stored chat. That is the index `beforeCompact` uses when the
+same message is folded later, so a memory server sees one message, not two.
 
 **Hide from the model** (the switch beside each tool) takes a tool out of what the model is
 offered, and refuses the model's calls to it, while this row's hooks can still call it. That is
@@ -377,6 +442,9 @@ whether or not the model touches a single one.
   calling through `call_tool` than calling a declared tool. A preselected shortlist is added to
   the history as a `load_tools` call and its result, since the tool array can't take it. Nothing
   carries over between turns; the definitions loaded on earlier turns are still in the history.
+  The mode is agent-core's own, run by its loop; `list_resources` and `read_resource` are declared
+  beside the two and called directly, never through `call_tool`. A load repeated on a later step
+  of a turn is answered as already loaded.
 - **Eager** sends everything every time. Simpler, and right when there are only a few tools.
 
 Measured on the same server, same prompt:
@@ -473,6 +541,31 @@ A grammar is only ever involved in constrained decoding, so any mention of one c
 One error is deliberately *not* treated as a schema problem: Qwen templates raise
 `No user query found` when a transcript has no user turn, and some servers wrap it in the same
 "unable to generate parser" wording. Stripping keywords would not fix it, so it propagates.
+
+### Sending thinking back
+
+A reasoning model's thinking is stored with its reply — `reasoning_content` on the message row,
+whichever field the server streamed it in — so the panel survives a reload. **Settings → Agent →
+Send thinking back to the model** decides whether the model is sent it again:
+
+```
+All turns                every reply carries its thinking, earlier turns' included (the default)
+Only during tool calls   only the calls of the question being answered, until the answer is written
+Never                    nothing, as before
+```
+
+The default is agent-core's, and for the same reason. Thinking models — gpt-oss, DeepSeek,
+Qwen3.x, GLM — need their reasoning back between tool calls, DeepSeek's API refuses a request
+that leaves any out, and each model's chat template already drops what it does not want. A reply
+sent back as it was generated also keeps the server's prompt cache valid, which a stripped one
+does not. **Never** saves context on an endpoint that does nothing with it.
+
+It is decided in `forApi`, not left to agent-core's loop, because every step of a turn is sent
+the stored transcript rather than the loop's own copy, and an earlier turn's replies only ever
+come from there. The thinking goes back under the field it arrived in — llama.cpp reads only
+`reasoning_content`, Ollama's `/v1` only `reasoning` — which the row keeps as `reasoning_field`,
+and OpenRouter's `reasoning_details` blocks go back with it. An endpoint that refuses the field
+is latched off for that model and sent the request again without it, like any refusal above.
 
 ## Task models
 
@@ -572,7 +665,9 @@ this one's with only the unused guesses gone.
 
 A session that runs long eventually stops fitting. Compaction is the answer: once the last turn
 reported using **75%** of the context window, the oldest messages are replaced — for the purpose
-of the API call only — by one system message holding a summary of them.
+of the API call only — by a summary of them: a user message holding the notes and the assistant's
+one-line acknowledgement, which is how agent-core has sent a fold since 4.23.1, so the request
+never carries a second system message.
 
 Nothing is deleted. `session.compaction` records `{ summary, through, at }` and the messages stay
 on disk in full; `through` is simply the index the transcript is rebuilt from, so the UI still
@@ -585,8 +680,18 @@ The cut point is the fussy part. It has to land **immediately before a `user` me
 transcript that opens mid-exchange — a tool result with no assistant call above it, an assistant
 turn answering nothing — is rejected by most servers. agent-core's `planCompaction()` walks
 backwards from the end accumulating a tail worth about 35% of the window, then advances the cut
-forward to the next `user` message and gives up if that leaves fewer than two messages folded. A
-fold that would not pay for itself is not worth a round trip.
+forward to the next `user` message. If that leaves fewer than two messages folded, it folds
+inside the last question's tool loop instead — at a reply after the question, which is kept whole
+and sent after the summary — and gives up only if that folds too little as well. A fold that
+would not pay for itself is not worth a round trip.
+
+What a message weighs in that walk is measured where it can be. Every request reports its prompt
+tokens, and two requests of one turn where the second only appended to the first differ by exactly
+what was appended — the chat template's tokens, the hooks' context and a tool result's real density
+included. agent-core keeps those readings as a token ledger, and min-agent stores each turn's on
+the session, a failed turn's included (`sessions.ledger`, indexed into the stored transcript,
+kept out of the API), so the next fold weighs the messages it covers by what the server said
+they cost and estimates only the rest. Whether to fold at all is still the last turn's reported total.
 
 Like titling, a failure is swallowed: the turn proceeds on the full transcript, which is the
 behaviour you had before compaction existed.
@@ -595,13 +700,16 @@ Compaction is driven by what the *last* turn cost, so a single huge paste or an 
 tool result can still overrun a window nothing had a chance to fold. When it does, the endpoint's
 complaint comes back with the number the turn was working to added to it — the whole difficulty of
 that failure is that the two disagree, and the usual cause is a **Context window** larger than what
-the server actually serves (llama.cpp will list a 256k model it loaded at `-c 16384`).
+the server actually serves (llama.cpp will list a 256k model it loaded at `-c 16384`). So the
+server is asked what it serves (agent-core's `servedWindow`, from llama.cpp's `/props` or LM
+Studio's model listing): less than the turn was built to, and the message names the figure; at
+least as much, and the setting is left out of it, since the turn simply outgrew a right window.
 
 ### Clearing old tool results
 
 A file read forty steps ago is still ten thousand tokens on every request since, long after the
 model took what it wanted from it. So old tool results are sent as a one-line stub —
-`[result cleared, 12,345 chars]`, agent-core's `pruneToolResults()` — while the stored message
+`[result cleared, 12,345 chars]`, agent-core's stub — while the stored message
 and what the chat shows stay whole.
 
 The fussy part is the prompt cache. "All but the latest five results" is a window that slides:
@@ -611,8 +719,9 @@ instead. `session.pruning` records `{ through, at }`, results before `through` a
 and results from it on are sent whole, and a request is the one before it with only its tail
 added for as long as the marker stays where it is.
 
-`planPrune()` in `server/pruning.ts` decides when it moves, and it is asked at the start of a turn
-and after each step's results are in — a long turn of tool calls is where the window fills, and
+`planPrune()` in `server/pruning.ts` decides when it moves — agent-core's `planPrune()` on
+min-agent's policy, with its `pruneThrough()` making the stubs — and it is asked at the start of a
+turn and after each step's results are in — a long turn of tool calls is where the window fills, and
 nothing compacts mid-turn. The marker goes onto the fifth result from the end, and only:
 
 - **with a compaction**, which has just rewritten the head of the request, so whatever a move
@@ -633,8 +742,11 @@ assistant reply carries a footnote like:
 
     187 out · 44.7 tok/s · 420ms to first token · 4.6s · 2 tools
 
-Throughput is measured over generation only, from the first streamed token to the last, so a slow
-prefill does not drag the rate down — that wait is reported separately as *to first token*.
+Throughput is measured over generation only, so a slow prefill does not drag the rate down — that
+wait is reported separately as *to first token*. The figures are agent-core's account of the turn
+(`result.metrics` and `result.usage`): the decode time llama.cpp reports where it reports one, and
+otherwise the time each request spent streaming from its first token to its end, summed; *to first
+token* is the mean over the turn's requests.
 `2 tools` and `3 rounds` only appear when the turn actually used tools. The stats are stored with
 the session, so they survive a reload.
 
@@ -688,10 +800,13 @@ the total: it is what the request would have carried on top.
 
 ### What a turn does not make you wait for
 
-Tool calls a model asks for together run together. They arrive in one round trip and do not
-depend on each other, so the round trip costs the slowest of them rather than the sum, and a
-result is shown the moment it lands. What is *stored* stays in call order, so the transcript
-still reads the way the model wrote it. Two identical calls in one turn share a single MCP round
+Reads a model asks for together run together, so the round trip costs the slowest of them rather
+than the sum, and a result is shown the moment it lands. A read is a call to a tool its server
+marks read-only, on a server whose annotations are trusted, or one of min-agent's own —
+`load_tools`, `list_resources`, `read_resource`. Anything else runs alone, in the place the model
+asked for it: read A, read B, write C, read D runs as `[A ‖ B] → C → D`, so two writes land in the
+order the model was told they did, and a read asked for after a write sees what it wrote. What is
+*stored* stays in call order, so the transcript still reads the way the model wrote it. Two identical calls in one turn share a single MCP round
 trip, and a call that failed is not remembered as an answer — a retry is a real retry.
 
 Follow-up chips are written after the answer by a second, smaller model. The turn now sends
@@ -699,6 +814,11 @@ Follow-up chips are written after the answer by a second, smaller model. The tur
 take, so the composer unlocks with the answer instead of a beat later. A stream that idles longer
 than 15 seconds — a slow tool, a model still thinking — sends a comment frame, which clients skip,
 so nothing between here and the browser mistakes a working turn for a dead connection.
+
+Every request carries the chat's id as `X-Session-Id`, for a router in front of the model to keep
+a chat on one backend. On a llama.cpp server that reports its slots, the turn also holds a slot of
+its own and asks for the same one next turn, so a long chat keeps its cached prefix even while
+another chat's turn is running on the server.
 
 Stopping a turn keeps what it had already said. The assistant message used to be appended only
 once the stream ended, so pressing stop left the reply on screen and nothing in the transcript;

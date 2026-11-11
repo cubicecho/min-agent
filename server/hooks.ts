@@ -11,7 +11,8 @@ import type { Mcp } from "./mcp.ts";
  * session looks like to them, where their context lands in a request, and what is said about each
  * one. This is the layer between the two that is min-agent's own: the pool as the runner, the
  * preface that names it, and a note as the chat's stream carries it. `agent.ts` calls it at each
- * point, and the sessions `onWrite` hook in `graphql/schema.ts` calls it for a delete.
+ * point but `afterTurn`, which the loop fires with what `afterTurnHooks` tells it, and the
+ * sessions `onWrite` hook in `graphql/schema.ts` calls it for a delete.
  *
  * `sessionEnd` is never fired. A chat does not end, it is only left, and a hook bound to it
  * would wait for something that does not happen here.
@@ -29,19 +30,16 @@ export const HOST = "min-agent";
 const notice = (message: string) => console.warn(`[hooks] ${message}`);
 
 /** What the hooks run on: the app's MCP servers, or a test's stand-in for them. */
-export type HookPool = Pick<Mcp, "runHooks">;
+export type HookPool = Pick<Mcp, "hookRunner">;
 
 /**
- * The pool, as the runner agent-core's hooks are handed. The runner it returns never rejects, as
- * the pool's `runHooks` does not.
+ * The pool, as the runner agent-core's hooks are handed: the pool's own `hookRunner`, with the
+ * notices bound to this module's log line. It never rejects, as the pool's `runHooks` does not.
  *
  * @param mcp The servers whose hooks run.
  * @returns What runs one event's hooks, `signal` ending them all.
  */
-const runnerOf =
-  (mcp: HookPool): core.HookRunner =>
-  (event, context, { signal }) =>
-    mcp.runHooks(event, context, { signal, onNotice: notice });
+const runnerOf = (mcp: HookPool): core.HookRunner => mcp.hookRunner({ onNotice: notice });
 
 /**
  * A note as the chat's stream carries it.
@@ -159,7 +157,7 @@ export async function gather(
  * at that point has not asked for the turn not to be remembered.
  *
  * @param mcp The servers whose hooks run.
- * @param event `afterTurn`, `beforeCompact` or `sessionDelete`.
+ * @param event `sessionDelete`, or any other event whose hooks add nothing to a request.
  * @param context What the hooks are told.
  * @param emit Hears each note as a `hook` event.
  * @returns The notes, which with nothing injected are only ever failures.
@@ -192,6 +190,48 @@ export const compactionHooks = (
   run: runnerOf(mcp),
   context: { session: { id: session.id }, host: HOST },
 });
+
+/**
+ * The hooks as the loop takes them, for it to tell `afterTurn` once the turn has its answer, and
+ * to fire nothing else.
+ *
+ * `beforeTurn` stays min-agent's own `gather`, because it overlaps the fold, which the loop's
+ * would wait behind; and the fold is min-agent's too, so the loop has no `beforeCompact` to fire.
+ *
+ * The loop reads the turn off the transcript it was handed, which is not the stored one in two
+ * ways, and the rest of this says how to put it back:
+ * - Its question carries the recall. `question` is what the user typed, so a memory server files
+ *   what was asked rather than what it was reminded of.
+ * - A fold replaced the head with its summary, and an empty system prompt may lead it. `offset`
+ *   moves each position back onto the stored index, so a message is told under the uuid the next
+ *   fold's `beforeCompact` names it by. `turnBase` is the questions the fold took and did not send
+ *   again: the one it kept is still in the request, and counted there.
+ *
+ * @param mcp The servers whose hooks run.
+ * @param session The chat, its question stored at `turnStart`, and the fold in force.
+ * @param prompt The question as the user typed it.
+ * @param turnStart Where the question is stored.
+ * @param sentAt Where the question is in the transcript the loop is handed.
+ * @returns What `runAgentLoop` takes as `hooks`.
+ */
+export function afterTurnHooks(
+  mcp: HookPool,
+  session: Pick<Session, "id" | "messages" | "compaction">,
+  prompt: string,
+  turnStart: number,
+  sentAt: number,
+): core.AgentLoopHooks {
+  const fold = session.compaction;
+  const kept = fold?.question !== undefined && fold.question < fold.through ? 1 : 0;
+  return {
+    run: runnerOf(mcp),
+    context: { session: { id: session.id }, host: HOST, prompt },
+    fire: [core.HookEvent.AfterTurn],
+    question: prompt,
+    turnBase: fold ? turnIndex(session.messages, fold.through) - kept : 0,
+    offset: turnStart - sentAt,
+  };
+}
 
 /**
  * A chat was deleted. Tells the servers that keep anything under its id. Never rejects, as

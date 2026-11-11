@@ -11,6 +11,7 @@ query Config {
     contextLimit
     toolDiscovery
     reasoningEffort
+    reasoningReplay
     taskModels
     pricing
     voiceBaseUrl

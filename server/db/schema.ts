@@ -1,3 +1,4 @@
+import type { TokenLedger } from "@cubicecho/agent-core";
 import { defineRelations } from "drizzle-orm";
 import {
   boolean,
@@ -78,6 +79,16 @@ export const settings = table("settings", {
     .notNull()
     .default("off"),
   /**
+   * Which assistant messages carry the model's thinking back to it: `all`, `tool-loop` (only the
+   * ones that end in tool calls, during the turn that made them) or `none`. agent-core's
+   * `ReasoningReplay`, defaulting where it does. See `forApi`.
+   *
+   * Plain text rather than an enum column, because a GraphQL enum value cannot hold a hyphen and
+   * the generated one would be `Option1` for `tool-loop`. `REASONING_REPLAYS` is the check, on the
+   * way in and on the way out, as it is for every bound the column type cannot say.
+   */
+  reasoningReplay: text().notNull().default("all"),
+  /**
    * Per-task model overrides, keyed by the entries in `MODEL_TASKS`. Kept as an open JSON
    * object rather than a column each, so adding a task needs no migration.
    */
@@ -123,6 +134,18 @@ export const mcpServers = table("mcp_servers", {
   headers: jsonb().$type<Record<string, string>>().notNull().default({}),
   /** Tools only this row's hooks may call; the model is never offered them. */
   hiddenTools: jsonb().$type<string[]>().notNull().default([]),
+  /**
+   * Whether the pool may believe this server's tool annotations, which decides what a turn runs in
+   * parallel: a call whose tool declares `readOnlyHint` runs beside the step's other reads, and any
+   * other call — or every call, with this off — runs alone, in the place the model asked for it.
+   *
+   * On by default, unlike the pool's own default, because every row here is a server somebody
+   * added by hand to their own assistant, and because believing a lie costs no more than the turn
+   * did before the predicate existed: every call ran in parallel then. The pool's result cache,
+   * which is where a false `readOnlyHint` swallows a second `send_email`, is not turned on here.
+   * Off is for a server that marks a tool with side effects as read-only.
+   */
+  trustAnnotations: boolean().notNull().default(true),
   /** This server's own tools, called by min-agent at points in a session. See `ToolHookConfig`. */
   hooks: jsonb().$type<ToolHookConfig[]>().notNull().default([]),
   /** The order the UI lists them in, which is the order they were added. */
@@ -145,6 +168,14 @@ export const sessions = table("sessions", {
   /** How far old tool results are sent as stubs. Null until the rule first moves it. */
   pruning: jsonb().$type<NonNullable<Session["pruning"]>>(),
   /**
+   * What each request a turn sent reported its prompt as, and how far into `messages` it reached:
+   * agent-core's token ledger, indexed into the stored transcript. Two entries of one epoch
+   * subtract to what the messages between them cost, which is what a fold is planned from where
+   * there is a reading — see `server/compaction.ts`. The runner's cache rather than anything a
+   * person sets, so it is kept out of the API.
+   */
+  ledger: jsonb().$type<TokenLedger>().notNull().default([]),
+  /**
    * Kept in step by the store as messages are appended, so the session list is one query
    * over one table. This is the row that replaces the `.meta.json` sidecar the file store
    * needed for the same reason: the sidebar wants a count, not a transcript.
@@ -165,10 +196,18 @@ export const messages = table(
     /** A string for most turns; the multimodal part arrays are JSON too, so this is JSON. */
     content: jsonb().$type<StoredMessage["content"]>(),
     /**
-     * Ours, not the API's: servers that stream chain-of-thought on a side channel get it kept
-     * here so the panel survives a reload. Stripped again before the history is replayed.
+     * What the model thought before this reply, from whichever side channel it streamed on. Kept
+     * so the panel survives a reload, and sent back to the model as `reasoningReplay` says.
      */
     reasoningContent: text(),
+    /**
+     * The field the thinking arrived in, and so the one it goes back under: llama.cpp reads only
+     * `reasoning_content` and Ollama's `/v1` only `reasoning`. Null is `reasoning_content`, which
+     * is what every row from before this column was.
+     */
+    reasoningField: text({ enum: ["reasoning_content", "reasoning"] }),
+    /** OpenRouter's `reasoning_details` blocks, which it wants back byte for byte, in order. */
+    reasoningDetails: jsonb().$type<Record<string, unknown>[]>(),
     /**
      * What the servers' hooks added to this question, on a `user` row. Kept apart from `content`,
      * which is what the user typed, and sent ahead of it on every later request too: dropped from

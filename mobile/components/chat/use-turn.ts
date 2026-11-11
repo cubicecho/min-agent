@@ -1,4 +1,5 @@
 import { messageText, turnStart } from "@shared/client/transcript.ts";
+import type { ElicitationAction, ElicitationContent } from "@shared/elicitation.ts";
 import { messageOf } from "@shared/errors.ts";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -65,6 +66,39 @@ export function useTurn({
    */
   const showing = useRef(activeId);
   showing.current = activeId;
+  /**
+   * Whether this pane is still on screen at all. On a narrow window the chat screen is dropped
+   * when the reader goes back to the list, and its stream runs on with `showing` still naming
+   * the chat it was on.
+   */
+  const mounted = useRef(true);
+  /** Whether the chat a stream belongs to is the one the reader is looking at. */
+  const isShowing = (id: string) => mounted.current && showing.current === id;
+  /**
+   * The questions a tool's server is waiting on the person for, by id, with the chat whose turn
+   * asked them. Leaving that chat puts them away: nobody is looking at the form any more, and a
+   * call held open for an answer that cannot come holds its whole turn with it.
+   */
+  const questions = useRef(new Map<string, string>());
+  const putAway = useCallback((id: string, chat: string) => {
+    questions.current.delete(id);
+    // Best effort: a question that has ended already answers `false`, and one the server never
+    // hears about runs out on its own.
+    api.answerElicitation(chat, id, "cancel").catch(() => {});
+  }, []);
+  const putAllAway = useCallback(() => {
+    for (const [id, chat] of questions.current) {
+      putAway(id, chat);
+    }
+  }, [putAway]);
+  // Leaving the chat screen altogether, not only for another chat.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      putAllAway();
+    };
+  }, [putAllAway]);
 
   const activeModel = model || session.data?.model || defaultModel;
   const stored = session.data?.messages ?? [];
@@ -93,6 +127,7 @@ export function useTurn({
       return;
     }
     route.current = sessionId;
+    putAllAway();
     setCreated(null);
     setDraft("");
     setModel("");
@@ -123,7 +158,7 @@ export function useTurn({
   async function settle(id: string, read = false) {
     await invalidateSession(queryClient, id);
     turns.end(id);
-    if (showing.current !== id) {
+    if (!isShowing(id)) {
       return;
     }
     // A reply that read itself aloud is still the one being read, and the button on it is
@@ -216,13 +251,24 @@ export function useTurn({
             return;
           }
           if (event.type === "done") {
-            if (speakReplies && showing.current === turnId) {
+            if (speakReplies && isShowing(turnId)) {
               read = speech.speak(answer);
             }
             void finish();
           }
           if (event.type === "text_delta") {
             answer += event.text;
+          }
+          if (event.type === "elicitation") {
+            questions.current.set(event.elicitation.id, turnId);
+            // Asked in a chat the reader has already left: there is no form to answer it in.
+            if (!isShowing(turnId)) {
+              putAway(event.elicitation.id, turnId);
+              return;
+            }
+          }
+          if (event.type === "elicitation_end") {
+            questions.current.delete(event.id);
           }
           // Kept under the chat it belongs to whether or not that chat is on screen: switch
           // away and back mid-turn, and the turn is still there, still going.
@@ -238,7 +284,7 @@ export function useTurn({
       // The address bar catches up once the stream is really over, not on `done`: moving the
       // route mid-stream would remount this pane under the reader's hands. Only if the reader
       // is still on it, though — one who has walked to another chat stays there.
-      if (!sessionId && showing.current === turnId) {
+      if (!sessionId && isShowing(turnId)) {
         router.replace(`/chat/${turnId}`);
       }
     }
@@ -274,6 +320,22 @@ export function useTurn({
     await send(prompt);
   }
 
+  /**
+   * Answers a question a tool's server asked in the live turn. `false` for one that is no longer
+   * waiting; its `elicitation_end` is on the way.
+   */
+  async function answerQuestion(
+    id: string,
+    action: ElicitationAction,
+    content?: ElicitationContent,
+  ) {
+    const chat = questions.current.get(id);
+    if (!chat) {
+      return false;
+    }
+    return api.answerElicitation(chat, id, action, content);
+  }
+
   /** Puts a question back in the composer, with everything it led to forgotten. */
   async function edit(index: number) {
     const messages = session.data?.messages ?? [];
@@ -300,6 +362,7 @@ export function useTurn({
     send,
     /** Stops this chat's turn, not whichever was sent last. */
     stop: () => turn.controller?.abort(),
+    answerQuestion,
     retry,
     edit,
   };

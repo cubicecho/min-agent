@@ -9,6 +9,7 @@ type Setting {
   contextLimit: Int!
   toolDiscovery: SettingsToolDiscoveryEnum!
   reasoningEffort: SettingsReasoningEffortEnum!
+  reasoningReplay: String!
   taskModels: JSON!
   pricing: JSON!
   voiceBaseUrl: String!
@@ -100,6 +101,7 @@ type SettingMinAggregate {
   contextLimit: Int
   toolDiscovery: SettingsToolDiscoveryEnum
   reasoningEffort: SettingsReasoningEffortEnum
+  reasoningReplay: String
   voiceBaseUrl: String
   sttModel: String
   ttsModel: String
@@ -117,6 +119,7 @@ type SettingMaxAggregate {
   contextLimit: Int
   toolDiscovery: SettingsToolDiscoveryEnum
   reasoningEffort: SettingsReasoningEffortEnum
+  reasoningReplay: String
   voiceBaseUrl: String
   sttModel: String
   ttsModel: String
@@ -134,6 +137,7 @@ type SettingCountNonNullAggregate {
   contextLimit: Int!
   toolDiscovery: Int!
   reasoningEffort: Int!
+  reasoningReplay: Int!
   taskModels: Int!
   pricing: Int!
   voiceBaseUrl: Int!
@@ -154,6 +158,7 @@ type SettingCountDistinctAggregate {
   contextLimit: Int!
   toolDiscovery: Int!
   reasoningEffort: Int!
+  reasoningReplay: Int!
   voiceBaseUrl: Int!
   sttModel: Int!
   ttsModel: Int!
@@ -185,6 +190,7 @@ type SettingGroupKeys {
   contextLimit: Int
   toolDiscovery: SettingsToolDiscoveryEnum
   reasoningEffort: SettingsReasoningEffortEnum
+  reasoningReplay: String
   voiceBaseUrl: String
   sttModel: String
   ttsModel: String
@@ -203,6 +209,7 @@ type McpServer {
   url: String!
   headers: JSON!
   hiddenTools: JSON!
+  trustAnnotations: Boolean!
   hooks: JSON!
   position: Int!
 
@@ -267,6 +274,7 @@ type McpServerCountNonNullAggregate {
   url: Int!
   headers: Int!
   hiddenTools: Int!
+  trustAnnotations: Int!
   hooks: Int!
   position: Int!
 }
@@ -302,6 +310,7 @@ type McpServerGroupKeys {
   url: String
   position: Int
   enabled: Boolean
+  trustAnnotations: Boolean
 }
 
 type Session {
@@ -348,6 +357,8 @@ enum MessageDistinctColumn {
   role
   content
   reasoningContent
+  reasoningField
+  reasoningDetails
   hookContext
   toolCalls
   toolCallId
@@ -444,6 +455,8 @@ type Message {
   role: MessagesRoleEnum!
   content: JSON
   reasoningContent: String
+  reasoningField: MessagesReasoningFieldEnum
+  reasoningDetails: JSON
   hookContext: String
   toolCalls: JSON
   toolCallId: String
@@ -475,6 +488,14 @@ enum MessagesRoleEnum {
   tool
 }
 
+enum MessagesReasoningFieldEnum {
+  """Value: reasoning_content"""
+  reasoning_content
+
+  """Value: reasoning"""
+  reasoning
+}
+
 type MessageAggregate {
   count: Int!
   avg: MessageAvgAggregate
@@ -499,6 +520,7 @@ type MessageMinAggregate {
   idx: Int
   role: MessagesRoleEnum
   reasoningContent: String
+  reasoningField: MessagesReasoningFieldEnum
   hookContext: String
   toolCallId: String
   createdAt: DateTime
@@ -510,6 +532,7 @@ type MessageMaxAggregate {
   idx: Int
   role: MessagesRoleEnum
   reasoningContent: String
+  reasoningField: MessagesReasoningFieldEnum
   hookContext: String
   toolCallId: String
   createdAt: DateTime
@@ -522,6 +545,8 @@ type MessageCountNonNullAggregate {
   role: Int!
   content: Int!
   reasoningContent: Int!
+  reasoningField: Int!
+  reasoningDetails: Int!
   hookContext: Int!
   toolCalls: Int!
   toolCallId: Int!
@@ -536,6 +561,7 @@ type MessageCountDistinctAggregate {
   idx: Int!
   role: Int!
   reasoningContent: Int!
+  reasoningField: Int!
   hookContext: Int!
   toolCallId: Int!
   createdAt: Int!
@@ -561,6 +587,7 @@ type MessageGroupKeys {
   idx: Int
   role: MessagesRoleEnum
   reasoningContent: String
+  reasoningField: MessagesReasoningFieldEnum
   hookContext: String
   toolCallId: String
   createdAt: DateTime
@@ -577,6 +604,7 @@ input UpdateSettingInput {
   contextLimit: Int
   toolDiscovery: SettingsToolDiscoveryEnum
   reasoningEffort: SettingsReasoningEffortEnum
+  reasoningReplay: String
   taskModels: JSON
   pricing: JSON
   voiceBaseUrl: String
@@ -606,6 +634,7 @@ input SettingFilters {
   contextLimit: IntFilter
   toolDiscovery: SettingsToolDiscoveryEnumFilter
   reasoningEffort: SettingsReasoningEffortEnumFilter
+  reasoningReplay: StringFilter
   taskModels: JSONFilter
   pricing: JSONFilter
   voiceBaseUrl: StringFilter
@@ -1112,6 +1141,7 @@ input SettingOrderBy {
   contextLimit: InnerOrder
   toolDiscovery: InnerOrder
   reasoningEffort: InnerOrder
+  reasoningReplay: InnerOrder
   taskModels: InnerOrder
   pricing: InnerOrder
   voiceBaseUrl: InnerOrder
@@ -1219,6 +1249,7 @@ input SettingCountNonNullHaving {
   contextLimit: AggregateNumberFilter
   toolDiscovery: AggregateNumberFilter
   reasoningEffort: AggregateNumberFilter
+  reasoningReplay: AggregateNumberFilter
   taskModels: AggregateNumberFilter
   pricing: AggregateNumberFilter
   voiceBaseUrl: AggregateNumberFilter
@@ -1239,6 +1270,7 @@ input SettingCountDistinctHaving {
   contextLimit: AggregateNumberFilter
   toolDiscovery: AggregateNumberFilter
   reasoningEffort: AggregateNumberFilter
+  reasoningReplay: AggregateNumberFilter
   voiceBaseUrl: AggregateNumberFilter
   sttModel: AggregateNumberFilter
   ttsModel: AggregateNumberFilter
@@ -1256,6 +1288,7 @@ input McpServerFilters {
   url: StringFilter
   headers: JSONFilter
   hiddenTools: JSONFilter
+  trustAnnotations: BooleanFilter
   hooks: JSONFilter
   position: IntFilter
 
@@ -1354,6 +1387,7 @@ input McpServerOrderBy {
   url: InnerOrder
   headers: InnerOrder
   hiddenTools: InnerOrder
+  trustAnnotations: InnerOrder
   hooks: InnerOrder
   position: InnerOrder
 }
@@ -1397,6 +1431,7 @@ input McpServerCountNonNullHaving {
   url: AggregateNumberFilter
   headers: AggregateNumberFilter
   hiddenTools: AggregateNumberFilter
+  trustAnnotations: AggregateNumberFilter
   hooks: AggregateNumberFilter
   position: AggregateNumberFilter
 }
@@ -1623,6 +1658,8 @@ input MessageFilters {
   role: MessagesRoleEnumFilter
   content: JSONFilter
   reasoningContent: StringFilter
+  reasoningField: MessagesReasoningFieldEnumFilter
+  reasoningDetails: JSONFilter
   hookContext: StringFilter
   toolCalls: JSONFilter
   toolCallId: StringFilter
@@ -1717,6 +1754,80 @@ input MessagesRoleEnumFilter {
   NOT: MessagesRoleEnumFilter
 }
 
+input MessagesReasoningFieldEnumFilter {
+  """Equal to"""
+  eq: MessagesReasoningFieldEnum
+
+  """Not equal to"""
+  ne: MessagesReasoningFieldEnum
+
+  """Less than"""
+  lt: MessagesReasoningFieldEnum
+
+  """Less than or equal to"""
+  lte: MessagesReasoningFieldEnum
+
+  """Greater than"""
+  gt: MessagesReasoningFieldEnum
+
+  """Greater than or equal to"""
+  gte: MessagesReasoningFieldEnum
+  like: String
+  notLike: String
+  ilike: String
+  notIlike: String
+
+  """
+  Matches values starting with the given string. `%`, `_` and `\` are matched literally.
+  """
+  startsWith: String
+
+  """
+  Matches values ending with the given string. `%`, `_` and `\` are matched literally.
+  """
+  endsWith: String
+
+  """
+  Matches values containing the given string. `%`, `_` and `\` are matched literally.
+  """
+  contains: String
+
+  """Case-insensitive `startsWith`."""
+  iStartsWith: String
+
+  """Case-insensitive `endsWith`."""
+  iEndsWith: String
+
+  """Case-insensitive `contains`."""
+  iContains: String
+
+  """
+  When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own.
+  """
+  insensitive: Boolean
+
+  """Matches any one of these values (SQL `IN`)"""
+  inArray: [MessagesReasoningFieldEnum!]
+
+  """Matches none of these values (SQL `NOT IN`)"""
+  notInArray: [MessagesReasoningFieldEnum!]
+
+  """When true, matches rows where the column is NULL"""
+  isNull: Boolean
+
+  """When true, matches rows where the column is not NULL"""
+  isNotNull: Boolean
+
+  """At least one branch matches; ANDed with any sibling operators"""
+  OR: [MessagesReasoningFieldEnumFilter!]
+
+  """Every branch matches"""
+  AND: [MessagesReasoningFieldEnumFilter!]
+
+  """Negates the nested operators"""
+  NOT: MessagesReasoningFieldEnumFilter
+}
+
 input MessageOrderBy {
   id: InnerOrder
   sessionId: InnerOrder
@@ -1724,6 +1835,8 @@ input MessageOrderBy {
   role: InnerOrder
   content: InnerOrder
   reasoningContent: InnerOrder
+  reasoningField: InnerOrder
+  reasoningDetails: InnerOrder
   hookContext: InnerOrder
   toolCalls: InnerOrder
   toolCallId: InnerOrder
@@ -1770,6 +1883,8 @@ input MessageCountNonNullHaving {
   role: AggregateNumberFilter
   content: AggregateNumberFilter
   reasoningContent: AggregateNumberFilter
+  reasoningField: AggregateNumberFilter
+  reasoningDetails: AggregateNumberFilter
   hookContext: AggregateNumberFilter
   toolCalls: AggregateNumberFilter
   toolCallId: AggregateNumberFilter
@@ -1784,6 +1899,7 @@ input MessageCountDistinctHaving {
   idx: AggregateNumberFilter
   role: AggregateNumberFilter
   reasoningContent: AggregateNumberFilter
+  reasoningField: AggregateNumberFilter
   hookContext: AggregateNumberFilter
   toolCallId: AggregateNumberFilter
   createdAt: AggregateNumberFilter
@@ -1917,6 +2033,25 @@ type Query {
     args: JSON
   ): String!
 
+  """
+  What the server suggests for one argument of a prompt, given its text so far and the other arguments. Empty from a server that cannot complete, or that failed to.
+  """
+  mcpPromptCompletions(
+    server: String!
+
+    """The prompt's name."""
+    name: String!
+
+    """The argument being filled in."""
+    argument: String!
+
+    """What is in it now."""
+    value: String!
+
+    """The other arguments by name, which a server may narrow by."""
+    args: JSON
+  ): [String!]!
+
   """Answers only once the settings are loaded and the schema is up."""
   health: Health!
 
@@ -1943,6 +2078,7 @@ enum SettingDistinctColumn {
   contextLimit
   toolDiscovery
   reasoningEffort
+  reasoningReplay
   taskModels
   pricing
   voiceBaseUrl
@@ -1964,6 +2100,7 @@ enum SettingGroupByColumn {
   contextLimit
   toolDiscovery
   reasoningEffort
+  reasoningReplay
   voiceBaseUrl
   sttModel
   ttsModel
@@ -1983,6 +2120,7 @@ enum McpServerDistinctColumn {
   url
   headers
   hiddenTools
+  trustAnnotations
   hooks
   position
 }
@@ -1995,6 +2133,7 @@ enum McpServerGroupByColumn {
   transport
   command
   url
+  trustAnnotations
   position
 }
 
@@ -2029,6 +2168,7 @@ enum MessageGroupByColumn {
   idx
   role
   reasoningContent
+  reasoningField
   hookContext
   toolCallId
   createdAt
@@ -2067,6 +2207,11 @@ type McpServerConfig {
   url: String!
   headers: JSON!
   hiddenTools: [String!]!
+
+  """
+  Believe its tools' `readOnlyHint`, so its reads run beside a step's other reads. Off, every call to it runs alone.
+  """
+  trustAnnotations: Boolean!
 
   """
   The server's own tools, called at points in a session. See `ToolHookConfig`.
@@ -2149,6 +2294,11 @@ type Mutation {
   reconnectMcpServer(id: String!): [McpServerState!]!
 
   """
+  Answers a question a tool's server asked in this chat's turn, by the `id` of its `elicitation` event. `content` is the form's fields by name, for `accept` only, and is checked against the question's schema. False when the question is no longer waiting — answered, or put away because its call ended first.
+  """
+  answerElicitation(sessionId: String!, id: String!, action: ElicitationAction!, content: JSON): Boolean!
+
+  """
   Forgets every message from `fromIdx` on, and answers with how many are left. The only write that removes a message: retrying a reply and editing a question both mean going again from a point, and what follows that point is an answer to something no longer being asked. A suffix only, so `idx` stays dense.
   """
   truncateSession(id: String!, fromIdx: Int!): Int!
@@ -2165,7 +2315,17 @@ input McpServerInput {
   url: String
   headers: JSON
   hiddenTools: [String!]
+  trustAnnotations: Boolean
   hooks: JSON
+}
+
+"""
+An answer to a server's question: give it the content, refuse, or put the question away.
+"""
+enum ElicitationAction {
+  accept
+  decline
+  cancel
 }
 
 type Subscription {
@@ -2189,7 +2349,7 @@ type TurnEvent {
   seq: Int!
 
   """
-  reasoning_delta | text_delta | tool_use | tool_result | title | stats | hook | done | followups | error.
+  reasoning_delta | text_delta | tool_use | tool_result | server_log | elicitation | elicitation_end | title | stats | hook | done | followups | error.
   """
   type: String!
   text: String
@@ -2199,11 +2359,26 @@ type TurnEvent {
   toolUseId: String
   content: String
   isError: Boolean
+
+  """
+  On `server_log`, the level the tool's server logged at; `text` is the message.
+  """
+  level: String
   title: String
   stats: JSON
 
   """A `HookNote`: what one hook added, or why not."""
   hook: JSON
+
+  """
+  On `elicitation`, a question a tool's server is asking the person mid-call: `id`, `toolUseId`, `serverId`, `server` (its label), `message` and `schema` (the form `requestedSchema`). Answer it with `answerElicitation`.
+  """
+  elicitation: JSON
+
+  """
+  On `elicitation_end`, how the question with this `id` ended: accept | decline | cancel.
+  """
+  action: String
   items: [String!]
   message: String
 }
