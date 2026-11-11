@@ -206,13 +206,17 @@ const toolSize = (message: SizableMessage): number => {
  * catalogue is the difference rather than a second thing to keep in step — less `guidance`, the
  * other block the caller appends, which is passed rather than differenced because two unnamed
  * remainders cannot be told apart. `turnLength` is how many of the trailing messages belong to
- * this turn; `compacted` says whether the first is a summary standing in for the messages it
- * replaced.
+ * this turn; `compacted` says whether the first two are a summary standing in for the messages
+ * it replaced — the notes, as a user message, and the assistant's acknowledgement of them, which
+ * is how agent-core has sent a fold since 4.23.1.
  *
  * `history` is what was sent, so a tool result cleared to a stub is counted as the stub. What the
  * stubs stand in for is `cleared`, passed through untouched and only when there is some: it is
  * the one figure here that is not in the request.
  */
+/** How many messages a fold is sent as: the notes, and the reply that acknowledges them. */
+const SUMMARY_MESSAGES = 2;
+
 export function measureRequest(request: {
   system: string;
   systemPrompt: string;
@@ -225,7 +229,8 @@ export function measureRequest(request: {
 }): ContextBreakdown {
   const { history, turnLength } = request;
   const cut = Math.max(0, history.length - Math.max(0, turnLength));
-  const earlier = history.slice(request.compacted ? 1 : 0, cut);
+  const folded = request.compacted ? Math.min(SUMMARY_MESSAGES, history.length) : 0;
+  const earlier = history.slice(folded, cut);
   const mine = history.slice(cut);
   const sum = (messages: SizableMessage[], of: (message: SizableMessage) => number) =>
     messages.reduce((total, message) => total + of(message), 0);
@@ -238,7 +243,7 @@ export function measureRequest(request: {
     guidance,
     catalogue: Math.max(0, request.system.length - request.systemPrompt.length - guidance),
     tools: request.tools.length ? size(request.tools) : 0,
-    summary: request.compacted && history.length ? size(history[0]) : 0,
+    summary: sum(history.slice(0, folded), size),
     history: sum(earlier, said),
     historyTools: sum(earlier, toolSize),
     input: sum(mine, said),

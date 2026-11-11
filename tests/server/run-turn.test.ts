@@ -358,7 +358,8 @@ describe("the request body", () => {
         messages: [
           { role: "system", content: "" },
           { role: "user", content: "earlier" },
-          { role: "assistant", content: "before" },
+          // The thinking goes back on an earlier turn's reply too, as `reasoningReplay` defaults.
+          { role: "assistant", content: "before", reasoning_content: "thinking" },
           { role: "user", content: "hi" },
         ],
         stream: true,
@@ -924,22 +925,25 @@ describe("what the loop decides beyond the common path", () => {
     },
   });
 
-  it("streams reasoning as its own deltas, stores it with the reply, and never sends it back", async () => {
+  /**
+   * @param field Where the endpoint streams its thinking: llama.cpp's field, or Ollama's.
+   * @returns A step that thinks, then lists the directory.
+   */
+  const thinksThenLists = (field = "reasoning_content"): Reply => ({
+    chunks: [
+      chunk({ [field]: "They want " }),
+      chunk({ [field]: "a listing." }),
+      chunk({ tool_calls: [{ index: 0, ...call("c1", "fs__ls", "{}") }] }),
+      chunk({}, "tool_calls"),
+      USAGE,
+    ],
+  });
+
+  it("streams reasoning as its own deltas, stores it with the reply, and sends it back", async () => {
     configure({ toolDiscovery: "eager" });
     offer(LS);
     mcp.call.mockResolvedValue("a.txt");
-    script = [
-      {
-        chunks: [
-          chunk({ reasoning_content: "They want " }),
-          chunk({ reasoning_content: "a listing." }),
-          chunk({ tool_calls: [{ index: 0, ...call("c1", "fs__ls", "{}") }] }),
-          chunk({}, "tool_calls"),
-          USAGE,
-        ],
-      },
-      says("One file."),
-    ];
+    script = [thinksThenLists(), says("One file.")];
 
     const { events } = await run(sessionOf(), "what is here");
 
@@ -958,8 +962,69 @@ describe("what the loop decides beyond the common path", () => {
     expect(replayed).toEqual({
       role: "assistant",
       content: null,
+      reasoning_content: "They want a listing.",
       tool_calls: [call("c1", "fs__ls", "{}")],
     });
+  });
+
+  it("stores the thinking under none too, and sends it back on nothing", async () => {
+    configure({ toolDiscovery: "eager", reasoningReplay: "none" });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    script = [thinksThenLists(), says("One file.")];
+
+    await run(sessionOf(), "what is here");
+
+    expect(stored[1]).toHaveProperty("reasoning_content", "They want a listing.");
+    const [, , replayed] = messagesOf(bodies()[1]);
+    expect(replayed).toEqual({
+      role: "assistant",
+      content: null,
+      tool_calls: [call("c1", "fs__ls", "{}")],
+    });
+  });
+
+  it("sends an earlier turn's thinking back on the next turn, under the field it arrived in", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    // Ollama's `/v1` streams it as `reasoning`, and reads back only that.
+    script = [thinksThenLists("reasoning"), says("One file."), says("Still one.")];
+    const chat = sessionOf();
+
+    await run(chat, "what is here");
+    expect(stored[1]).toMatchObject({
+      reasoning_content: "They want a listing.",
+      reasoning_field: "reasoning",
+    });
+    await run(chat, "and now?");
+
+    const [, , replayed] = messagesOf(bodies()[2]);
+    expect(replayed).toEqual({
+      role: "assistant",
+      content: null,
+      reasoning: "They want a listing.",
+      tool_calls: [call("c1", "fs__ls", "{}")],
+    });
+  });
+
+  it("drops an earlier turn's thinking under tool-loop, and keeps the loop's own", async () => {
+    configure({ toolDiscovery: "eager", reasoningReplay: "tool-loop" });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    script = [thinksThenLists(), says("One file."), thinksThenLists(), says("Still one.")];
+    const chat = sessionOf();
+
+    await run(chat, "what is here");
+    await run(chat, "and now?");
+
+    const thought = (body: Record<string, unknown>) =>
+      messagesOf(body).flatMap((message) =>
+        message.role === "assistant" ? [message.reasoning_content ?? null] : [],
+      );
+    // The second turn's second step: the first turn's call and answer carry none, its own call
+    // carries its thinking.
+    expect(thought(bodies()[3])).toEqual([null, null, "They want a listing."]);
   });
 
   it("answers the resource tools itself, and declares them ahead of everything else", async () => {

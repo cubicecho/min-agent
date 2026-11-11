@@ -130,6 +130,7 @@ const WRITABLE_COLUMNS: Record<keyof Omit<LlmConfig, "apiKey">, true> = {
   contextLimit: true,
   toolDiscovery: true,
   reasoningEffort: true,
+  reasoningReplay: true,
   taskModels: true,
   pricing: true,
   voiceBaseUrl: true,
@@ -173,9 +174,11 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
     // Deliberately not re-validated. Every one of these columns is non-null in the schema and
     // the query names them one at a time, so a field this client asks for either arrives
     // typed or the whole request fails — there is no partial answer for a parse to repair.
-    // The two casts are the JSON scalars, which GraphQL cannot describe more precisely.
+    // The two casts are the JSON scalars, which GraphQL cannot describe more precisely, and the
+    // third a string column whose values are checked on the way in (see the settings schema).
     return {
       ...setting,
+      reasoningReplay: setting.reasoningReplay as LlmConfig["reasoningReplay"],
       taskModels: setting.taskModels as LlmConfig["taskModels"],
       pricing: setting.pricing as LlmConfig["pricing"],
       hasApiKey,

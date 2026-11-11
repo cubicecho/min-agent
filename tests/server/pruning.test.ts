@@ -435,7 +435,12 @@ describe("forApi with a pruning marker", () => {
       stub(2000),
       ...at.slice(3).map((index) => messages[index].content),
     ]);
-    expect(sent[sent.length - 1]).toEqual({ role: "assistant", content: "Done." });
+    // The thinking is not min-agent's own: it goes back, as `reasoningReplay` defaults to.
+    expect(sent[sent.length - 1]).toEqual({
+      role: "assistant",
+      content: "Done.",
+      reasoning_content: "hm",
+    });
     expect(chat.messages).toBe(messages);
     expect(messages).toEqual(before);
   });
@@ -451,9 +456,10 @@ describe("forApi with a pruning marker", () => {
 
     const sent = forApi(chat);
 
-    // The summary, then the second turn: its first three results cleared, its last five whole.
-    expect(sent).toHaveLength(1 + messages.length - first.length);
-    expect(sent[0].role).toBe("system");
+    // The summary and its acknowledgement, then the second turn: its first three results
+    // cleared, its last five whole.
+    expect(sent).toHaveLength(2 + messages.length - first.length);
+    expect(sent.slice(0, 2).map((message) => message.role)).toEqual(["user", "assistant"]);
     const tools = sent.filter((message) => message.role === "tool");
     expect(tools.map((message) => message.content)).toEqual([
       stub(2000),

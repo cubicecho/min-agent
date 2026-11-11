@@ -47,9 +47,11 @@ export const messageText = (message: StoredMessage): string => {
  *
  * Handed to `planCompaction` in place of its default, `messageTokens`, for two reasons. That one
  * reads a message as it will be sent, and these are stored ones: it would count
- * `reasoning_content`, which `forApi` strips and the model is never sent. And it adds each
- * message's envelope and call ids, which moves the cut later than this planner's predecessor put
- * it — on a transcript of short messages, by several exchanges.
+ * `reasoning_content` whether or not `reasoningReplay` sends it. And it adds each message's
+ * envelope and call ids, which moves the cut later than this planner's predecessor put it — on a
+ * transcript of short messages, by several exchanges. Thinking that is sent back is still in what
+ * the last turn reported using, which is what decides whether to fold at all; this only places
+ * the cut.
  *
  * @param message One message of `session.messages`.
  * @returns Its estimated tokens.
@@ -69,7 +71,9 @@ export const textTokens = (message: StoredMessage) => estimateTokens(messageText
  * @param limit The model's window, in tokens. Zero never folds.
  * @param used What the last turn reported using. Zero, when nothing was reported, never folds:
  * it is passed as it is rather than left for the planner to estimate.
- * @returns The plan, whose `cut` is an index into `session.messages` and always a user message.
+ * @returns The plan, whose `cut` is an index into `session.messages`: a user message, or — where
+ * no user message leaves enough folded — a reply inside the last question's tool loop, with that
+ * question kept whole as the plan's `question`.
  */
 export const planFold = (
   session: Pick<Session, "messages" | "compaction">,

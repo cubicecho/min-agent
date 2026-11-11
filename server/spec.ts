@@ -56,6 +56,7 @@ export function settingsSpec(config: LlmConfig): AgentSpec {
       maxTokens: config.maxTokens,
       temperature: config.temperature,
       reasoningEffort: config.reasoningEffort,
+      reasoningReplay: config.reasoningReplay,
       // Zero means "ask the server" on both sides, so it crosses as it is.
       contextLength: config.contextLimit,
     },
