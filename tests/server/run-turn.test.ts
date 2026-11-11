@@ -629,7 +629,9 @@ describe("a plain answer", () => {
     script = [says("Hel", "lo.")];
     const chat = sessionOf({ title: "New chat" });
 
-    // Half a second between the two deltas, and another after the last.
+    // Half a second between the two deltas, and another after the last. The generation is the
+    // loop's own reading of the request, from its first token to its end, so it counts both: with
+    // no decode time from the server, a turn's last token is known only by its stream closing.
     const { events, stats } = await run(chat, "hi there", {
       onEvent: (event) => {
         if (event.type === "text_delta") {
@@ -647,8 +649,8 @@ describe("a plain answer", () => {
       iterations: 1,
       toolCalls: 0,
       ttftMs: 0,
-      generationMs: 500,
-      tokensPerSecond: 20,
+      generationMs: 1000,
+      tokensPerSecond: 10,
       contextTokens: 110,
       lastPromptTokens: 100,
       contextLimit: 32_768,
@@ -1623,6 +1625,29 @@ describe("what the loop decides beyond the common path", () => {
 
     expect(warn.mock.calls.map(([line]) => line)).toEqual([
       "[agent] prompt cache missed: 100 of 1100 cached, after a 1000-token request",
+    ]);
+  });
+
+  it("says what the loop makes of a miss between two steps of the turn", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    script = [
+      {
+        chunks: [
+          chunk({ tool_calls: [{ index: 0, ...call("c1", "fs__ls", "{}") }] }),
+          chunk({}, "tool_calls"),
+          usage(1100, 0),
+        ],
+      },
+      // 1100 went out on the step before and 100 of them were found, with nothing changed.
+      { chunks: [chunk({ content: "One file." }), chunk({}, "stop"), usage(1200, 100)] },
+    ];
+
+    await run(sessionOf(), "what is here");
+
+    expect(vi.mocked(console.warn).mock.calls.map(([line]) => line)).toEqual([
+      "[agent] prompt cache missed: 100 of 1200 cached, after a 1100-token request (none-known)",
     ]);
   });
 

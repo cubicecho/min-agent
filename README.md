@@ -729,8 +729,11 @@ assistant reply carries a footnote like:
 
     187 out · 44.7 tok/s · 420ms to first token · 4.6s · 2 tools
 
-Throughput is measured over generation only, from the first streamed token to the last, so a slow
-prefill does not drag the rate down — that wait is reported separately as *to first token*.
+Throughput is measured over generation only, so a slow prefill does not drag the rate down — that
+wait is reported separately as *to first token*. The figures are agent-core's account of the turn
+(`result.metrics` and `result.usage`): the decode time llama.cpp reports where it reports one, and
+otherwise the time each request spent streaming from its first token to its end, summed; *to first
+token* is the mean over the turn's requests.
 `2 tools` and `3 rounds` only appear when the turn actually used tools. The stats are stored with
 the session, so they survive a reload.
 

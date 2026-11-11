@@ -31,6 +31,7 @@ import {
   type ToolCallRequest,
   ToolIterationLimit,
   type Turn,
+  type TurnUsage,
   tryAsk,
 } from "@cubicecho/agent-core";
 import { type ElicitHandler, McpPoolError, type ToolDefinition } from "@cubicecho/agent-mcp-pool";
@@ -405,20 +406,16 @@ function storedReply(
   };
 }
 
-/** What a finished turn measured, for `turnStats` to report. Times are epoch milliseconds. */
+/** What a finished turn measured, for `turnStats` to report. */
 interface TurnMeasurements {
-  /** Every round trip of the turn, summed. */
-  usage: TokenUsage;
-  /** The final round trip alone, which is what the next turn's context starts from. */
-  lastRoundTrip: TokenUsage;
+  /** The loop's own account of the turn: what it cost, how long it took, what it called. */
+  result: Pick<AgentLoopResult, "usage" | "turn" | "metrics">;
+  /**
+   * How long the turn's requests spent streaming once each had begun, summed — the decode time
+   * where the server reports none of its own. Zero when nothing streamed.
+   */
+  streamedMs: number;
   model: string;
-  startedAt: number;
-  endedAt: number;
-  /** Zero when nothing streamed. */
-  firstTokenAt: number;
-  lastTokenAt: number;
-  iterations: number;
-  toolCalls: number;
   /** The window the turn was built to. Zero when none is set. */
   contextLimit: number;
   breakdown?: TurnStats["breakdown"];
@@ -426,33 +423,36 @@ interface TurnMeasurements {
 }
 
 /**
- * The stats stored with a turn's reply. A figure is left out rather than reported as zero when
- * the turn has no reading for it: no token streamed, the server sent no usage, no window is set.
+ * The stats stored with a turn's reply, read off the loop's `usage` and `metrics`. A figure is
+ * left out rather than reported as zero when the turn has no reading for it: no token streamed,
+ * the server sent no usage, no window is set.
+ *
+ * Throughput is over generation only, so a slow prefill does not drag the rate down: the decode
+ * time llama.cpp reports where it does, and otherwise the time each request spent streaming after
+ * its first token. Time to first token is the loop's mean over the turn's requests. Loading a
+ * definition is bookkeeping, not work the model did for the user, so `load_tools` is not a tool
+ * call here.
  */
 function turnStats({
-  usage,
-  lastRoundTrip,
+  result: { usage, turn, metrics },
+  streamedMs,
   model,
-  startedAt,
-  endedAt,
-  firstTokenAt,
-  lastTokenAt,
-  iterations,
-  toolCalls,
   contextLimit,
   breakdown,
   hooks,
 }: TurnMeasurements): TurnStats {
-  const generationMs = lastTokenAt - firstTokenAt;
-  const generated = firstTokenAt > 0 && generationMs > 0;
+  const generationMs = metrics.predictedMs ?? streamedMs;
+  const last = turn.usage;
   return {
-    ...usage,
+    promptTokens: usage.promptTokens,
+    completionTokens: usage.completionTokens,
+    totalTokens: usage.totalTokens,
     model,
-    totalMs: endedAt - startedAt,
-    iterations,
-    toolCalls,
-    ...(firstTokenAt ? { ttftMs: firstTokenAt - startedAt } : {}),
-    ...(generated
+    totalMs: metrics.wallMs ?? 0,
+    iterations: metrics.turns,
+    toolCalls: metrics.toolCalls - metrics.loadCalls,
+    ...(metrics.firstTokenMs !== undefined ? { ttftMs: metrics.firstTokenMs } : {}),
+    ...(generationMs > 0
       ? {
           generationMs,
           ...(usage.completionTokens
@@ -460,10 +460,10 @@ function turnStats({
             : {}),
         }
       : {}),
-    ...(lastRoundTrip.totalTokens
-      ? { contextTokens: lastRoundTrip.promptTokens + lastRoundTrip.completionTokens }
-      : {}),
-    ...(lastRoundTrip.promptTokens ? { lastPromptTokens: lastRoundTrip.promptTokens } : {}),
+    // The final round trip: what the next turn's context starts from, and the prompt its first
+    // request should find cached.
+    ...(last.total ? { contextTokens: last.prompt + last.completion } : {}),
+    ...(last.prompt ? { lastPromptTokens: last.prompt } : {}),
     ...(contextLimit ? { contextLimit } : {}),
     ...(breakdown ? { breakdown } : {}),
     ...(hooks.length ? { hooks } : {}),
@@ -968,21 +968,53 @@ export async function runTurn(
   const titling = startTitle(deps, config, session, prompt, emit, signal);
   await deps.store.updateSession(session.id, { title: session.title, model: chosenModel });
 
-  const turnUsage = emptyUsage();
+  // The turn's usage is banked once the loop hands back its sum: on its answer, or on what it
+  // throws, which carries what the steps before the failure cost.
   const banked = session.usage ?? emptyUsage();
-  const startedAt = Date.now();
-  let firstTokenAt = 0;
-  let lastTokenAt = 0;
-  let toolCalls = 0;
-  let iterations = 0;
-  let lastRoundTrip = emptyUsage();
+  const bank = async (usage: TokenUsage | undefined) => {
+    if (!usage) {
+      return;
+    }
+    session.usage = add(banked, usage);
+    await deps.store.updateSession(session.id, { usage: session.usage });
+  };
+  let streamedMs = 0;
   // Measured on the way out, in characters, because nothing on the way back reports it: a
   // completion says how many prompt tokens it read and nothing about where they came from.
   let lastRequest: ContextBreakdown | null = null;
-  // The last request's prompt, to tell whether this one found it in the cache. The first step
-  // is held to the turn before's last, unless a compaction just rewrote the history under it,
-  // or the pruning marker moved and turned results it had sent whole into stubs.
-  let previousPrompt = headMoved ? 0 : latestCount(session, "lastPromptTokens");
+  // The turn before's last prompt, which the first step should find cached. The loop holds every
+  // later step to the one before it (`cacheBroken`), but it cannot see a request from before it
+  // began, so this one comparison is min-agent's — unless a compaction just rewrote the history
+  // under it, or the pruning marker moved and turned results it had sent whole into stubs.
+  const lastTurnPrompt = headMoved ? 0 : latestCount(session, "lastPromptTokens");
+  // Whether the marker moved ahead of this step, which the loop reads as a history rewritten: a
+  // miss the request is expected to make, and nothing to warn about.
+  let prunedBeforeStep = false;
+  let previousPrompt = lastTurnPrompt;
+  /**
+   * Says so when a request found much less of the last one cached than it should have. Nothing
+   * min-agent sends moves a prefix it sent before, a compaction or a move of the pruning marker
+   * aside, so such a request is the server's doing — an eviction, a side task on the same slot —
+   * or a prefix that moved anyway. Only where the server said what it cached.
+   *
+   * @param usage The step's own report, with the loop's diagnosis on it from the second step on.
+   * @param previous The prompt the request before it reported.
+   * @param step Which step of the turn this is.
+   */
+  const warnOnCacheMiss = (usage: TurnUsage, previous: number, step: number) => {
+    const missed =
+      step === 0
+        ? usage.uncached !== undefined && usage.cached < previous * TURN_DEFAULTS.cachedShare
+        : usage.cacheBroken === true && prunedBeforeStep === false;
+    if (!missed) {
+      return;
+    }
+    const why = step > 0 && usage.cacheBreakReason ? ` (${usage.cacheBreakReason})` : "";
+    console.warn(
+      `[agent] prompt cache missed: ${usage.cached} of ${usage.prompt} cached, ` +
+        `after a ${previous}-token request${why}`,
+    );
+  };
   // The marker's check between tool steps, which is where a long turn needs it: nothing compacts
   // mid-turn, and a turn of thirty tool calls is thirty results replayed whole on every step. Owed
   // from the moment a step's last result is stored, and paid before the next request or, where
@@ -995,9 +1027,7 @@ export async function runTurn(
       return;
     }
     pruneOwed = false;
-    if (await prune(deps, session, contextLimit)) {
-      previousPrompt = 0;
-    }
+    prunedBeforeStep = await prune(deps, session, contextLimit);
   };
 
   // The calls of the last reply stored, by id: a reply the loop splits into one message per call
@@ -1088,7 +1118,6 @@ export async function runTurn(
         return transcript();
       },
       onRequest: (request) => {
-        iterations++;
         // The request opens with a system message every time — the loop's, or the empty one
         // `transcript` sends — and the rest is the history as it went out.
         const [opening, ...history] = request.messages;
@@ -1121,10 +1150,6 @@ export async function runTurn(
         if (kind !== "thinking" && kind !== "output") {
           return;
         }
-        if (!firstTokenAt) {
-          firstTokenAt = Date.now();
-        }
-        lastTokenAt = Date.now();
         emit({ type: kind === "output" ? "text_delta" : "reasoning_delta", text: delta });
       },
       onToolCall: ({ id, name, raw }) => emit({ type: "tool_use", id, ...shownCall(name, raw) }),
@@ -1137,7 +1162,7 @@ export async function runTurn(
         }),
       // Each message is written as it is produced, so a crash mid-run still leaves readable
       // history: the reply before its tools run, every result before the next request.
-      onMessage: async (message, _step, turn, written) => {
+      onMessage: async (message, step, turn, written) => {
         if (message.role === "tool") {
           await append(deps, session, {
             role: "tool",
@@ -1162,46 +1187,19 @@ export async function runTurn(
           return;
         }
 
-        // Assigned, not accumulated. `stream_options.include_usage` sends one final chunk and a
-        // sum over the chunks agreed with it, but llama.cpp reports cumulatively per chunk — so
-        // the old `+=` made a sum of sums, and a turn against it read as several times its true
-        // cost. The turn's own total still accumulates: that is one number per round trip, and a
-        // turn is as many round trips as the model asked for tools.
-        lastRoundTrip = {
-          promptTokens: turn.usage.prompt,
-          completionTokens: turn.usage.completion,
-          totalTokens: turn.usage.total,
-        };
-        turnUsage.promptTokens += lastRoundTrip.promptTokens;
-        turnUsage.completionTokens += lastRoundTrip.completionTokens;
-        turnUsage.totalTokens += lastRoundTrip.totalTokens;
-        // Nothing min-agent sends moves a prefix it sent before, a compaction or a move of the
-        // pruning marker aside (and `previousPrompt` is zeroed for both), so a request that finds
-        // much less than the last one's prompt in the cache is the server's doing — an eviction,
-        // a side task on the same slot — or a prefix that moved anyway. Only where the server
-        // said what it cached.
-        if (
-          turn.usage.uncached !== undefined &&
-          turn.usage.cached < previousPrompt * TURN_DEFAULTS.cachedShare
-        ) {
-          console.warn(
-            `[agent] prompt cache missed: ${turn.usage.cached} of ${turn.usage.prompt} cached, ` +
-              `after a ${previousPrompt}-token request`,
-          );
-        }
+        warnOnCacheMiss(turn.usage, step === 0 ? lastTurnPrompt : previousPrompt, step);
         previousPrompt = turn.usage.prompt;
+        prunedBeforeStep = false;
+        const { wallMs = 0, firstTokenMs } = turn.usage;
+        streamedMs += firstTokenMs === undefined ? 0 : Math.max(0, wallMs - firstTokenMs);
 
-        // Loading a definition is bookkeeping, not work the model did for the user.
-        toolCalls += turn.toolCalls.filter((call) => call.function.name !== LOAD_TOOLS).length;
         unanswered = turn.toolCalls.length;
         storedCalls = new Set(turn.toolCalls.map((call) => call.id));
-        const assistant = storedReply(written.raw, turn);
-        session.usage = add(banked, turnUsage);
-        assistantRow = await append(deps, session, assistant);
-        await deps.store.updateSession(session.id, { usage: session.usage });
+        assistantRow = await append(deps, session, storedReply(written.raw, turn));
       },
     });
   } catch (error) {
+    await bank(failedRun(error)?.usage);
     await pruneBetweenSteps();
     // Stopping a turn used to throw away everything it had already said: the assistant message
     // is only appended once the stream ends, so an abort left the reply on screen and nothing in
@@ -1230,19 +1228,14 @@ export async function runTurn(
     );
   }
 
+  await bank(result.usage);
   // The loop returns on the step that asked for no tools, whose reply is the last row written.
   const assistant = session.messages[session.messages.length - 1];
-  const breakdown = lastRequest ? splitContext(lastRequest, lastRoundTrip.promptTokens) : undefined;
+  const breakdown = lastRequest ? splitContext(lastRequest, result.turn.usage.prompt) : undefined;
   const stats = turnStats({
-    usage: turnUsage,
-    lastRoundTrip,
+    result,
+    streamedMs,
     model: chosenModel,
-    startedAt,
-    endedAt: Date.now(),
-    firstTokenAt,
-    lastTokenAt,
-    iterations,
-    toolCalls,
     contextLimit,
     breakdown,
     hooks: gathered.notes,
