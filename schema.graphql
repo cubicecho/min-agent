@@ -209,6 +209,7 @@ type McpServer {
   url: String!
   headers: JSON!
   hiddenTools: JSON!
+  trustAnnotations: Boolean!
   hooks: JSON!
   position: Int!
 
@@ -273,6 +274,7 @@ type McpServerCountNonNullAggregate {
   url: Int!
   headers: Int!
   hiddenTools: Int!
+  trustAnnotations: Int!
   hooks: Int!
   position: Int!
 }
@@ -308,6 +310,7 @@ type McpServerGroupKeys {
   url: String
   position: Int
   enabled: Boolean
+  trustAnnotations: Boolean
 }
 
 type Session {
@@ -1285,6 +1288,7 @@ input McpServerFilters {
   url: StringFilter
   headers: JSONFilter
   hiddenTools: JSONFilter
+  trustAnnotations: BooleanFilter
   hooks: JSONFilter
   position: IntFilter
 
@@ -1383,6 +1387,7 @@ input McpServerOrderBy {
   url: InnerOrder
   headers: InnerOrder
   hiddenTools: InnerOrder
+  trustAnnotations: InnerOrder
   hooks: InnerOrder
   position: InnerOrder
 }
@@ -1426,6 +1431,7 @@ input McpServerCountNonNullHaving {
   url: AggregateNumberFilter
   headers: AggregateNumberFilter
   hiddenTools: AggregateNumberFilter
+  trustAnnotations: AggregateNumberFilter
   hooks: AggregateNumberFilter
   position: AggregateNumberFilter
 }
@@ -2095,6 +2101,7 @@ enum McpServerDistinctColumn {
   url
   headers
   hiddenTools
+  trustAnnotations
   hooks
   position
 }
@@ -2107,6 +2114,7 @@ enum McpServerGroupByColumn {
   transport
   command
   url
+  trustAnnotations
   position
 }
 
@@ -2180,6 +2188,11 @@ type McpServerConfig {
   url: String!
   headers: JSON!
   hiddenTools: [String!]!
+
+  """
+  Believe its tools' `readOnlyHint`, so its reads run beside a step's other reads. Off, every call to it runs alone.
+  """
+  trustAnnotations: Boolean!
 
   """
   The server's own tools, called at points in a session. See `ToolHookConfig`.
@@ -2278,6 +2291,7 @@ input McpServerInput {
   url: String
   headers: JSON
   hiddenTools: [String!]
+  trustAnnotations: Boolean
   hooks: JSON
 }
 

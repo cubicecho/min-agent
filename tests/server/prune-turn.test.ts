@@ -28,7 +28,7 @@ let offered: ToolDefinition[] = [];
 const mcp = {
   catalog: vi.fn(),
   tools: vi.fn(),
-  instructions: vi.fn(),
+  readsOnly: vi.fn(),
   resourceServers: vi.fn(),
   call: vi.fn(),
   runHooks: vi.fn(),
@@ -274,7 +274,7 @@ beforeEach(() => {
       ? names.flatMap((name) => offered.filter((each) => each.function.name === name))
       : offered,
   );
-  mcp.instructions.mockReturnValue([]);
+  mcp.readsOnly.mockReturnValue(false);
   mcp.resourceServers.mockReturnValue([]);
   mcp.runHooks.mockResolvedValue([]);
   mcp.call.mockImplementation(async (_name: string, args: { path: string }) =>

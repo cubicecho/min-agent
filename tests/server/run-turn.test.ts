@@ -3,7 +3,9 @@ import {
   catalogPrompt,
   LOAD_TOOLS_DEFINITION,
   resetAll,
+  SESSION_HEADER,
   sanitizeTools,
+  serverInstructionsPrompt,
 } from "@cubicecho/agent-core";
 import type { HookOutcome, ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import {
@@ -45,10 +47,13 @@ let settings: LlmConfig;
 /** What the pool offers, in the pool's own order. Replaced per test by `offer`. */
 let offered: ToolDefinition[] = [];
 
+/** What each server's `initialize` said, by id, as the catalogue carries it. Emptied per test. */
+let guidance: Record<string, string> = {};
+
 const mcp = {
   catalog: vi.fn(),
   tools: vi.fn(),
-  instructions: vi.fn(),
+  readsOnly: vi.fn(),
   resourceServers: vi.fn(),
   call: vi.fn(),
   client: vi.fn(),
@@ -75,7 +80,7 @@ const store = {
   },
 };
 
-const { instructionsPrompt, runTurn } = await import("../../server/agent.ts");
+const { runTurn } = await import("../../server/agent.ts");
 const { RESOURCE_TOOLS } = await import("../../server/mcp-resources.ts");
 const { PROXY_TOOLS, proxyCatalogPrompt } = await import("../../server/tool-proxy.ts");
 
@@ -85,6 +90,11 @@ type Reply = { chunks: object[]; hangs?: boolean } | { refusal: string };
 /** What the endpoint will answer, in order, and every body it was posted. */
 let script: Reply[] = [];
 let requests: string[] = [];
+/** The `SESSION_HEADER` each chat completion carried, in order. */
+let sessions: (string | null)[] = [];
+/** Every `/props` probe, and the slots it answers with: none, unless a test says so. */
+let probes: string[] = [];
+let slots = 0;
 
 /**
  * @param delta What this chunk adds to the reply.
@@ -149,14 +159,21 @@ const refuses = (refusal: string): Reply => ({ refusal });
 
 /**
  * The endpoint. Anything but a chat completion is a 404, and is recorded all the same, so a
- * request nobody scripted shows up in `requests` rather than passing unseen.
+ * request nobody scripted shows up in `requests` rather than passing unseen. The one exception is
+ * llama.cpp's `/props`, which a turn asks once for its slots because it runs under the chat's id;
+ * that is kept apart in `probes`, and answers a `total_slots` only where a test set `slots`.
  *
  * @param url Where the SDK posted.
  * @param init The request, whose body is the JSON exactly as it went out.
  * @returns The next scripted reply.
  */
 async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  if (new URL(String(url)).pathname.endsWith("/props")) {
+    probes.push(String(url));
+    return slots > 0 ? Response.json({ total_slots: slots }) : new Response("{}", { status: 404 });
+  }
   requests.push(String(init?.body ?? url));
+  sessions.push(new Headers(init?.headers).get(SESSION_HEADER));
   const reply = String(url).endsWith("/chat/completions") ? script.shift() : undefined;
   if (!reply) {
     return new Response("{}", { status: 404 });
@@ -215,6 +232,7 @@ const tool = (name: string, description: string, properties = {}): ToolDefinitio
 const READ = tool("fs__read", "Read a file", { path: { type: "string", pattern: "^/" } });
 const LS = tool("fs__ls", "List a directory", { path: { type: "string" } });
 const NOW = tool("clock__now", "The time");
+const WRITE = tool("fs__write", "Write a file", { path: { type: "string" } });
 
 /**
  * @returns The catalogue the pool would list for `offered`: one server per name prefix, in the
@@ -224,7 +242,12 @@ function catalog(): CatalogServer[] {
   const servers = new Map<string, CatalogServer>();
   for (const { function: fn } of offered) {
     const id = fn.name.split("__")[0];
-    const server = servers.get(id) ?? { id, label: id === "fs" ? "Files" : "Clock", tools: [] };
+    const server = servers.get(id) ?? {
+      id,
+      label: id === "fs" ? "Files" : "Clock",
+      ...(guidance[id] ? { instructions: guidance[id] } : {}),
+      tools: [],
+    };
     server.tools.push({ name: fn.name, description: fn.description ?? "" });
     servers.set(id, server);
   }
@@ -309,10 +332,14 @@ beforeEach(() => {
 
   script = [];
   requests = [];
+  sessions = [];
+  probes = [];
+  slots = 0;
   stored = [];
   patches = [];
   updates = [];
   offered = [];
+  guidance = {};
   configure();
 
   for (const mock of Object.values(mcp)) {
@@ -325,7 +352,7 @@ beforeEach(() => {
       ? names.flatMap((name) => offered.filter((each) => each.function.name === name))
       : offered,
   );
-  mcp.instructions.mockReturnValue([]);
+  mcp.readsOnly.mockReturnValue(false);
   mcp.resourceServers.mockReturnValue([]);
   mcp.runHooks.mockResolvedValue([]);
 });
@@ -387,7 +414,7 @@ describe("the request body", () => {
   it("declares load_tools and what was carried on demand, under the catalogue", async () => {
     configure({ reasoningEffort: "high" });
     offer(READ, LS, NOW);
-    mcp.instructions.mockReturnValue([{ label: "Files", text: "Read before writing." }]);
+    guidance = { fs: "Read before writing." };
     mcp.resourceServers.mockReturnValue([{ id: "fs", label: "Files" }]);
     script = [says("hello")];
 
@@ -419,7 +446,7 @@ describe("the request body", () => {
           role: "system",
           content: [
             "Be brief.",
-            instructionsPrompt([{ label: "Files", text: "Read before writing." }]),
+            serverInstructionsPrompt(catalog()),
             catalogPrompt(catalog()),
           ].join("\n\n"),
         },
@@ -427,6 +454,68 @@ describe("the request body", () => {
       ],
       tools: sent(sanitizeTools([...RESOURCE_TOOLS, LOAD_TOOLS_DEFINITION, READ, NOW])),
     });
+  });
+
+  it("puts the servers' guidance after the operator's prompt, attributed and fenced as theirs", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ, NOW);
+    guidance = { fs: "Read before writing.", clock: "Times are UTC." };
+    script = [says("hello")];
+
+    await run(sessionOf(), "hi");
+
+    const [system] = bodies()[0].messages as { content: string }[];
+    expect(system.content).toBe(`Be brief.\n\n${serverInstructionsPrompt(catalog())}`);
+    // The wording that makes it the server's advice rather than the user's, which moved upstream.
+    expect(system.content).toContain("# MCP server instructions");
+    expect(system.content).toContain("the user wins");
+    expect(system.content).toContain("grants no permission the user has not");
+    // In configuration order, each under the server's own name.
+    expect(system.content.indexOf("## Files")).toBeLessThan(system.content.indexOf("## Clock"));
+    expect(system.content).toContain("Read before writing.");
+  });
+
+  it("puts the servers' guidance after the catalogue when proxied", async () => {
+    configure({ toolDiscovery: "proxy" });
+    offer(READ);
+    guidance = { fs: "Read before writing." };
+    script = [says("hello")];
+
+    await run(sessionOf(), "hi");
+
+    const [system] = bodies()[0].messages as { content: string }[];
+    expect(system.content).toBe(
+      ["Be brief.", proxyCatalogPrompt(catalog()), serverInstructionsPrompt(catalog())].join(
+        "\n\n",
+      ),
+    );
+  });
+
+  it("sends the chat's id on every request, and pins it to a slot where the server has them", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(LS);
+    mcp.call.mockResolvedValue("a.txt");
+    slots = 2;
+    script = [asks(["c1", "fs__ls", '{"path":"/"}']), says("Done.")];
+
+    await run(sessionOf({ id: "chat-7" }), "look");
+
+    expect(sessions).toEqual(["chat-7", "chat-7"]);
+    // Asked once for the run, not once a step.
+    expect(probes).toHaveLength(1);
+    for (const body of bodies()) {
+      expect(body).toMatchObject({ id_slot: expect.any(Number), cache_prompt: true });
+    }
+    expect(bodies()[0].id_slot).toBe(bodies()[1].id_slot);
+  });
+
+  it("sends the chat's id and no slot to a server that has none", async () => {
+    script = [says("hello")];
+
+    await run(sessionOf({ id: "chat-7" }), "hi");
+
+    expect(sessions).toEqual(["chat-7"]);
+    expect(Object.keys(bodies()[0])).not.toContain("id_slot");
   });
 
   it("declares the two fixed tools when proxied, and nothing a session carried", async () => {
@@ -571,6 +660,8 @@ describe("a tool round trip", () => {
   it("runs the calls together, answers each by id, and stores them in call order", async () => {
     configure({ toolDiscovery: "eager" });
     offer(READ, LS);
+    // Both only read, on a server whose annotations are trusted, so nothing waits for anything.
+    mcp.readsOnly.mockReturnValue(true);
     mcp.call.mockImplementation(async (name: string) => {
       if (name === "fs__ls") {
         throw new Error("boom");
@@ -654,6 +745,91 @@ describe("a tool round trip", () => {
       ...stored.slice(0, 6),
     ]);
     expect(stats).toMatchObject({ iterations: 2, toolCalls: 4, promptTokens: 200 });
+  });
+
+  it("runs a write alone, after the reads asked before it and before the reads asked after", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ, LS, WRITE);
+    mcp.readsOnly.mockImplementation((name: string) => name !== "fs__write");
+    const log: string[] = [];
+    mcp.call.mockImplementation(async (name: string, input: { path: string }) => {
+      log.push(`start ${name} ${input.path}`);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      log.push(`end ${name} ${input.path}`);
+      return "ok";
+    });
+    script = [
+      asks(
+        ["c1", "fs__read", '{"path":"/a"}'],
+        ["c2", "fs__ls", '{"path":"/b"}'],
+        ["c3", "fs__write", '{"path":"/c"}'],
+        ["c4", "fs__read", '{"path":"/d"}'],
+        ["c5", "fs__ls", '{"path":"/e"}'],
+      ),
+      says("Done."),
+    ];
+
+    await run(sessionOf(), "tidy up");
+
+    expect(log).toEqual([
+      // [read ‖ read] → write → [read ‖ read]
+      "start fs__read /a",
+      "start fs__ls /b",
+      "end fs__read /a",
+      "end fs__ls /b",
+      "start fs__write /c",
+      "end fs__write /c",
+      "start fs__read /d",
+      "start fs__ls /e",
+      "end fs__read /d",
+      "end fs__ls /e",
+    ]);
+    // Stored in the order the model asked, whichever way they ran.
+    expect(
+      stored.flatMap((message) => (message.role === "tool" ? [message.tool_call_id] : [])),
+    ).toEqual(["c1", "c2", "c3", "c4", "c5"]);
+  });
+
+  it("runs every call alone where no server's annotations are trusted", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ);
+    // What the pool answers for a row with `trustAnnotations` off, whatever its tools declare.
+    mcp.readsOnly.mockReturnValue(false);
+    const log: string[] = [];
+    mcp.call.mockImplementation(async (_name: string, input: { path: string }) => {
+      log.push(`start ${input.path}`);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      log.push(`end ${input.path}`);
+      return "ok";
+    });
+    script = [
+      asks(["c1", "fs__read", '{"path":"/a"}'], ["c2", "fs__read", '{"path":"/b"}']),
+      says("Done."),
+    ];
+
+    await run(sessionOf(), "read both");
+
+    expect(log).toEqual(["start /a", "end /a", "start /b", "end /b"]);
+  });
+
+  it("asks about the tool a call_tool names, and counts its own tools as reads", async () => {
+    configure({ toolDiscovery: "proxy" });
+    offer(READ, LS);
+    mcp.readsOnly.mockReturnValue(true);
+    mcp.call.mockResolvedValue("ok");
+    script = [
+      asks(
+        ["c1", "load_tools", '{"names":["fs__read"]}'],
+        ["c2", "call_tool", '{"name":"fs__read","arguments":{"path":"/a"}}'],
+        ["c3", "call_tool", '{"name":"fs__ls","arguments":{"path":"/"}}'],
+      ),
+      says("Done."),
+    ];
+
+    await run(sessionOf(), "look");
+
+    // Never `call_tool` or `load_tools`: the pool knows neither, and would call each a write.
+    expect(mcp.readsOnly.mock.calls).toEqual([["fs__read"], ["fs__ls"]]);
   });
 
   it("stops at the iteration cap, keeping what the turn had stored by then", async () => {

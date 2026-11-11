@@ -1,0 +1,1 @@
+ALTER TABLE "mcp_servers" ADD COLUMN "trust_annotations" boolean DEFAULT true NOT NULL;

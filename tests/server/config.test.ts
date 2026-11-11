@@ -8,7 +8,7 @@ import {
 import { createSchema } from "../../server/graphql/schema.ts";
 import { createMcp } from "../../server/mcp.ts";
 import { createStore } from "../../server/store.ts";
-import { llmConfigSchema, modelForTask } from "../../shared/types.ts";
+import { llmConfigSchema, mcpServerSchema, modelForTask } from "../../shared/types.ts";
 import { isRecord } from "../helpers.ts";
 import { createTestDb } from "./db.ts";
 import { storedSettings } from "./helpers.ts";
@@ -212,5 +212,23 @@ describe("hasApiKey", () => {
     await storedSettings(settings, {});
     process.env.OPENAI_API_KEY = "sk-from-env";
     expect(await asked()).toEqual({ query: true, health: true });
+  });
+});
+
+describe("the MCP servers", () => {
+  const server = { id: "fs", command: "npx" };
+
+  it("trusts a server's tool annotations unless it is told not to", async () => {
+    await settings.saveMcpServers([
+      mcpServerSchema.parse(server),
+      mcpServerSchema.parse({ ...server, id: "mail", trustAnnotations: false }),
+    ]);
+
+    const saved = await settings.loadMcpServers();
+
+    expect(saved.map(({ id, trustAnnotations }) => ({ id, trustAnnotations }))).toEqual([
+      { id: "fs", trustAnnotations: true },
+      { id: "mail", trustAnnotations: false },
+    ]);
   });
 });

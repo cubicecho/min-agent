@@ -306,6 +306,7 @@ export type McpServer = {
   label: Scalars['String']['output'];
   position: Scalars['Int']['output'];
   transport: McpServersTransportEnum;
+  trustAnnotations: Scalars['Boolean']['output'];
   url: Scalars['String']['output'];
 };
 
@@ -340,6 +341,8 @@ export type McpServerConfig = {
   id: Scalars['String']['output'];
   label: Scalars['String']['output'];
   transport: McpTransport;
+  /** Believe its tools' `readOnlyHint`, so its reads run beside a step's other reads. Off, every call to it runs alone. */
+  trustAnnotations: Scalars['Boolean']['output'];
   url: Scalars['String']['output'];
 };
 
@@ -373,6 +376,7 @@ export type McpServerCountNonNullAggregate = {
   label: Scalars['Int']['output'];
   position: Scalars['Int']['output'];
   transport: Scalars['Int']['output'];
+  trustAnnotations: Scalars['Int']['output'];
   url: Scalars['Int']['output'];
 };
 
@@ -388,6 +392,7 @@ export type McpServerCountNonNullHaving = {
   label?: InputMaybe<AggregateNumberFilter>;
   position?: InputMaybe<AggregateNumberFilter>;
   transport?: InputMaybe<AggregateNumberFilter>;
+  trustAnnotations?: InputMaybe<AggregateNumberFilter>;
   url?: InputMaybe<AggregateNumberFilter>;
 };
 
@@ -404,6 +409,7 @@ export enum McpServerDistinctColumn {
   Label = 'label',
   Position = 'position',
   Transport = 'transport',
+  TrustAnnotations = 'trustAnnotations',
   Url = 'url'
 }
 
@@ -425,6 +431,7 @@ export type McpServerFilters = {
   label?: InputMaybe<StringFilter>;
   position?: InputMaybe<IntFilter>;
   transport?: InputMaybe<McpServersTransportEnumFilter>;
+  trustAnnotations?: InputMaybe<BooleanFilter>;
   url?: InputMaybe<StringFilter>;
 };
 
@@ -447,6 +454,7 @@ export enum McpServerGroupByColumn {
   Label = 'label',
   Position = 'position',
   Transport = 'transport',
+  TrustAnnotations = 'trustAnnotations',
   Url = 'url'
 }
 
@@ -458,6 +466,7 @@ export type McpServerGroupKeys = {
   label?: Maybe<Scalars['String']['output']>;
   position?: Maybe<Scalars['Int']['output']>;
   transport?: Maybe<McpServersTransportEnum>;
+  trustAnnotations?: Maybe<Scalars['Boolean']['output']>;
   url?: Maybe<Scalars['String']['output']>;
 };
 
@@ -484,6 +493,7 @@ export type McpServerInput = {
   id: Scalars['String']['input'];
   label?: InputMaybe<Scalars['String']['input']>;
   transport?: InputMaybe<McpTransport>;
+  trustAnnotations?: InputMaybe<Scalars['Boolean']['input']>;
   url?: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -525,6 +535,7 @@ export type McpServerOrderBy = {
   label?: InputMaybe<InnerOrder>;
   position?: InputMaybe<InnerOrder>;
   transport?: InputMaybe<InnerOrder>;
+  trustAnnotations?: InputMaybe<InnerOrder>;
   url?: InputMaybe<InnerOrder>;
 };
 
@@ -2052,26 +2063,26 @@ export type UpdateSettingManyInput = {
   where?: InputMaybe<SettingFilters>;
 };
 
-export type McpStateFragment = { status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> };
+export type McpStateFragment = { status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, trustAnnotations: boolean, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> };
 
 export type McpStatusQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type McpStatusQuery = { mcpStatus: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
+export type McpStatusQuery = { mcpStatus: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, trustAnnotations: boolean, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
 
 export type SaveMcpServersMutationVariables = Exact<{
   servers: Array<McpServerInput> | McpServerInput;
 }>;
 
 
-export type SaveMcpServersMutation = { saveMcpServers: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
+export type SaveMcpServersMutation = { saveMcpServers: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, trustAnnotations: boolean, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
 
 export type ReconnectMcpServerMutationVariables = Exact<{
   id: Scalars['String']['input'];
 }>;
 
 
-export type ReconnectMcpServerMutation = { reconnectMcpServer: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
+export type ReconnectMcpServerMutation = { reconnectMcpServer: Array<{ status: string, error?: string | null, config: { id: string, label: string, enabled: boolean, transport: McpTransport, command: string, args: Array<string>, env: unknown, url: string, headers: unknown, hiddenTools: Array<string>, trustAnnotations: boolean, hooks: unknown }, tools: Array<{ name: string, description: string, hidden: boolean }> }> };
 
 export type McpPromptsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -2200,6 +2211,7 @@ export const McpStateFragmentDoc = new TypedDocumentString(`
     url
     headers
     hiddenTools
+    trustAnnotations
     hooks
   }
   status
@@ -2255,6 +2267,7 @@ export const McpStatusDocument = new TypedDocumentString(`
     url
     headers
     hiddenTools
+    trustAnnotations
     hooks
   }
   status
@@ -2283,6 +2296,7 @@ export const SaveMcpServersDocument = new TypedDocumentString(`
     url
     headers
     hiddenTools
+    trustAnnotations
     hooks
   }
   status
@@ -2311,6 +2325,7 @@ export const ReconnectMcpServerDocument = new TypedDocumentString(`
     url
     headers
     hiddenTools
+    trustAnnotations
     hooks
   }
   status
