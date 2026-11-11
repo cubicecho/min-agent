@@ -1,5 +1,5 @@
 // Types only, from here: agent-core is the server's, and nothing of it may reach the app's bundle.
-import type { CompactionRecord } from "@cubicecho/agent-core";
+import type { CompactionRecord, ReasoningField, ReasoningReplay } from "@cubicecho/agent-core";
 import type { HookEvent, McpStatus } from "@cubicecho/agent-mcp-pool";
 import { HOOK_EVENTS, INJECT_EVENTS } from "@cubicecho/agent-mcp-pool/hooks";
 import type OpenAI from "openai";
@@ -42,6 +42,22 @@ export const REASONING_EFFORTS = [
 ] as const satisfies readonly ("off" | NonNullable<OpenAI.ReasoningEffort>)[];
 
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
+/**
+ * Which assistant messages send the model's thinking back to it, as agent-core's
+ * `ReasoningReplay`: every one (`all`, its default and so this one), only those that end in tool
+ * calls and only during the turn that made them (`tool-loop`), or none.
+ *
+ * Written out rather than imported because this file is in the app's bundle and agent-core is
+ * not; the `satisfies` holds it to the type, so a policy agent-core drops is caught here.
+ */
+export const REASONING_REPLAYS = [
+  "all",
+  "tool-loop",
+  "none",
+] as const satisfies readonly ReasoningReplay[];
+
+export type ReasoningReplayPolicy = (typeof REASONING_REPLAYS)[number];
 
 export const llmConfigSchema = z.object({
   /** Any OpenAI-compatible endpoint: OpenAI, Ollama, LM Studio, vLLM, OpenRouter, ... */
@@ -92,6 +108,11 @@ export const llmConfigSchema = z.object({
    * `off` — the default — leaves the parameter off it entirely. See `REASONING_EFFORTS`.
    */
   reasoningEffort: z.enum(REASONING_EFFORTS).default("off"),
+  /**
+   * Which earlier assistant messages carry the model's thinking back to it. See
+   * `REASONING_REPLAYS`.
+   */
+  reasoningReplay: z.enum(REASONING_REPLAYS).default("all"),
   /**
    * Per-task model overrides, keyed by the entries in `MODEL_TASKS`. A missing or empty value
    * means the task is off (or falls back to `model`, per the task). Kept as an open record so
@@ -360,12 +381,16 @@ export interface ModelInfo {
 }
 
 /**
- * A stored turn. `reasoning_content` is ours — servers that stream chain-of-thought
- * on that side channel get it kept here so the panel survives a reload, and it is
- * stripped again before the history is replayed to the model.
+ * A stored turn. `reasoning_content` is what the model thought before it, whichever field it
+ * streamed in: kept so the panel survives a reload, and sent back as `reasoningReplay` says,
+ * under `reasoning_field`.
  */
 export type StoredMessage = OpenAI.ChatCompletionMessageParam & {
   reasoning_content?: string;
+  /** The field the thinking arrived in and goes back under. Absent is `reasoning_content`. */
+  reasoning_field?: ReasoningField;
+  /** OpenRouter's reasoning blocks, sent back as they came, under the same policy. */
+  reasoning_details?: Record<string, unknown>[];
   /** What the servers' hooks added to a user message. Ours; see `withContext`. */
   hook_context?: string;
   /** Attached to the last assistant message of a turn. */

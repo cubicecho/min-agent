@@ -577,7 +577,7 @@ describe("a turn that compacts", () => {
     expect(order).toEqual(["compaction", "pruning"]);
 
     const [first] = chatted();
-    expect(first.messages[1].role).toBe("system");
+    expect(first.messages[1].role).toBe("user");
     expect(first.messages[1].content).toContain("the notes");
     expect(resultsOf(first)).toEqual([
       "[result cleared, 400 chars]",

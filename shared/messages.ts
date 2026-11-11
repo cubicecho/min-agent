@@ -13,6 +13,8 @@ export interface MessageShape {
   role: string;
   content: unknown;
   reasoningContent?: string | null;
+  reasoningField?: StoredMessage["reasoning_field"] | null;
+  reasoningDetails?: StoredMessage["reasoning_details"] | null;
   hookContext?: string | null;
   toolCalls?: ToolCall[] | null;
   toolCallId?: string | null;
@@ -28,6 +30,8 @@ export function toStored(row: MessageShape): StoredMessage {
     ...(row.toolCalls?.length ? { tool_calls: row.toolCalls } : {}),
     ...(row.toolCallId ? { tool_call_id: row.toolCallId } : {}),
     ...(row.reasoningContent ? { reasoning_content: row.reasoningContent } : {}),
+    ...(row.reasoningField ? { reasoning_field: row.reasoningField } : {}),
+    ...(row.reasoningDetails?.length ? { reasoning_details: row.reasoningDetails } : {}),
     ...(row.hookContext ? { hook_context: row.hookContext } : {}),
     ...(row.stats ? { stats: row.stats } : {}),
     ...(row.followups?.length ? { followups: row.followups } : {}),
@@ -45,6 +49,8 @@ export function fromStored(message: StoredMessage): MessageShape {
     role: message.role,
     content: record.content ?? null,
     reasoningContent: message.reasoning_content ?? null,
+    reasoningField: message.reasoning_field ?? null,
+    reasoningDetails: message.reasoning_details ?? null,
     hookContext: message.hook_context ?? null,
     toolCalls: record.tool_calls ?? null,
     toolCallId: record.tool_call_id ?? null,

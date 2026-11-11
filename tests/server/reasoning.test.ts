@@ -1,5 +1,5 @@
-import { coerceLlmConfig } from "../../server/config.ts";
-import { llmConfigSchema, REASONING_EFFORTS } from "../../shared/types.ts";
+import { assertLlmConfigPatch, coerceLlmConfig } from "../../server/config.ts";
+import { llmConfigSchema, REASONING_EFFORTS, REASONING_REPLAYS } from "../../shared/types.ts";
 
 /**
  * The reasoning-effort setting: the ladder it offers, and what it falls back to.
@@ -29,5 +29,27 @@ describe("reasoningEffort", () => {
    */
   it("falls back to off rather than refusing a row it cannot read", () => {
     expect(coerceLlmConfig({ reasoningEffort: "ludicrous" }).reasoningEffort).toBe("off");
+  });
+});
+
+/**
+ * Which replies send their thinking back. What it does to a request is in
+ * tests/server/for-api.test.ts and tests/server/run-turn.test.ts; this is the setting itself.
+ */
+describe("reasoningReplay", () => {
+  it("defaults to all, agent-core's own default", () => {
+    expect(llmConfigSchema.parse({}).reasoningReplay).toBe("all");
+  });
+
+  it("accepts every policy on the menu", () => {
+    for (const replay of REASONING_REPLAYS) {
+      expect(llmConfigSchema.parse({ reasoningReplay: replay }).reasoningReplay).toBe(replay);
+    }
+  });
+
+  /** The column is plain text, so the schema is the only thing between it and a typo. */
+  it("refuses a policy it does not know on the way in, and falls back to all on the way out", () => {
+    expect(() => assertLlmConfigPatch({ reasoningReplay: "some" })).toThrow(/reasoningReplay/);
+    expect(coerceLlmConfig({ reasoningReplay: "some" }).reasoningReplay).toBe("all");
   });
 });

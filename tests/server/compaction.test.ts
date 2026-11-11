@@ -232,21 +232,26 @@ describe("where a long chat is cut", () => {
     { limit: 2500, from: 5, cut: 25 },
     { limit: 2500, from: 20, cut: 25 },
     { limit: 2500, from: 23, cut: 25 },
-    // One message ahead of the cut is not worth a summary.
-    { limit: 2500, from: 24, cut: undefined },
+    // One message ahead of the user cut is not worth a summary, so since agent-core 4.5 the fold
+    // goes inside the last question's loop instead, keeping the question whole.
+    { limit: 2500, from: 24, cut: 35 },
     // The walk back stops short of `from`, so a later start is a later cut.
     { limit: 2500, from: 25, cut: 27 },
     { limit: 2500, from: 30, cut: 34 },
     { limit: 5000, from: 5, cut: 16 },
     { limit: 5000, from: 14, cut: 16 },
-    { limit: 5000, from: 15, cut: undefined },
+    { limit: 5000, from: 15, cut: 35 },
     { limit: 5000, from: 16, cut: 18 },
     { limit: 5000, from: 20, cut: 25 },
   ])("tool groups: $limit window, from $from → $cut", ({ cut, limit, ...at }) => {
     expect(cutOf(tools, limit, at)).toBe(cut);
-    // Never inside a group: a result with no call ahead of it is a request servers refuse.
+    // Never inside a group: a result with no call ahead of it is a request servers refuse. A cut
+    // that is not at a user message is a reply in the last question's loop.
     if (cut !== undefined) {
-      expect(tools[cut].role).toBe("user");
+      const inLastLoop = tools.slice(cut).every((message) => message.role !== "user");
+      expect(tools[cut].role === "user" || (tools[cut].role === "assistant" && inLastLoop)).toBe(
+        true,
+      );
     }
   });
 });

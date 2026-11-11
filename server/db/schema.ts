@@ -78,6 +78,16 @@ export const settings = table("settings", {
     .notNull()
     .default("off"),
   /**
+   * Which assistant messages carry the model's thinking back to it: `all`, `tool-loop` (only the
+   * ones that end in tool calls, during the turn that made them) or `none`. agent-core's
+   * `ReasoningReplay`, defaulting where it does. See `forApi`.
+   *
+   * Plain text rather than an enum column, because a GraphQL enum value cannot hold a hyphen and
+   * the generated one would be `Option1` for `tool-loop`. `REASONING_REPLAYS` is the check, on the
+   * way in and on the way out, as it is for every bound the column type cannot say.
+   */
+  reasoningReplay: text().notNull().default("all"),
+  /**
    * Per-task model overrides, keyed by the entries in `MODEL_TASKS`. Kept as an open JSON
    * object rather than a column each, so adding a task needs no migration.
    */
@@ -165,10 +175,18 @@ export const messages = table(
     /** A string for most turns; the multimodal part arrays are JSON too, so this is JSON. */
     content: jsonb().$type<StoredMessage["content"]>(),
     /**
-     * Ours, not the API's: servers that stream chain-of-thought on a side channel get it kept
-     * here so the panel survives a reload. Stripped again before the history is replayed.
+     * What the model thought before this reply, from whichever side channel it streamed on. Kept
+     * so the panel survives a reload, and sent back to the model as `reasoningReplay` says.
      */
     reasoningContent: text(),
+    /**
+     * The field the thinking arrived in, and so the one it goes back under: llama.cpp reads only
+     * `reasoning_content` and Ollama's `/v1` only `reasoning`. Null is `reasoning_content`, which
+     * is what every row from before this column was.
+     */
+    reasoningField: text({ enum: ["reasoning_content", "reasoning"] }),
+    /** OpenRouter's `reasoning_details` blocks, which it wants back byte for byte, in order. */
+    reasoningDetails: jsonb().$type<Record<string, unknown>[]>(),
     /**
      * What the servers' hooks added to this question, on a `user` row. Kept apart from `content`,
      * which is what the user typed, and sent ahead of it on every later request too: dropped from

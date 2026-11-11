@@ -474,6 +474,31 @@ One error is deliberately *not* treated as a schema problem: Qwen templates rais
 `No user query found` when a transcript has no user turn, and some servers wrap it in the same
 "unable to generate parser" wording. Stripping keywords would not fix it, so it propagates.
 
+### Sending thinking back
+
+A reasoning model's thinking is stored with its reply — `reasoning_content` on the message row,
+whichever field the server streamed it in — so the panel survives a reload. **Settings → Agent →
+Send thinking back to the model** decides whether the model is sent it again:
+
+```
+All turns                every reply carries its thinking, earlier turns' included (the default)
+Only during tool calls   only the calls of the question being answered, until the answer is written
+Never                    nothing, as before
+```
+
+The default is agent-core's, and for the same reason. Thinking models — gpt-oss, DeepSeek,
+Qwen3.x, GLM — need their reasoning back between tool calls, DeepSeek's API refuses a request
+that leaves any out, and each model's chat template already drops what it does not want. A reply
+sent back as it was generated also keeps the server's prompt cache valid, which a stripped one
+does not. **Never** saves context on an endpoint that does nothing with it.
+
+It is decided in `forApi`, not left to agent-core's loop, because every step of a turn is sent
+the stored transcript rather than the loop's own copy, and an earlier turn's replies only ever
+come from there. The thinking goes back under the field it arrived in — llama.cpp reads only
+`reasoning_content`, Ollama's `/v1` only `reasoning` — which the row keeps as `reasoning_field`,
+and OpenRouter's `reasoning_details` blocks go back with it. An endpoint that refuses the field
+is latched off for that model and sent the request again without it, like any refusal above.
+
 ## Task models
 
 Not every model call is a chat turn. Some are short, frequent, and latency-sensitive — exactly
@@ -572,7 +597,9 @@ this one's with only the unused guesses gone.
 
 A session that runs long eventually stops fitting. Compaction is the answer: once the last turn
 reported using **75%** of the context window, the oldest messages are replaced — for the purpose
-of the API call only — by one system message holding a summary of them.
+of the API call only — by a summary of them: a user message holding the notes and the assistant's
+one-line acknowledgement, which is how agent-core has sent a fold since 4.23.1, so the request
+never carries a second system message.
 
 Nothing is deleted. `session.compaction` records `{ summary, through, at }` and the messages stay
 on disk in full; `through` is simply the index the transcript is rebuilt from, so the UI still
@@ -585,8 +612,10 @@ The cut point is the fussy part. It has to land **immediately before a `user` me
 transcript that opens mid-exchange — a tool result with no assistant call above it, an assistant
 turn answering nothing — is rejected by most servers. agent-core's `planCompaction()` walks
 backwards from the end accumulating a tail worth about 35% of the window, then advances the cut
-forward to the next `user` message and gives up if that leaves fewer than two messages folded. A
-fold that would not pay for itself is not worth a round trip.
+forward to the next `user` message. If that leaves fewer than two messages folded, it folds
+inside the last question's tool loop instead — at a reply after the question, which is kept whole
+and sent after the summary — and gives up only if that folds too little as well. A fold that
+would not pay for itself is not worth a round trip.
 
 Like titling, a failure is swallowed: the turn proceeds on the full transcript, which is the
 behaviour you had before compaction existed.

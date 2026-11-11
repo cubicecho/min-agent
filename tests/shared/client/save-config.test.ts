@@ -13,6 +13,7 @@ const STORED = {
   contextLimit: 0,
   toolDiscovery: "ondemand",
   reasoningEffort: "off",
+  reasoningReplay: "all",
   taskModels: {},
   pricing: { inputPer1M: 0, outputPer1M: 0 },
   voiceBaseUrl: "",
@@ -70,6 +71,7 @@ describe("saveConfig", () => {
       ...STORED,
       toolDiscovery: "ondemand",
       reasoningEffort: "off",
+      reasoningReplay: "all",
       hasApiKey: false,
     };
 

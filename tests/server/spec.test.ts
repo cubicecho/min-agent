@@ -40,6 +40,7 @@ const row = (patch: Partial<LlmConfig> = {}): LlmConfig =>
     contextLimit: 32768,
     toolDiscovery: "eager",
     reasoningEffort: "low",
+    reasoningReplay: "tool-loop",
     taskModels: { compaction: "qwen3:1.7b", title: "qwen3:0.6b" },
     pricing: { inputPer1M: 0.25, outputPer1M: 2 },
     voiceBaseUrl: "http://192.168.1.41:8000/v1",
@@ -73,6 +74,7 @@ const settingsOf = (agent: ResolvedAgent): Record<string, unknown> => ({
   contextLimit: agent.contextLength,
   toolDiscovery: agent.toolDiscovery,
   reasoningEffort: agent.reasoningEffort,
+  reasoningReplay: agent.reasoningReplay,
   taskModels: Object.fromEntries(
     Object.entries(agent.tasks).map(([task, { model }]) => [task, model]),
   ),
@@ -110,6 +112,7 @@ describe("settingsSpec", () => {
         maxTokens: 4096,
         temperature: 0.7,
         reasoningEffort: "off",
+        reasoningReplay: "all",
         contextLength: 0,
       },
       prompt: [{ id: "identity", text: "You are min-agent, a concise and careful assistant." }],

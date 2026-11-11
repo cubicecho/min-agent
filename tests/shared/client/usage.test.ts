@@ -151,16 +151,19 @@ describe("measureRequest", () => {
   });
 
   it("gives the folded head its own share, and does not count it as history too", () => {
-    const summary = say("system", "what happened earlier");
+    // The notes and the reply that acknowledges them, which is how a fold is sent.
+    const summary = [say("user", "what happened earlier"), say("assistant", "Understood.")];
     const split = measureRequest({
       system: "S",
       systemPrompt: "S",
       tools: [],
-      history: [summary, say("user", "then"), say("user", "now")],
+      history: [...summary, say("user", "then"), say("user", "now")],
       turnLength: 1,
       compacted: true,
     });
-    expect(split.summary).toBe(JSON.stringify(summary).length);
+    expect(split.summary).toBe(
+      summary.map((message) => JSON.stringify(message).length).reduce((a, b) => a + b),
+    );
     expect(split.history).toBe(JSON.stringify(say("user", "then")).length);
     expect(split.input).toBe(JSON.stringify(say("user", "now")).length);
   });

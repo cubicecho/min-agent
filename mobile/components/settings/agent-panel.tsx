@@ -1,4 +1,9 @@
-import { REASONING_EFFORTS, type ReasoningEffort } from "@shared/types.ts";
+import {
+  REASONING_EFFORTS,
+  REASONING_REPLAYS,
+  type ReasoningEffort,
+  type ReasoningReplayPolicy,
+} from "@shared/types.ts";
 import { useMutation } from "@tanstack/react-query";
 import { Text, View } from "react-native";
 import { Alert } from "@/components/ui/alert.tsx";
@@ -32,6 +37,18 @@ const EFFORT_LABEL: Record<ReasoningEffort, string> = {
 const EFFORT_OPTIONS = REASONING_EFFORTS.map((effort) => ({
   label: EFFORT_LABEL[effort],
   value: effort,
+}));
+
+/** The thinking menu, in the order `REASONING_REPLAYS` gives it: the default first. */
+const REPLAY_LABEL: Record<ReasoningReplayPolicy, string> = {
+  all: "All turns",
+  "tool-loop": "Only during tool calls",
+  none: "Never",
+};
+
+const REPLAY_OPTIONS = REASONING_REPLAYS.map((replay) => ({
+  label: REPLAY_LABEL[replay],
+  value: replay,
 }));
 
 const DISCOVERY_OPTIONS = [
@@ -121,6 +138,7 @@ export function AgentPanel() {
         contextLimit,
         toolDiscovery,
         reasoningEffort,
+        reasoningReplay,
         systemPrompt,
       }) => ({
         maxTokens,
@@ -129,6 +147,7 @@ export function AgentPanel() {
         contextLimit,
         toolDiscovery,
         reasoningEffort,
+        reasoningReplay,
         systemPrompt,
       })}
       content={({ form }) => (
@@ -198,6 +217,17 @@ export function AgentPanel() {
                       label="Reasoning effort"
                       description="Only a reasoning model takes this. Off and None are not the same: Off leaves the setting off the request, which is the only thing a server that has never heard of reasoning will accept, and None sends it — the way a model that can reason is told not to on this turn. A model that refuses the setting is asked again without it, so a wrong pick here costs a round trip rather than the turn."
                       options={EFFORT_OPTIONS}
+                    />
+                  )}
+                </form.AppField>
+
+                <form.AppField name="reasoningReplay">
+                  {(field) => (
+                    <field.ComboboxField
+                      descriptionPlacement={placement}
+                      label="Send thinking back to the model"
+                      description="Thinking models such as gpt-oss, DeepSeek, Qwen3 and GLM need their reasoning back between tool calls, and sending it as it was generated keeps the server's prompt cache valid; each model's template drops what it does not want. Only during tool calls sends it back until the answer is written. Never saves context on an endpoint that does not use it."
+                      options={REPLAY_OPTIONS}
                     />
                   )}
                 </form.AppField>

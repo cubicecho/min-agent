@@ -18,6 +18,8 @@ import {
   listLines,
   loadResult,
   preselect,
+  REASONING_CONTENT,
+  ReasoningReplay,
   requestedNames,
   runAgentLoop,
   runCompaction,
@@ -41,6 +43,7 @@ import {
   type LlmConfig,
   type ModelInfo,
   modelForTask,
+  type ReasoningReplayPolicy,
   type Session,
   type StoredMessage,
   type StreamEvent,
@@ -262,18 +265,36 @@ async function suggestFollowups(
 
 /**
  * The transcript as the server should see it: private bookkeeping stripped, each question sent
- * with the context its hooks added, the tool results behind the pruning marker sent as stubs,
- * and — once a session has been compacted — the folded head replaced by its summary.
+ * with the context its hooks added, each reply with the thinking `replay` says it carries, the
+ * tool results behind the pruning marker sent as stubs, and — once a session has been compacted —
+ * the folded head replaced by its summary.
  *
- * `reasoning_content`, `stats` and `followups` are display artifacts, and strict servers reject
- * unknown message fields. The context is sent on every question that had one, the old as well as
- * the new, so a request is the one before it with only its tail added. See `withContext`.
+ * `stats` and `followups` are display artifacts, and strict servers reject unknown message
+ * fields. The context is sent on every question that had one, the old as well as the new, so a
+ * request is the one before it with only its tail added. See `withContext`.
+ *
+ * The thinking is decided here rather than left to the loop, because every step is sent this
+ * rather than the loop's own transcript: what the loop writes onto its messages never reaches the
+ * endpoint, and a row from an earlier turn only ever comes from here. Under `all` it goes back on
+ * every reply that had some. Thinking models (gpt-oss, DeepSeek, Qwen3.x, GLM) need theirs back
+ * between tool calls, their templates drop what they do not want, and a request whose replies
+ * match what was generated keeps the server's prompt cache. Under `tool-loop` it goes back only
+ * on the calls of the question being answered, and under `none` never. An endpoint that refuses
+ * the field is latched off and sent the request again without it, by the loop.
+ *
+ * A reply with no calls and no text goes as `""` rather than `null`: Ollama refuses the second
+ * on every later request, and such a row is what a reply that only thought leaves behind.
  *
  * The stubs are made here and nowhere else, so the stored rows and the chat keep every result
  * whole. They go in ahead of the fold because the marker, like `compaction.through`, is an index
  * into the stored transcript. See `sentWithStubs`.
+ *
+ * @param replay Which replies carry their thinking. agent-core's default when not given.
  */
-export function forApi(session: Session): OpenAI.ChatCompletionMessageParam[] {
+export function forApi(
+  session: Session,
+  replay: ReasoningReplayPolicy = ReasoningReplay.All,
+): OpenAI.ChatCompletionMessageParam[] {
   // `from: 0` because the system prompt is a separate argument and never in the transcript:
   // the summary is the request's first message, with nothing kept ahead of it.
   const messages = applyCompaction(
@@ -281,11 +302,36 @@ export function forApi(session: Session): OpenAI.ChatCompletionMessageParam[] {
     session.compaction,
     { from: 0 },
   );
-  return messages.map((message) => {
-    const { reasoning_content, stats, followups, hook_context, ...sent } = message as StoredMessage;
-    return sent.role === "user"
-      ? withContext(sent, hook_context)
-      : (sent as OpenAI.ChatCompletionMessageParam);
+  // The question being answered: under `tool-loop` only what came after it is its tool loop.
+  const question = messages.findLastIndex((message) => message.role === "user");
+  return messages.map((message, at) => {
+    const {
+      reasoning_content,
+      reasoning_field,
+      reasoning_details,
+      stats,
+      followups,
+      hook_context,
+      ...sent
+    } = message as StoredMessage;
+    if (sent.role === "user") {
+      return withContext(sent, hook_context);
+    }
+    if (sent.role !== "assistant") {
+      return sent as OpenAI.ChatCompletionMessageParam;
+    }
+    const calls = Boolean(sent.tool_calls?.length);
+    const replays =
+      replay === ReasoningReplay.All ||
+      (replay === ReasoningReplay.ToolLoop && calls && at > question);
+    return {
+      ...sent,
+      content: sent.content ?? (calls ? null : ""),
+      ...(replays && reasoning_content
+        ? { [reasoning_field ?? REASONING_CONTENT]: reasoning_content }
+        : {}),
+      ...(replays && reasoning_details?.length ? { reasoning_details } : {}),
+    };
   });
 }
 
@@ -344,19 +390,26 @@ function withWindow(error: unknown, contextLimit: number): unknown {
 }
 
 /**
- * An assistant row as it is stored: what streamed, and the calls as the model wrote them.
+ * An assistant row as it is stored: what streamed, the calls as the model wrote them, and the
+ * thinking with the field it came in, so `forApi` can send it back where the server reads it.
  *
  * @param toolCalls The step's calls. None for a reply cut short by a stop, which asked for none.
+ * @param turn The step, for where its thinking came from. None for a reply cut short by a stop,
+ * which is stored under `reasoning_content`.
  */
 function assistantMessage(
   text: string,
   reasoning: string,
   toolCalls: Turn["toolCalls"] = [],
+  turn?: Pick<Turn, "reasoningField" | "reasoningDetails">,
 ): StoredMessage {
+  const field = turn?.reasoningField;
   return {
     role: "assistant",
     content: text || null,
     ...(reasoning ? { reasoning_content: reasoning } : {}),
+    ...(reasoning && field && field !== REASONING_CONTENT ? { reasoning_field: field } : {}),
+    ...(turn?.reasoningDetails?.length ? { reasoning_details: turn.reasoningDetails } : {}),
     ...(toolCalls.length
       ? {
           tool_calls: toolCalls.map((call) => ({
@@ -1009,7 +1062,7 @@ export async function runTurn(
   // empty system prompt is still sent as a message, as it always was; the loop leaves one out.
   let history: OpenAI.ChatCompletionMessageParam[] = [];
   const transcript = (): OpenAI.ChatCompletionMessageParam[] => {
-    history = forApi(session);
+    history = forApi(session, config.reasoningReplay);
     return system ? history : [{ role: "system", content: "" }, ...history];
   };
 
@@ -1028,6 +1081,8 @@ export async function runTurn(
         maxTokens: config.maxTokens,
         temperature: config.temperature,
         reasoningEffort: config.reasoningEffort,
+        // `forApi` applies it to what is sent; the loop is told so its own transcript agrees.
+        reasoningReplay: config.reasoningReplay,
         maxToolIterations: config.maxToolIterations,
         toolDiscovery: LOOP_DISCOVERY[discovery],
         maxRetries: TURN_DEFAULTS.openRetries,
@@ -1164,7 +1219,7 @@ export async function runTurn(
         unanswered = turn.toolCalls.length;
         // Built from the turn rather than taken from `message`, which carries the arguments as
         // the loop repaired them: what is stored is what the model wrote.
-        const assistant = assistantMessage(text, reasoning, turn.toolCalls);
+        const assistant = assistantMessage(text, reasoning, turn.toolCalls, turn);
         text = "";
         reasoning = "";
         session.usage = add(banked, turnUsage);
