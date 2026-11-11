@@ -1,4 +1,9 @@
-import { createTurnStore, type TurnState } from "@shared/client/turns.ts";
+import {
+  createTurnStore,
+  type TurnActivity,
+  type TurnState,
+  turnActivity,
+} from "@shared/client/turns.ts";
 import { useSyncExternalStore } from "react";
 
 /**
@@ -13,9 +18,9 @@ export function useChatTurn(id: string | null | undefined): TurnState {
 }
 
 /**
- * Whether this chat is answering right now. A boolean rather than the turn, so a row in the
- * list redraws when its chat starts or stops, not on every token the turn streams.
+ * What this chat is doing right now. A word rather than the turn, so a row in the list redraws
+ * when its chat starts, stops or asks something, not on every token the turn streams.
  */
-export function useIsRunning(id: string): boolean {
-  return useSyncExternalStore(turns.subscribe, () => turns.get(id).prompt !== null);
+export function useTurnActivity(id: string): TurnActivity {
+  return useSyncExternalStore(turns.subscribe, () => turnActivity(turns.get(id)));
 }
