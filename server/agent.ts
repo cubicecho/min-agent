@@ -59,13 +59,12 @@ import {
 import { appendLedger, planFold } from "./compaction.ts";
 import { endpoint, type Settings } from "./config.ts";
 import {
+  afterTurnHooks,
   compactionHooks,
   type Gathered,
   gather,
   HOST,
-  notify,
   turnIndex,
-  turnMessages,
   withContext,
 } from "./hooks.ts";
 import type { Mcp } from "./mcp.ts";
@@ -507,7 +506,7 @@ export interface RunOptions {
 
 type Emit = (event: StreamEvent) => void;
 
-/** What the servers' hooks are told about a turn, before it and after it. */
+/** What the servers' hooks are told about a turn before it. The loop tells them after it. */
 interface TurnHookContext {
   session: { id: string };
   host: string;
@@ -868,14 +867,13 @@ function startTitle(
 /** What the work after a turn needs of the turn it follows. */
 interface AnsweredTurn {
   config: LlmConfig;
-  session: Session;
   prompt: string;
   /** The reply, and the id of the row it was stored in. */
   assistant: StoredMessage;
   assistantRow: string;
   stats: TurnStats;
-  hookContext: TurnHookContext;
-  turnStart: number;
+  /** The `afterTurn` hooks' failures, once the loop has told them the turn. */
+  remembered: AgentLoopResult["afterTurn"];
   emit: Emit;
   signal?: AbortSignal;
 }
@@ -885,19 +883,8 @@ interface AnsweredTurn {
  * hooks and the follow-up suggestions.
  */
 async function afterTurn(
-  { mcp, store }: TurnDeps,
-  {
-    config,
-    session,
-    prompt,
-    assistant,
-    assistantRow,
-    stats,
-    hookContext,
-    turnStart,
-    emit,
-    signal,
-  }: AnsweredTurn,
+  { store }: TurnDeps,
+  { config, prompt, assistant, assistantRow, stats, remembered, emit, signal }: AnsweredTurn,
 ) {
   // Both of these land after the answer and write to the same row. Each write carries everything
   // known at the moment it runs, and they are chained, so the one that finishes second cannot put
@@ -914,15 +901,11 @@ async function afterTurn(
   };
 
   const body = typeof assistant.content === "string" ? assistant.content : "";
-  // The turn is answered, so the servers are told about it. Only a failure is noted, and it is
+  // The loop told the servers about the turn as it answered. Only a failure is noted, and it is
   // stored with the turn's stats so the line is still there after a reload. Said once it is
   // stored, as the chips are: the turn has settled on the client by now, and what it does with
   // the event is read the stored message back.
-  const remembered = notify(mcp, "afterTurn", {
-    ...hookContext,
-    reply: body,
-    turn: { ...hookContext.turn, messages: turnMessages(session, turnStart) },
-  }).then(async (notes) => {
+  const told = remembered.then(async (notes) => {
     if (!notes.length) {
       return;
     }
@@ -949,7 +932,7 @@ async function afterTurn(
       emit({ type: "followups", items: followups });
     }
   }
-  await remembered;
+  await told;
 }
 
 /**
@@ -1075,6 +1058,7 @@ export async function runTurn(
   };
 
   const { hostTools, hostNames, tools, definitions } = declaredTools(deps, plan);
+  const sent = transcript();
 
   let result: AgentLoopResult;
   try {
@@ -1101,7 +1085,7 @@ export async function runTurn(
       // a third party, and this is text it controls landing where a model is most inclined to take
       // it literally.
       serverInstructions: true,
-      messages: transcript(),
+      messages: sent,
       tools,
       hostTools,
       catalog,
@@ -1134,6 +1118,8 @@ export async function runTurn(
       // The chat's own key, so a long conversation keeps a llama.cpp slot — and the prefix cached
       // in it — from one turn to the next, even while another chat's turn is running.
       session: session.id,
+      // `afterTurn` alone. The question is the last message the loop is handed.
+      hooks: afterTurnHooks(deps.mcp, session, prompt, turnStart, sent.length - 1),
       dispatch,
       beforeStep: async (_sent, step) => {
         if (step === 0) {
@@ -1224,14 +1210,21 @@ export async function runTurn(
       },
     });
   } catch (error) {
-    await bank(failedRun(error)?.usage);
+    // What the steps before the failure reported is kept, as an answered turn's is, and before a
+    // partial reply is stored below: the loop's transcript ends where the stored one does.
+    const failure = failedRun(error);
+    const measured = failure?.ledger?.length ? failure.ledger : undefined;
+    if (failure && measured) {
+      session.ledger = appendLedger(session, failure.messages, measured);
+    }
+    await bank(failure?.usage, measured ? { ledger: session.ledger } : {});
     await pruneBetweenSteps();
     // Stopping a turn used to throw away everything it had already said: the assistant message
     // is only appended once the stream ends, so an abort left the reply on screen and nothing in
     // the transcript. Keep the part that streamed — the loop hands it back as the failure's
     // `partial`, calls begun left off since nothing will answer them — then let the error
     // through. The route stays quiet about a turn its reader ended.
-    const partial = failedRun(error)?.partial;
+    const partial = failure?.partial;
     if (signal?.aborted && (partial?.content || partial?.reasoning)) {
       await append(
         deps,
@@ -1247,15 +1240,13 @@ export async function runTurn(
     }
     // The loop wraps what it caught to hang the run on it. Every message is stored already, so
     // the run is not needed and the error goes on as it was thrown.
-    throw await withWindow(
-      failedRun(error) && error instanceof Error ? error.cause : error,
-      contextLimit,
-      { ...plan.server, model: chosenModel },
-    );
+    throw await withWindow(failure && error instanceof Error ? error.cause : error, contextLimit, {
+      ...plan.server,
+      model: chosenModel,
+    });
   }
 
-  // What the turn's requests reported, kept for the next fold to weigh the messages by. A turn
-  // that fails keeps none: the loop hands back no ledger with what it throws.
+  // What the turn's requests reported, kept for the next fold to weigh the messages by.
   session.ledger = appendLedger(session, result.messages, result.ledger);
   await bank(result.usage, { ledger: session.ledger });
   // The loop returns on the step that asked for no tools, whose reply is the last row written.
@@ -1291,13 +1282,11 @@ export async function runTurn(
 
   await afterTurn(deps, {
     config,
-    session,
     prompt,
     assistant,
     assistantRow,
     stats,
-    hookContext,
-    turnStart,
+    remembered: result.afterTurn,
     emit,
     signal,
   });

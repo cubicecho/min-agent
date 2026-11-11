@@ -171,7 +171,55 @@ function asksServer() {
   return server;
 }
 
+/** Every call the memory server was made, in order, with the arguments as they reached it. */
+export const remembered: { tool: string; args: Record<string, unknown> }[] = [];
+
+/**
+ * A memory server as a host's hooks reach it: `recall` before a turn, `remember` after it and
+ * `file` ahead of a fold, all three hidden from the model, beside one tool the model may call.
+ * What each is called with is kept in `remembered`, which is what a memory server files under.
+ */
+function memoryServer() {
+  const server = serverWith("memory", { tools: {} });
+  const names = ["recall", "remember", "file", "lookup"];
+  server.setRequestHandler(ListToolsRequestSchema, () => ({
+    tools: names.map((name) => ({
+      name,
+      description: `${name}s.`,
+      inputSchema: { type: "object" },
+    })),
+  }));
+  server.setRequestHandler(CallToolRequestSchema, ({ params }) => {
+    remembered.push({ tool: params.name, args: params.arguments ?? {} });
+    const text = params.name === "recall" ? "likes tea" : `${params.name} done`;
+    return { content: [{ type: "text", text }] };
+  });
+  return server;
+}
+
+/** The row fields beyond the transport that a fixture server is configured with. */
+const MEMORY_ROW = {
+  hiddenTools: ["recall", "remember", "file"],
+  hooks: [
+    { id: "recall", on: "beforeTurn", tool: "recall", inject: true, args: { query: "{{prompt}}" } },
+    {
+      id: "remember",
+      on: "afterTurn",
+      tool: "remember",
+      args: {
+        session: "{{session.id}}",
+        index: "{{turn.index}}",
+        prompt: "{{prompt}}",
+        reply: "{{reply}}",
+        turns: "{{turn.messages}}",
+      },
+    },
+    { id: "file", on: "beforeCompact", tool: "file", args: { turns: "{{compacting}}" } },
+  ],
+};
+
 const SERVERS = {
+  memory: memoryServer,
   docs: docsServer,
   broken: brokenServer,
   links: linkServer,
@@ -182,7 +230,13 @@ export type FixtureServer = keyof typeof SERVERS;
 
 /** A min-agent row for one fixture server, labelled so a test can tell label from id. */
 const row = (id: FixtureServer) =>
-  mcpServerSchema.parse({ id, label: `${id} server`, transport: "http", url: `memory://${id}` });
+  mcpServerSchema.parse({
+    id,
+    label: `${id} server`,
+    transport: "http",
+    url: `memory://${id}`,
+    ...(id === "memory" ? MEMORY_ROW : {}),
+  });
 
 /**
  * The app's MCP servers, connected to the named fixtures in that order.

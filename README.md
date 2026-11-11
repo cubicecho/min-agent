@@ -392,6 +392,10 @@ A hook that fails or times out costs the turn its context, never the turn itself
 a line says what each hook added or why it failed. Context opens like thinking does, to show
 exactly what the model was given. A failed `afterTurn` line is kept with the turn.
 
+`afterTurn` is told the question as you typed it, without the context the hooks added to it, and
+each message under its index in the stored chat. That is the index `beforeCompact` uses when the
+same message is folded later, so a memory server sees one message, not two.
+
 **Hide from the model** (the switch beside each tool) takes a tool out of what the model is
 offered, and refuses the model's calls to it, while this row's hooks can still call it. That is
 what makes a memory server work without the model's help. This is
@@ -439,10 +443,8 @@ whether or not the model touches a single one.
   the history as a `load_tools` call and its result, since the tool array can't take it. Nothing
   carries over between turns; the definitions loaded on earlier turns are still in the history.
   The mode is agent-core's own, run by its loop; `list_resources` and `read_resource` are declared
-  beside the two and called directly, never through `call_tool`. One thing it does not do here: a
-  load repeated on a later step of a turn is answered with the definition again rather than as
-  already loaded, because the loop forgets what it loaded whenever it is handed a rebuilt
-  transcript, and min-agent hands it the stored one on every step.
+  beside the two and called directly, never through `call_tool`. A load repeated on a later step
+  of a turn is answered as already loaded.
 - **Eager** sends everything every time. Simpler, and right when there are only a few tools.
 
 Measured on the same server, same prompt:
@@ -687,9 +689,9 @@ What a message weighs in that walk is measured where it can be. Every request re
 tokens, and two requests of one turn where the second only appended to the first differ by exactly
 what was appended — the chat template's tokens, the hooks' context and a tool result's real density
 included. agent-core keeps those readings as a token ledger, and min-agent stores each turn's on
-the session (`sessions.ledger`, indexed into the stored transcript, kept out of the API), so the
-next fold weighs the messages it covers by what the server said they cost and estimates only the
-rest. Whether to fold at all is still the last turn's reported total.
+the session, a failed turn's included (`sessions.ledger`, indexed into the stored transcript,
+kept out of the API), so the next fold weighs the messages it covers by what the server said
+they cost and estimates only the rest. Whether to fold at all is still the last turn's reported total.
 
 Like titling, a failure is swallowed: the turn proceeds on the full transcript, which is the
 behaviour you had before compaction existed.
