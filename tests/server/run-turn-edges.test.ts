@@ -129,8 +129,10 @@ const loses = (lost: string): Reply => ({ lost });
 
 async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   // The turn runs under the chat's id, so it asks llama.cpp's `/props` once for slots to pin it
-  // to. None here; `run-turn.test.ts` is where the pinning is pinned.
-  if (new URL(String(url)).pathname.endsWith("/props")) {
+  // to, and an overflow asks it and LM Studio's route for the window it serves. None here;
+  // `run-turn.test.ts` is where the pinning and the served window are pinned.
+  const { pathname } = new URL(String(url));
+  if (pathname.endsWith("/props") || pathname.endsWith("/api/v0/models")) {
     return new Response("{}", { status: 404 });
   }
   requests.push(String(init?.body ?? url));

@@ -105,6 +105,8 @@ let sessions: (string | null)[] = [];
 /** Every `/props` probe, and the slots it answers with: none, unless a test says so. */
 let probes: string[] = [];
 let slots = 0;
+/** The window `/props` says the model was loaded in: none, unless a test says so. */
+let served = 0;
 
 /**
  * @param delta What this chunk adds to the reply.
@@ -175,18 +177,29 @@ const refuses = (refusal: string): Reply => ({ refusal });
 
 /**
  * The endpoint. Anything but a chat completion is a 404, and is recorded all the same, so a
- * request nobody scripted shows up in `requests` rather than passing unseen. The one exception is
- * llama.cpp's `/props`, which a turn asks once for its slots because it runs under the chat's id;
- * that is kept apart in `probes`, and answers a `total_slots` only where a test set `slots`.
+ * request nobody scripted shows up in `requests` rather than passing unseen. The exceptions are
+ * the two routes a server says what it serves on: llama.cpp's `/props`, which a turn asks once
+ * for its slots because it runs under the chat's id, and LM Studio's `/api/v0/models`, which an
+ * overflow asks after it for the window. Both are kept apart in `probes`; `/props` answers a
+ * `total_slots` only where a test set `slots`, and an `n_ctx` only where it set `served`.
  *
  * @param url Where the SDK posted.
  * @param init The request, whose body is the JSON exactly as it went out.
  * @returns The next scripted reply.
  */
 async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  if (new URL(String(url)).pathname.endsWith("/props")) {
+  const { pathname } = new URL(String(url));
+  if (pathname.endsWith("/api/v0/models")) {
     probes.push(String(url));
-    return slots > 0 ? Response.json({ total_slots: slots }) : new Response("{}", { status: 404 });
+    return new Response("{}", { status: 404 });
+  }
+  if (pathname.endsWith("/props")) {
+    probes.push(String(url));
+    const props = {
+      ...(slots > 0 ? { total_slots: slots } : {}),
+      ...(served > 0 ? { default_generation_settings: { n_ctx: served } } : {}),
+    };
+    return Object.keys(props).length ? Response.json(props) : new Response("{}", { status: 404 });
   }
   requests.push(String(init?.body ?? url));
   sessions.push(new Headers(init?.headers).get(SESSION_HEADER));
@@ -362,6 +375,7 @@ beforeEach(() => {
   sessions = [];
   probes = [];
   slots = 0;
+  served = 0;
   stored = [];
   patches = [];
   updates = [];
@@ -1699,6 +1713,31 @@ describe("what the loop decides beyond the common path", () => {
     expect(requests).toHaveLength(1);
     expect(events).toEqual([]);
     expect(stored).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  it("names what the server serves when it is less than the turn was built to", async () => {
+    served = 16_384;
+    script = [refuses("This model's maximum context length is 16384 tokens.")];
+
+    const { error } = await run(sessionOf(), "hi");
+
+    expect(error?.name).toBe("ContextOverflow");
+    expect(error?.message).toBe(
+      "400 This model's maximum context length is 16384 tokens. — this turn was built to 32.8k " +
+        "tokens, so the window in Settings → Agent is larger than what the server actually serves " +
+        "(16.4k).",
+    );
+  });
+
+  it("leaves the setting out of an overflow the window it set was right about", async () => {
+    served = 32_768;
+    script = [refuses("This model's maximum context length is 32768 tokens.")];
+
+    const { error } = await run(sessionOf(), "hi");
+
+    // The server serves what the turn was built to, so the turn outgrew a right window.
+    expect(error?.name).toBe("ContextOverflow");
+    expect(error?.message).toBe("400 This model's maximum context length is 32768 tokens.");
   });
 
   it("stores a stopped tool call's answer before the stop ends the turn", async () => {

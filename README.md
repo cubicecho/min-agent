@@ -698,7 +698,10 @@ Compaction is driven by what the *last* turn cost, so a single huge paste or an 
 tool result can still overrun a window nothing had a chance to fold. When it does, the endpoint's
 complaint comes back with the number the turn was working to added to it — the whole difficulty of
 that failure is that the two disagree, and the usual cause is a **Context window** larger than what
-the server actually serves (llama.cpp will list a 256k model it loaded at `-c 16384`).
+the server actually serves (llama.cpp will list a 256k model it loaded at `-c 16384`). So the
+server is asked what it serves (agent-core's `servedWindow`, from llama.cpp's `/props` or LM
+Studio's model listing): less than the turn was built to, and the message names the figure; at
+least as much, and the setting is left out of it, since the turn simply outgrew a right window.
 
 ### Clearing old tool results
 

@@ -7,6 +7,7 @@ import {
   clean,
   compact as compactTokens,
   contextLimitFor,
+  type Endpoint,
   expandNames,
   failedRun,
   isOverflow,
@@ -25,6 +26,7 @@ import {
   runAgentLoop,
   runCompaction,
   sanitizeTools,
+  servedWindow,
   serverInstructionsPrompt,
   summariser,
   type ToolCallReport,
@@ -352,20 +354,40 @@ export function forApi(
  * whole difficulty of that failure is that the number the server reports and the window this turn
  * was built to disagree — and the setting that disagrees is one screen away.
  *
+ * Which of the two is wrong is asked of the server, through agent-core's `servedWindow`: llama.cpp
+ * and LM Studio say what a model was actually loaded in, which is the number a listing of its
+ * trained window hides. A server that serves less than the turn was built to is said to, with the
+ * figure; one that serves at least as much leaves the setting blameless and the refusal as it
+ * came, since the turn simply outgrew a window that was right; one that will not say is blamed on
+ * the setting as it always was, since that is where the answer is either way.
+ *
  * @param contextLimit The window the turn was built to. Zero when none is set.
+ * @param server The endpoint and the model the turn ran on, for asking what it serves.
  */
-function withWindow(error: unknown, contextLimit: number): unknown {
+async function withWindow(
+  error: unknown,
+  contextLimit: number,
+  server: Endpoint & { model: string },
+): Promise<unknown> {
   const detail = messageOf(error);
   const isOtherFailure = isOverflow(detail) === false;
   if (isOtherFailure) {
     return error;
   }
+  if (contextLimit <= 0) {
+    return new ContextOverflow(
+      `${detail} — set Settings → Agent → Context window, and the turn will compact ` +
+        "itself before it gets this far.",
+    );
+  }
+  const served = await servedWindow(server).catch(() => 0);
+  if (served >= contextLimit) {
+    return error;
+  }
+  const serves = served > 0 ? ` (${compactTokens(served)})` : "";
   return new ContextOverflow(
-    contextLimit > 0
-      ? `${detail} — this turn was built to ${compactTokens(contextLimit)} tokens, so the window ` +
-          "in Settings → Agent is larger than what the server actually serves."
-      : `${detail} — set Settings → Agent → Context window, and the turn will compact ` +
-          "itself before it gets this far.",
+    `${detail} — this turn was built to ${compactTokens(contextLimit)} tokens, so the window ` +
+      `in Settings → Agent is larger than what the server actually serves${serves}.`,
   );
 }
 
@@ -1225,9 +1247,10 @@ export async function runTurn(
     }
     // The loop wraps what it caught to hang the run on it. Every message is stored already, so
     // the run is not needed and the error goes on as it was thrown.
-    throw withWindow(
+    throw await withWindow(
       failedRun(error) && error instanceof Error ? error.cause : error,
       contextLimit,
+      { ...plan.server, model: chosenModel },
     );
   }
 
