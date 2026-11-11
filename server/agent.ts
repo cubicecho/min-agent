@@ -67,6 +67,7 @@ import {
   turnIndex,
   withContext,
 } from "./hooks.ts";
+import type { TurnInbox } from "./inbox.ts";
 import type { Mcp } from "./mcp.ts";
 import {
   LIST_RESOURCES,
@@ -502,6 +503,8 @@ export interface RunOptions {
   model?: string;
   onEvent?: (event: StreamEvent) => void;
   signal?: AbortSignal;
+  /** What is typed while the turn runs, taken between its steps. Absent takes nothing. */
+  inbox?: TurnInbox;
 }
 
 type Emit = (event: StreamEvent) => void;
@@ -941,7 +944,7 @@ async function afterTurn(
  * produced, so a crash mid-run still leaves readable history.
  */
 export async function runTurn(
-  { session, prompt, model, onEvent, signal }: RunOptions,
+  { session, prompt, model, onEvent, signal, inbox }: RunOptions,
   deps: TurnDeps,
 ) {
   const plan = await planTurn(deps, session, model);
@@ -1128,6 +1131,18 @@ export async function runTurn(
         await pruneBetweenSteps();
         return transcript();
       },
+      // What the person typed while the turn ran, taken between its steps and said on the
+      // stream as it lands. Stored by `onMessage` below, before `beforeStep` reads the session.
+      takeInput: inbox
+        ? () => {
+            const taken = inbox.take();
+            if (!taken) {
+              return undefined;
+            }
+            emit({ type: "steer", ids: taken.ids, text: taken.text });
+            return { role: "user", content: taken.text };
+          }
+        : undefined,
       onRequest: (request) => {
         // The request opens with a system message every time — the loop's, or the empty one
         // `transcript` sends — and the rest is the history as it went out.
@@ -1183,6 +1198,11 @@ export async function runTurn(
           if (--unanswered === 0) {
             pruneOwed = true;
           }
+          return;
+        }
+        // The only user message the loop writes: what `takeInput` handed it.
+        if (message.role === "user") {
+          await append(deps, session, message);
           return;
         }
         if (message.role !== "assistant") {
@@ -1244,6 +1264,9 @@ export async function runTurn(
       ...plan.server,
       model: chosenModel,
     });
+  } finally {
+    // The loop takes nothing more, so what is typed from here is the client's to send as a turn.
+    inbox?.close();
   }
 
   // What the turn's requests reported, kept for the next fold to weigh the messages by.

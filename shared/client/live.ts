@@ -4,6 +4,8 @@ import type { HookNote, StreamEvent } from "../types.ts";
 /** One piece of an in-flight assistant turn, in arrival order. `key` is stable for React. */
 export type LivePart =
   | { kind: "reasoning" | "text"; key: string; text: string }
+  // What the person typed while the turn ran, now in it as theirs.
+  | { kind: "input"; key: string; text: string }
   | { kind: "hook"; key: string; hook: HookNote }
   | {
       kind: "question";
@@ -68,6 +70,8 @@ export function applyEvent(parts: LivePart[], event: StreamEvent): LivePart[] {
       );
     case "hook":
       return [...parts, { kind: "hook", key: String(parts.length), hook: event.hook }];
+    case "steer":
+      return [...parts, { kind: "input", key: String(parts.length), text: event.text }];
     case "elicitation":
       return [
         ...parts,

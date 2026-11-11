@@ -3,6 +3,7 @@ import {
   type TurnActivity,
   type TurnState,
   turnActivity,
+  type Unsent,
 } from "@shared/client/turns.ts";
 import { useSyncExternalStore } from "react";
 
@@ -15,6 +16,11 @@ export const turns = createTurnStore();
 /** This chat's turn, wherever it was sent from and whether or not this pane saw it start. */
 export function useChatTurn(id: string | null | undefined): TurnState {
   return useSyncExternalStore(turns.subscribe, () => turns.get(id));
+}
+
+/** What was typed in this chat while its turn ran and has not gone yet, oldest first. */
+export function useUnsent(id: string | null | undefined): readonly Unsent[] {
+  return useSyncExternalStore(turns.subscribe, () => turns.unsent(id));
 }
 
 /**

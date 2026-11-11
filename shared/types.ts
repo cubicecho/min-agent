@@ -519,6 +519,9 @@ export type StreamEvent =
   // or put away because the call ended first. Neither is stored or shown to the model.
   | { type: "elicitation"; elicitation: Elicitation }
   | { type: "elicitation_end"; id: string; action: ElicitationAction }
+  // What the person typed while the turn was running, posted through `steerTurn` under `ids`,
+  // now in the transcript as one user message that the rest of the turn answers.
+  | { type: "steer"; ids: string[]; text: string }
   | { type: "title"; title: string }
   | { type: "stats"; stats: TurnStats }
   // A hook that injected context or failed. The before-turn ones arrive ahead of the first

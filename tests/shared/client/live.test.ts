@@ -81,6 +81,20 @@ describe("applyEvent", () => {
     expect(waitingQuestions(ended).map((waiting) => waiting.id)).toEqual(["q2"]);
   });
 
+  it("puts what the person typed mid-turn between the answer before it and the one after", () => {
+    expect(
+      fold([
+        { type: "text_delta", text: "Reading a." },
+        { type: "steer", ids: ["m1"], text: "and b" },
+        { type: "text_delta", text: "Both read." },
+      ]),
+    ).toEqual([
+      { kind: "text", key: "0", text: "Reading a." },
+      { kind: "input", key: "1", text: "and b" },
+      { kind: "text", key: "2", text: "Both read." },
+    ]);
+  });
+
   it("starts a fresh text part after a tool call", () => {
     const parts = fold([
       { type: "text_delta", text: "first" },

@@ -1,4 +1,4 @@
-import { createTurnStore, IDLE_TURN, turnActivity } from "@shared/client/turns.ts";
+import { createTurnStore, Delivery, IDLE_TURN, turnActivity } from "@shared/client/turns.ts";
 
 /** A store whose frames run when the test says so. */
 function store() {
@@ -140,5 +140,60 @@ describe("turnActivity", () => {
 
     turns.end("a");
     expect(turnActivity(turns.get("a"))).toBe("idle");
+  });
+});
+
+describe("what was typed while a turn ran", () => {
+  it("holds it in the order typed, the same array until it changes", () => {
+    const { turns } = store();
+    start(turns, "a");
+    const first = turns.hold("a", "use b", Delivery.Steer);
+    const second = turns.hold("a", "then c", Delivery.Queue);
+    const unsent = turns.unsent("a");
+    expect(unsent).toEqual([
+      { id: first, text: "use b", delivery: Delivery.Steer },
+      { id: second, text: "then c", delivery: Delivery.Queue },
+    ]);
+    expect(turns.unsent("a")).toBe(unsent);
+    expect(turns.unsent("b")).toEqual([]);
+  });
+
+  it("lets go of a steer once the turn says it took it", () => {
+    const { turns, frame } = store();
+    start(turns, "a");
+    const steered = turns.hold("a", "use b", Delivery.Steer);
+    const queued = turns.hold("a", "then c", Delivery.Queue);
+    turns.push("a", { type: "steer", ids: [steered], text: "use b" });
+    frame();
+    expect(turns.unsent("a").map(({ id }) => id)).toEqual([queued]);
+    expect(turns.get("a").parts).toEqual([{ kind: "input", key: "0", text: "use b" }]);
+  });
+
+  it("queues a steer the turn could not take, and keeps the queue past the turn's end", () => {
+    const { turns } = store();
+    start(turns, "a");
+    const refused = turns.hold("a", "too late", Delivery.Steer);
+    const untaken = turns.hold("a", "never taken", Delivery.Steer);
+    turns.queue("a", refused);
+    expect(turns.unsent("a")[0].delivery).toBe(Delivery.Queue);
+    turns.end("a");
+    expect(turns.unsent("a")).toEqual([
+      { id: refused, text: "too late", delivery: Delivery.Queue },
+      { id: untaken, text: "never taken", delivery: Delivery.Queue },
+    ]);
+  });
+
+  it("forgets what is released, and ignores an id it does not hold", () => {
+    const { turns } = store();
+    start(turns, "a");
+    const id = turns.hold("a", "then c", Delivery.Queue);
+    const listener = vi.fn();
+    turns.subscribe(listener);
+    turns.release("a", ["nope"]);
+    turns.queue("a", "nope");
+    expect(listener).not.toHaveBeenCalled();
+    turns.release("a", [id]);
+    expect(turns.unsent("a")).toEqual([]);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });

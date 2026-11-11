@@ -1,4 +1,5 @@
 import { messageText, turnStart } from "@shared/client/transcript.ts";
+import { Delivery } from "@shared/client/turns.ts";
 import type { ElicitationAction, ElicitationContent } from "@shared/elicitation.ts";
 import { messageOf } from "@shared/errors.ts";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -6,7 +7,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, streamTurn } from "@/lib/client.ts";
 import { invalidateSession, queryKeys } from "@/lib/queries.ts";
-import { turns, useChatTurn } from "@/lib/turns.ts";
+import { turns, useChatTurn, useUnsent } from "@/lib/turns.ts";
 import type { Speaker } from "@/lib/voice.ts";
 
 /** What a chat pane hands the turn it runs. */
@@ -59,6 +60,7 @@ export function useTurn({
 
   const [model, setModel] = useState("");
   const turn = useChatTurn(activeId);
+  const unsent = useUnsent(activeId);
   const pending = turn.prompt;
   /**
    * Which chat is on screen, readable from a stream's callbacks — they outlive the render
@@ -156,9 +158,24 @@ export function useTurn({
     }
   }
 
+  /**
+   * Sends what is typed, or `text`: as a turn, or into this chat's turn where one is running,
+   * which takes it once the calls in flight have answered.
+   *
+   * @param [text] - What a chip or the microphone sends. Absent sends the box.
+   */
   async function send(text?: string) {
     const prompt = (text ?? draft).trim();
-    if (!prompt || pending) {
+    if (!prompt) {
+      return;
+    }
+    // A chip sends its own text; anything half-typed in the box is left alone.
+    const clearsBox = text === undefined;
+    if (pending && activeId) {
+      if (clearsBox) {
+        setDraft("");
+      }
+      await steer(activeId, prompt);
       return;
     }
 
@@ -169,12 +186,54 @@ export function useTurn({
       setCreated(id);
       await queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
     }
-    // Narrowed once, for the callbacks below: `id` is a `let` and they outlive this line.
-    const turnId = id;
     // A chat started from the empty pane is adopted here rather than a render later, so a
     // reply that finishes before `created` has been through React still reads itself aloud.
-    showing.current = turnId;
+    showing.current = id;
+    if (clearsBox) {
+      setDraft("");
+    }
+    speech.stop();
+    await run(id, prompt);
+  }
 
+  /**
+   * Sends what is typed as a turn of its own once this chat's running turn has finished, or now
+   * where none is running.
+   */
+  function queue() {
+    const prompt = draft.trim();
+    const isRunning = Boolean(pending && activeId);
+    if (!prompt || isRunning === false || !activeId) {
+      void send();
+      return;
+    }
+    setDraft("");
+    turns.hold(activeId, prompt, Delivery.Queue);
+  }
+
+  /**
+   * Hands what was typed to the chat's running turn, and queues it instead where the turn can no
+   * longer take it.
+   *
+   * @param id - The chat whose turn is running.
+   * @param text - What was typed.
+   */
+  async function steer(id: string, text: string) {
+    const itemId = turns.hold(id, text, Delivery.Steer);
+    const isTaken = await api.steerTurn(id, itemId, text).catch(() => false);
+    if (isTaken === false) {
+      turns.queue(id, itemId);
+    }
+  }
+
+  /**
+   * Runs one turn in a chat, from sending it to settling it, then sends the next message queued
+   * behind it. A turn that was stopped or failed leaves the queue where it is.
+   *
+   * @param turnId - The chat.
+   * @param prompt - The question.
+   */
+  async function run(turnId: string, prompt: string) {
     const controller = new AbortController();
     turns.start(turnId, {
       prompt,
@@ -185,13 +244,9 @@ export function useTurn({
           .length ?? 0,
       controller,
     });
-
-    // A chip sends its own text; anything half-typed in the box is left alone.
-    if (!text) {
-      setDraft("");
+    if (isShowing(turnId)) {
+      onStart();
     }
-    speech.stop();
-    onStart();
     /**
      * The answer as it arrives, kept only so that it can be read aloud when it is finished.
      * Speaking the deltas as they land would stutter, and speaking the stored transcript
@@ -204,6 +259,8 @@ export function useTurn({
     // Whether this turn's answer started reading itself, so settling can hand the message it
     // is reading to the button that has to stop it.
     let read = false;
+    // Only a turn that answered sends what was queued behind it.
+    let answered = false;
     const finish = async () => {
       if (settled) {
         return;
@@ -231,6 +288,7 @@ export function useTurn({
             return;
           }
           if (event.type === "done") {
+            answered = true;
             if (speakReplies && isShowing(turnId)) {
               read = speech.speak(answer);
             }
@@ -238,6 +296,10 @@ export function useTurn({
           }
           if (event.type === "text_delta") {
             answer += event.text;
+          }
+          // What was typed mid-turn is answered after it: only that answer is read out.
+          if (event.type === "steer") {
+            answer = "";
           }
           // Kept under the chat it belongs to whether or not that chat is on screen: switch
           // away and back mid-turn, and the turn is still there, still going. That includes a
@@ -260,6 +322,14 @@ export function useTurn({
       if (!sessionId && isShowing(turnId)) {
         router.replace(`/chat/${turnId}`);
       }
+    }
+    const isClean = answered && controller.signal.aborted === false;
+    const next = isClean
+      ? turns.unsent(turnId).find((item) => item.delivery === Delivery.Queue)
+      : undefined;
+    if (next) {
+      turns.release(turnId, [next.id]);
+      await run(turnId, next.text);
     }
   }
 
@@ -322,6 +392,53 @@ export function useTurn({
     setDraft(messageText(message));
   }
 
+  /**
+   * Puts text back in the box after what is already typed there.
+   *
+   * @param texts - What goes back, oldest first.
+   */
+  function restore(texts: readonly string[]) {
+    setDraft([draft.trim(), ...texts].filter((text) => text !== "").join("\n\n"));
+  }
+
+  /** Stops this chat's turn, not whichever was sent last, and puts what waited on it back in the box. */
+  function stop() {
+    turn.controller?.abort();
+    if (!activeId || unsent.length === 0) {
+      return;
+    }
+    turns.release(
+      activeId,
+      unsent.map((item) => item.id),
+    );
+    restore(unsent.map((item) => item.text));
+  }
+
+  /**
+   * Takes a queued message back into the box, to change or send another way.
+   *
+   * @param itemId - Its id in the unsent list.
+   */
+  function pullBack(itemId: string) {
+    const item = unsent.find((each) => each.id === itemId);
+    if (!activeId || !item) {
+      return;
+    }
+    turns.release(activeId, [itemId]);
+    restore([item.text]);
+  }
+
+  /**
+   * Throws a queued message away.
+   *
+   * @param itemId - Its id in the unsent list.
+   */
+  function discard(itemId: string) {
+    if (activeId) {
+      turns.release(activeId, [itemId]);
+    }
+  }
+
   return {
     activeId,
     session,
@@ -335,8 +452,12 @@ export function useTurn({
     startedAt: turn.startedAt,
     failure: turn.failure,
     send,
-    /** Stops this chat's turn, not whichever was sent last. */
-    stop: () => turn.controller?.abort(),
+    queue,
+    /** What was typed while this chat's turn ran and is not in the transcript yet. */
+    unsent,
+    stop,
+    pullBack,
+    discard,
     answerQuestion,
     retry,
     edit,

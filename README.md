@@ -220,6 +220,7 @@ mutation setApiKey       write-only, so the key never comes back out over the AP
 mutation saveMcpServers  replaces the whole set and reconnects
 mutation reconnectMcpServer
 mutation answerElicitation  answers a question a tool's server asked during a turn
+mutation steerTurn       hands what was typed to the chat's running turn, for its next step
 subscription turn        runs a turn and streams its events over SSE
 ```
 
@@ -824,6 +825,27 @@ Stopping a turn keeps what it had already said. The assistant message used to be
 once the stream ended, so pressing stop left the reply on screen and nothing in the transcript;
 the part that streamed is now saved before the abort is passed on.
 
+### Typing while a turn runs
+
+The box stays open while a turn runs, and what is sent from it goes one of two ways:
+
+- **Send (Enter) steers the turn.** The message goes to the server through `steerTurn` and waits
+  in `server/inbox.ts` for the turn's next boundary, which is agent-core's `takeInput`: once the
+  tool calls in flight have all answered, before the next request. A call already running is
+  never cut short for it. It is stored as a user message where it landed and sent as one, and a
+  `steer` event puts it in the live turn. Several sent between two boundaries go as one message,
+  joined by a blank line. One that arrives while the model is writing its answer gets another
+  step, so that answer is followed by one to the message.
+- **Ctrl+Enter queues it** as a turn of its own, sent when the running one has answered. The
+  queue is the app's, per chat: a turn only lives as long as its stream, and a queue on the
+  server would outlive what it is queued behind.
+
+Both wait in a list above the box until they go. A queued message can be taken back into the box
+or thrown away there. A steer has already left and cannot be called back. A steer the turn could
+not take, because it had finished its last step, joins the queue. Stopping the turn puts
+everything still waiting back in the box. A turn that fails leaves the queue where it is, to go
+after the next turn that answers.
+
 ### Watching a turn arrive
 
 A fast model sends several hundred token deltas a second — far more than a screen can show. They
@@ -1208,7 +1230,8 @@ which grows with its text from one line to seven and takes the send as `onSubmit
 Enter without Shift that is not closing an IME's candidate list. It is deliberately web-only: on
 a phone the return key is how you get a new line, and the send button is an inch away. The
 Enter is held back rather than passed on, so it neither adds a line to the next message nor
-blurs the box, and the cursor stays where it was between messages.
+blurs the box, and the cursor stays where it was between messages. Ctrl+Enter is taken first, by
+the composer, and queues the message instead ([Typing while a turn runs](#typing-while-a-turn-runs)).
 
 ### A pinned lightningcss
 

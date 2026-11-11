@@ -90,6 +90,8 @@ const store = {
 
 const { runTurn } = await import("../../server/agent.ts");
 const { RESOURCE_TOOLS } = await import("../../server/mcp-resources.ts");
+const { createInbox } = await import("../../server/inbox.ts");
+type TurnInbox = import("../../server/inbox.ts").TurnInbox;
 
 /**
  * One scripted answer: a stream of chunks, a 400 with the endpoint's reason, or a whole
@@ -318,12 +320,17 @@ const offer = (...tools: ToolDefinition[]) => {
  * @param prompt What the user typed.
  * @param onEvent Called with each event after it is recorded.
  * @param signal The reader's stop.
+ * @param inbox What is typed while the turn runs.
  * @returns The events the turn emitted, and its stats or the error it ended on.
  */
 async function run(
   chat: Session,
   prompt: string,
-  { onEvent, signal }: { onEvent?: (event: StreamEvent) => void; signal?: AbortSignal } = {},
+  {
+    onEvent,
+    signal,
+    inbox,
+  }: { onEvent?: (event: StreamEvent) => void; signal?: AbortSignal; inbox?: TurnInbox } = {},
 ) {
   const events: StreamEvent[] = [];
   const settled: { stats?: TurnStats; error?: Error } = await runTurn(
@@ -331,6 +338,7 @@ async function run(
       session: chat,
       prompt,
       signal,
+      inbox,
       onEvent: (event) => {
         events.push(structuredClone(event));
         onEvent?.(event);
@@ -883,6 +891,43 @@ describe("a tool round trip", () => {
 
     // Never `call_tool` or `load_tools`: the pool knows neither, and would call each a write.
     expect(mcp.readsOnly.mock.calls).toEqual([["fs__read"], ["fs__ls"]]);
+  });
+
+  it("goes on with what was typed once the calls have answered, stored where it landed", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ);
+    const inbox = createInbox();
+    const chat = sessionOf();
+    const turnInbox = inbox.open(chat.id);
+    // Typed while the call runs: the turn takes it once the call has answered.
+    mcp.call.mockImplementation(async () => {
+      inbox.post(chat.id, { id: "m1", text: "and /b" });
+      return "contents of a";
+    });
+    script = [asks(["c1", "fs__read", '{"path":"/a"}']), says("Both read.")];
+
+    const { events } = await run(chat, "read /a", { inbox: turnInbox });
+
+    expect(events.map(({ type }) => type)).toEqual([
+      "tool_use",
+      "tool_result",
+      "steer",
+      "text_delta",
+      "stats",
+      "done",
+    ]);
+    expect(events[2]).toEqual({ type: "steer", ids: ["m1"], text: "and /b" });
+    expect(stored.map((message) => `${message.role}: ${String(message.content)}`)).toEqual([
+      "user: read /a",
+      "assistant: null",
+      "tool: contents of a",
+      "user: and /b",
+      "assistant: Both read.",
+    ]);
+    // Sent on the next request after the result, as the person's.
+    expect(messagesOf(bodies()[1]).at(-1)).toEqual({ role: "user", content: "and /b" });
+    // The loop has returned: what is typed now is a turn of its own.
+    expect(inbox.post(chat.id, { id: "m2", text: "late" })).toBe(false);
   });
 
   it("stops at the iteration cap, keeping what the turn had stored by then", async () => {

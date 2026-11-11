@@ -16,6 +16,7 @@ import { MessageView } from "@/components/chat/message-view.tsx";
 import { PromptPicker, useMcpPrompts } from "@/components/chat/prompt-picker.tsx";
 import { SessionsScreen } from "@/components/chat/session-list.tsx";
 import { ContextMeter, LiveMeter, MUTED, TokensDialog } from "@/components/chat/token-readouts.tsx";
+import { UnsentList } from "@/components/chat/unsent-list.tsx";
 import { useTurn } from "@/components/chat/use-turn.ts";
 import { Combobox } from "@/components/combobox.tsx";
 import { EmptyState } from "@/components/empty-state.tsx";
@@ -76,7 +77,11 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     startedAt,
     failure,
     send,
+    queue,
+    unsent,
     stop,
+    pullBack,
+    discard,
     answerQuestion,
     retry,
     edit,
@@ -313,8 +318,10 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
             speechError={speech.error}
             dictation={dictation}
             onSend={() => void send()}
+            onQueue={queue}
             onStop={stop}
             onPickPrompt={prompts.data?.length ? () => setPicking(true) : undefined}
+            unsentSlot={<UnsentList unsent={unsent} onPullBack={pullBack} onDiscard={discard} />}
           />
         }
       />

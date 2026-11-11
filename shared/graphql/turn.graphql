@@ -18,8 +18,15 @@ subscription Turn($sessionId: String!, $prompt: String!, $model: String) {
     elicitation
     action
     items
+    ids
     message
   }
+}
+
+# Something typed while the chat's turn runs, for the turn to take at its next step. False when no
+# turn there can take it any more, and then it goes as a turn of its own.
+mutation SteerTurn($sessionId: String!, $id: String!, $text: String!) {
+  steerTurn(sessionId: $sessionId, id: $id, text: $text)
 }
 
 # A question a tool's server asked during the turn, answered from the chat it was asked in. False

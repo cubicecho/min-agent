@@ -2299,6 +2299,11 @@ type Mutation {
   answerElicitation(sessionId: String!, id: String!, action: ElicitationAction!, content: JSON): Boolean!
 
   """
+  Hands a message to this chat's running turn, which takes it once the tool calls in flight have answered and goes on with it as a user message; its `steer` event names `id` when it lands. False when no turn there can take it any more — send it as a turn of its own.
+  """
+  steerTurn(sessionId: String!, id: String!, text: String!): Boolean!
+
+  """
   Forgets every message from `fromIdx` on, and answers with how many are left. The only write that removes a message: retrying a reply and editing a question both mean going again from a point, and what follows that point is an answer to something no longer being asked. A suffix only, so `idx` stays dense.
   """
   truncateSession(id: String!, fromIdx: Int!): Int!
@@ -2349,7 +2354,7 @@ type TurnEvent {
   seq: Int!
 
   """
-  reasoning_delta | text_delta | tool_use | tool_result | server_log | elicitation | elicitation_end | title | stats | hook | done | followups | error.
+  reasoning_delta | text_delta | tool_use | tool_result | server_log | elicitation | elicitation_end | steer | title | stats | hook | done | followups | error.
   """
   type: String!
   text: String
@@ -2380,5 +2385,10 @@ type TurnEvent {
   """
   action: String
   items: [String!]
+
+  """
+  On `steer`, the ids of the `steerTurn` messages the turn took, sent as one user message whose text is `text`.
+  """
+  ids: [String!]
   message: String
 }
