@@ -219,6 +219,7 @@ query    mcpPromptCompletions  what a server suggests for one of a prompt's argu
 mutation setApiKey       write-only, so the key never comes back out over the API
 mutation saveMcpServers  replaces the whole set and reconnects
 mutation reconnectMcpServer
+mutation answerElicitation  answers a question a tool's server asked during a turn
 subscription turn        runs a turn and streams its events over SSE
 ```
 
@@ -320,6 +321,34 @@ log is a run event, passed through agent-core's `report.log` to the pool's `onLo
 never stored or sent to the model: a card read back after a reload has none, as with notices.
 The pool can only tell which call a message belongs to when that call is the only request in
 flight on its server's connection, so two reads run together against one server hear nothing.
+
+### Questions from a server
+
+A server may ask the person something in the middle of a call — "which branch?", "overwrite
+it?" — through MCP's `elicitation/create`, and min-agent declares that it can be asked (form
+mode). The question appears in the turn, under the card of the call that caused it, as a form
+drawn from the server's `requestedSchema`: text, numbers, yes/no, and one or several of a list,
+which is all form mode allows. Send, Decline and Cancel are the protocol's three answers.
+
+- **It goes to the chat whose turn made the call.** Each call hands the pool its own `onElicit`,
+  so two chats on one server each hear their own questions. The pool can only tell which call a
+  question belongs to when that call is the only request in flight on the connection, as with a
+  log; one it cannot place is declined.
+- **The turn waits, and says so.** The live meter reads "Waiting on you" while a question is open.
+  A call that may be asked something runs on a clock that stops while a person answers, so the
+  two minutes a tool gets is two minutes of the tool's own time. A question nobody answers in ten
+  minutes is put away as a cancel.
+- **Leaving the chat cancels.** Switching to another chat, or off the chat screen, cancels every
+  open question of that chat's turn, and a question asked in a chat already left is cancelled as
+  it arrives. Stopping the turn cancels too, since the call it held open is gone.
+- **Who is asking is on the card,** as the server's label, and a field named like a password or a
+  token carries a warning: the spec says a server must not use elicitation to ask for a secret.
+- **The answer is checked twice.** `answerElicitation` refuses an accept whose content does not
+  fit the question's schema, with the same rules the form applies (`shared/elicitation.ts`). A
+  question that is no longer waiting answers `false` rather than failing.
+
+URL mode — a link the person opens, for a sign-in the client should not see — is not declared,
+and a server that asks for one anyway is declined.
 
 ### Hooks
 

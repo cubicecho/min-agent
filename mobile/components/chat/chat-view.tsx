@@ -1,3 +1,4 @@
+import { waitingQuestions } from "@shared/client/live.ts";
 import { contextFill, formatUsage, latestStats, usageDetail } from "@shared/client/usage.ts";
 import { CHAT_DEFAULTS } from "@shared/defaults.ts";
 import { useQuery } from "@tanstack/react-query";
@@ -76,6 +77,7 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
     failure,
     send,
     stop,
+    answerQuestion,
     retry,
     edit,
   } = useTurn({
@@ -167,6 +169,10 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
   // Same for the two transcript buttons, which hang off every stored message.
   const onRetry = useStableCallback((index: number) => void retry(index));
   const onEdit = useStableCallback((index: number) => void edit(index));
+  // And for a question's answer, which every live row is handed.
+  const onAnswer = useStableCallback(answerQuestion);
+  /** Whether the turn is held up on the person: a server's question nobody has answered yet. */
+  const waiting = waitingQuestions(live).length > 0;
 
   /** Pressing the button on whatever is already being read is how you stop it. */
   const onSpeak = useStableCallback((index: number, text: string) => {
@@ -265,11 +271,12 @@ function ChatPane({ sessionId }: { sessionId?: string }) {
                     onEdit={pending ? undefined : onEdit}
                     onSpeak={onSpeak}
                     speakingIndex={spoken}
+                    onAnswer={onAnswer}
                   />
                 ) : (
                   <Nothing configured={Boolean(activeModel)} />
                 )}
-                {pending ? <LiveMeter startedAt={startedAt} live={live} /> : null}
+                {pending ? <LiveMeter startedAt={startedAt} live={live} waiting={waiting} /> : null}
               </View>
             </ScrollView>
 

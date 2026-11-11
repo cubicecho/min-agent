@@ -7,7 +7,7 @@ import {
   sanitizeTools,
   serverInstructionsPrompt,
 } from "@cubicecho/agent-core";
-import type { HookOutcome, ToolDefinition } from "@cubicecho/agent-mcp-pool";
+import type { ElicitHandler, HookOutcome, ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import {
   type LlmConfig,
   llmConfigSchema,
@@ -60,6 +60,7 @@ const mcp = {
   readResource: vi.fn(),
   labelOf: vi.fn((id: string) => id),
   runHooks: vi.fn(),
+  ask: vi.fn(),
 };
 
 /** Every row `addMessage` was handed, as it was at that moment: the message is patched later. */
@@ -714,8 +715,8 @@ describe("a tool round trip", () => {
 
     // The identical pair shared one call, and each call was handed the turn's own signal.
     expect(mcp.call.mock.calls).toEqual([
-      ["fs__read", { path: "/a" }, controller.signal, expect.any(Function)],
-      ["fs__ls", { path: "/" }, controller.signal, expect.any(Function)],
+      ["fs__read", { path: "/a" }, controller.signal, expect.any(Function), expect.any(Function)],
+      ["fs__ls", { path: "/" }, controller.signal, expect.any(Function), expect.any(Function)],
     ]);
 
     const call = (id: string, name: string, args: string) => ({
@@ -905,7 +906,9 @@ describe("loading tools", () => {
         isError: false,
       },
     ]);
-    expect(mcp.call.mock.calls).toEqual([["clock__now", {}, undefined, expect.any(Function)]]);
+    expect(mcp.call.mock.calls).toEqual([
+      ["clock__now", {}, undefined, expect.any(Function), expect.any(Function)],
+    ]);
     // Loading is bookkeeping: it is a round trip, and not a tool the model used.
     expect(stats).toMatchObject({ iterations: 3, toolCalls: 1 });
 
@@ -951,7 +954,7 @@ describe("loading tools", () => {
       tool_calls: [{ id: "c2", function: { name: "call_tool", arguments: proxied } }],
     });
     expect(mcp.call.mock.calls).toEqual([
-      ["fs__read", { path: "/a" }, undefined, expect.any(Function)],
+      ["fs__read", { path: "/a" }, undefined, expect.any(Function), expect.any(Function)],
     ]);
     expect(stats).toMatchObject({ iterations: 3, toolCalls: 1 });
 
@@ -1288,6 +1291,51 @@ describe("what the loop decides beyond the common path", () => {
     expect(stored[2]).toEqual({ role: "tool", tool_call_id: "c1", content: "contents" });
   });
 
+  it("asks the chat whose turn made the call what its server asks, and answers with the person", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ);
+    const question = {
+      message: "Which branch?",
+      requestedSchema: { type: "object" as const, properties: {} },
+    };
+    let answered: unknown;
+    mcp.call.mockImplementation(
+      async (
+        _name: string,
+        _input: unknown,
+        _signal: AbortSignal | undefined,
+        _onLog: unknown,
+        onElicit: ElicitHandler,
+      ) => {
+        answered = await onElicit("fs", question, { signal: new AbortController().signal });
+        return "contents";
+      },
+    );
+    mcp.labelOf.mockImplementation((id: string) => `${id} server`);
+    mcp.ask.mockImplementation(
+      async (_asking, _params, _signal, emit: (event: StreamEvent) => void) => {
+        emit({ type: "elicitation_end", id: "q1", action: "decline" });
+        return { action: "decline" };
+      },
+    );
+    script = [asks(["c1", "fs__read", '{"path":"/a"}']), says("Read.")];
+
+    const chat = sessionOf();
+    const { events } = await run(chat, "read it");
+
+    // Named for the chat and the call, under the name the server is shown by.
+    expect(mcp.ask.mock.calls[0].slice(0, 2)).toEqual([
+      { sessionId: chat.id, toolUseId: "c1", serverId: "fs", server: "fs server" },
+      question,
+    ]);
+    expect(answered).toEqual({ action: "decline" });
+    // What the question said goes on the turn's own stream, ahead of the result it held up.
+    const order = events.flatMap((event) =>
+      event.type === "elicitation_end" || event.type === "tool_result" ? [event.type] : [],
+    );
+    expect(order).toEqual(["elicitation_end", "tool_result"]);
+  });
+
   it("loads a catalogued tool that is called without being loaded, and carries it", async () => {
     offer(READ, LS, NOW);
     mcp.call.mockImplementation(async (name: string) => {
@@ -1459,7 +1507,7 @@ describe("what the loop decides beyond the common path", () => {
       { type: "tool_result", toolUseId: "c1", content: "contents of a", isError: false },
     ]);
     expect(mcp.call.mock.calls).toEqual([
-      ["fs__read", { path: "/a" }, undefined, expect.any(Function)],
+      ["fs__read", { path: "/a" }, undefined, expect.any(Function), expect.any(Function)],
     ]);
     expect(bodies().map(declaredTools)).toEqual([["load_tools"], ["load_tools"]]);
     expect(chat.loadedTools).toEqual([]);

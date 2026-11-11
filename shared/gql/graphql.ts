@@ -136,6 +136,13 @@ export type DateTimeFilter = {
   startsWith?: InputMaybe<Scalars['String']['input']>;
 };
 
+/** An answer to a server's question: give it the content, refuse, or put the question away. */
+export enum ElicitationAction {
+  Accept = 'accept',
+  Cancel = 'cancel',
+  Decline = 'decline'
+}
+
 export type FloatFilter = {
   /** Every branch matches */
   AND?: InputMaybe<Array<FloatFilter>>;
@@ -1004,6 +1011,8 @@ export type ModelInfo = {
 };
 
 export type Mutation = {
+  /** Answers a question a tool's server asked in this chat's turn, by the `id` of its `elicitation` event. `content` is the form's fields by name, for `accept` only, and is checked against the question's schema. False when the question is no longer waiting — answered, or put away because its call ended first. */
+  answerElicitation: Scalars['Boolean']['output'];
   createSession: Session;
   createSessions: Array<Session>;
   deleteSession: Array<Session>;
@@ -1024,6 +1033,14 @@ export type Mutation = {
   updateSettingSingle?: Maybe<Setting>;
   /** Each entry's updated rows, in entry order. An entry whose `where` matched no rows contributes `null` in its slot; an entry that matched several contributes each of its rows. */
   updateSettingsMany: Array<Maybe<Setting>>;
+};
+
+
+export type MutationAnswerElicitationArgs = {
+  action: ElicitationAction;
+  content?: InputMaybe<Scalars['JSON']['input']>;
+  id: Scalars['String']['input'];
+  sessionId: Scalars['String']['input'];
 };
 
 
@@ -2007,7 +2024,11 @@ export type SubscriptionTurnArgs = {
 
 /** Something a turn did while it was running — a token, a tool call, its final cost. `type` discriminates; the fields that do not belong to it are null. */
 export type TurnEvent = {
+  /** On `elicitation_end`, how the question with this `id` ended: accept | decline | cancel. */
+  action?: Maybe<Scalars['String']['output']>;
   content?: Maybe<Scalars['String']['output']>;
+  /** On `elicitation`, a question a tool's server is asking the person mid-call: `id`, `toolUseId`, `serverId`, `server` (its label), `message` and `schema` (the form `requestedSchema`). Answer it with `answerElicitation`. */
+  elicitation?: Maybe<Scalars['JSON']['output']>;
   /** A `HookNote`: what one hook added, or why not. */
   hook?: Maybe<Scalars['JSON']['output']>;
   id?: Maybe<Scalars['String']['output']>;
@@ -2024,7 +2045,7 @@ export type TurnEvent = {
   text?: Maybe<Scalars['String']['output']>;
   title?: Maybe<Scalars['String']['output']>;
   toolUseId?: Maybe<Scalars['String']['output']>;
-  /** reasoning_delta | text_delta | tool_use | tool_result | server_log | title | stats | hook | done | followups | error. */
+  /** reasoning_delta | text_delta | tool_use | tool_result | server_log | elicitation | elicitation_end | title | stats | hook | done | followups | error. */
   type: Scalars['String']['output'];
 };
 
@@ -2202,7 +2223,17 @@ export type TurnSubscriptionVariables = Exact<{
 }>;
 
 
-export type TurnSubscription = { turn: { seq: number, type: string, text?: string | null, id?: string | null, name?: string | null, input?: string | null, toolUseId?: string | null, content?: string | null, isError?: boolean | null, level?: string | null, title?: string | null, stats?: unknown | null, hook?: unknown | null, items?: Array<string> | null, message?: string | null } };
+export type TurnSubscription = { turn: { seq: number, type: string, text?: string | null, id?: string | null, name?: string | null, input?: string | null, toolUseId?: string | null, content?: string | null, isError?: boolean | null, level?: string | null, title?: string | null, stats?: unknown | null, hook?: unknown | null, elicitation?: unknown | null, action?: string | null, items?: Array<string> | null, message?: string | null } };
+
+export type AnswerElicitationMutationVariables = Exact<{
+  sessionId: Scalars['String']['input'];
+  id: Scalars['String']['input'];
+  action: ElicitationAction;
+  content?: InputMaybe<Scalars['JSON']['input']>;
+}>;
+
+
+export type AnswerElicitationMutation = { answerElicitation: boolean };
 
 export class TypedDocumentString<TResult, TVariables>
   extends String
@@ -2551,8 +2582,20 @@ export const TurnDocument = new TypedDocumentString(`
     title
     stats
     hook
+    elicitation
+    action
     items
     message
   }
 }
     `) as unknown as TypedDocumentString<TurnSubscription, TurnSubscriptionVariables>;
+export const AnswerElicitationDocument = new TypedDocumentString(`
+    mutation AnswerElicitation($sessionId: String!, $id: String!, $action: ElicitationAction!, $content: JSON) {
+  answerElicitation(
+    sessionId: $sessionId
+    id: $id
+    action: $action
+    content: $content
+  )
+}
+    `) as unknown as TypedDocumentString<AnswerElicitationMutation, AnswerElicitationMutationVariables>;

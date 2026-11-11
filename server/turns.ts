@@ -1,3 +1,4 @@
+import type { Elicitation, ElicitationAction } from "../shared/elicitation.ts";
 import { messageOf } from "../shared/errors.ts";
 import type { HookNote, StreamEvent, TurnStats } from "../shared/types.ts";
 import { runTurn, type TurnDeps } from "./agent.ts";
@@ -27,6 +28,8 @@ export interface TurnEvent {
   items?: string[];
   message?: string;
   hook?: HookNote;
+  elicitation?: Elicitation;
+  action?: ElicitationAction;
 }
 
 /** What a streamed turn talks to: the turn's own, and the store it reads the chat from. */

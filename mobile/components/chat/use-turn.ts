@@ -1,5 +1,6 @@
 import { messageText, turnStart } from "@shared/client/transcript.ts";
 import { useLiveParts } from "@shared/client/use-live-parts.ts";
+import type { ElicitationAction, ElicitationContent } from "@shared/elicitation.ts";
 import { messageOf } from "@shared/errors.ts";
 import type { TurnStats } from "@shared/types.ts";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -77,6 +78,25 @@ export function useTurn({
    * other, for as long as settling takes.
    */
   const asked = useRef(0);
+  /**
+   * The questions a tool's server is waiting on the person for, by id, with the chat whose turn
+   * asked them. Leaving that chat puts them away: nobody is looking at the form any more, and a
+   * call held open for an answer that cannot come holds its whole turn with it.
+   */
+  const questions = useRef(new Map<string, string>());
+  const putAway = useCallback((id: string, chat: string) => {
+    questions.current.delete(id);
+    // Best effort: a question that has ended already answers `false`, and one the server never
+    // hears about runs out on its own.
+    api.answerElicitation(chat, id, "cancel").catch(() => {});
+  }, []);
+  const putAllAway = useCallback(() => {
+    for (const [id, chat] of questions.current) {
+      putAway(id, chat);
+    }
+  }, [putAway]);
+  // Leaving the chat screen altogether, not only for another chat.
+  useEffect(() => putAllAway, [putAllAway]);
 
   const activeModel = model || session.data?.model || defaultModel;
   const stored = session.data?.messages ?? [];
@@ -101,6 +121,7 @@ export function useTurn({
       return;
     }
     route.current = sessionId;
+    putAllAway();
     setCreated(null);
     setPending(null);
     setDraft("");
@@ -247,6 +268,17 @@ export function useTurn({
           if (event.type === "text_delta") {
             answer += event.text;
           }
+          if (event.type === "elicitation") {
+            questions.current.set(event.elicitation.id, turnId);
+            // Asked in a chat the reader has already left: there is no form to answer it in.
+            if (showing.current !== turnId) {
+              putAway(event.elicitation.id, turnId);
+              return;
+            }
+          }
+          if (event.type === "elicitation_end") {
+            questions.current.delete(event.id);
+          }
           // The rest is this turn showing itself, and it only has somewhere to show while
           // the chat it belongs to is the one being looked at. Switch away and the turn
           // runs on into its own session; the transcript has it when you come back.
@@ -310,6 +342,22 @@ export function useTurn({
     await send(prompt);
   }
 
+  /**
+   * Answers a question a tool's server asked in the live turn. `false` for one that is no longer
+   * waiting; its `elicitation_end` is on the way.
+   */
+  async function answerQuestion(
+    id: string,
+    action: ElicitationAction,
+    content?: ElicitationContent,
+  ) {
+    const chat = questions.current.get(id);
+    if (!chat) {
+      return false;
+    }
+    return api.answerElicitation(chat, id, action, content);
+  }
+
   /** Puts a question back in the composer, with everything it led to forgotten. */
   async function edit(index: number) {
     const messages = session.data?.messages ?? [];
@@ -335,6 +383,7 @@ export function useTurn({
     failure,
     send,
     stop: () => abort.current?.abort(),
+    answerQuestion,
     retry,
     edit,
   };

@@ -12,6 +12,11 @@ import {
   GraphQLString,
 } from "graphql";
 import { GraphQLJSON } from "graphql-scalars";
+import {
+  ELICITATION_ACTIONS,
+  type ElicitationAction,
+  type ElicitationContent,
+} from "../../shared/elicitation.ts";
 import type { McpServerConfig } from "../../shared/types.ts";
 import { listModels } from "../agent.ts";
 import { assertLlmConfigPatch, hasApiKey, type Settings } from "../config.ts";
@@ -131,8 +136,8 @@ const TurnEventType = new GraphQLObjectType({
     type: {
       type: new GraphQLNonNull(GraphQLString),
       description:
-        "reasoning_delta | text_delta | tool_use | tool_result | server_log | title | stats | " +
-        "hook | done | followups | error.",
+        "reasoning_delta | text_delta | tool_use | tool_result | server_log | elicitation | " +
+        "elicitation_end | title | stats | hook | done | followups | error.",
     },
     text: { type: GraphQLString },
     id: { type: GraphQLString },
@@ -148,9 +153,28 @@ const TurnEventType = new GraphQLObjectType({
     title: { type: GraphQLString },
     stats: { type: GraphQLJSON },
     hook: { type: GraphQLJSON, description: "A `HookNote`: what one hook added, or why not." },
+    elicitation: {
+      type: GraphQLJSON,
+      description:
+        "On `elicitation`, a question a tool's server is asking the person mid-call: `id`, " +
+        "`toolUseId`, `serverId`, `server` (its label), `message` and `schema` (the form " +
+        "`requestedSchema`). Answer it with `answerElicitation`.",
+    },
+    action: {
+      type: GraphQLString,
+      description:
+        "On `elicitation_end`, how the question with this `id` ended: accept | decline | cancel.",
+    },
     items: { type: new GraphQLList(new GraphQLNonNull(GraphQLString)) },
     message: { type: GraphQLString },
   },
+});
+
+const ElicitationActionEnum = new GraphQLEnumType({
+  name: "ElicitationAction",
+  description:
+    "An answer to a server's question: give it the content, refuse, or put the question away.",
+  values: Object.fromEntries(ELICITATION_ACTIONS.map((action) => [action, { value: action }])),
 });
 
 const McpPromptArgumentType = new GraphQLObjectType({
@@ -419,6 +443,28 @@ export function createSchema({ db, mcp, store, settings: config }: SchemaDeps): 
             await mcp.reconnect(args.id, await config.loadMcpServers());
             return mcp.state();
           },
+        },
+        answerElicitation: {
+          type: new GraphQLNonNull(GraphQLBoolean),
+          description:
+            "Answers a question a tool's server asked in this chat's turn, by the `id` of its " +
+            "`elicitation` event. `content` is the form's fields by name, for `accept` only, and " +
+            "is checked against the question's schema. False when the question is no longer " +
+            "waiting — answered, or put away because its call ended first.",
+          args: {
+            sessionId: { type: new GraphQLNonNull(GraphQLString) },
+            id: { type: new GraphQLNonNull(GraphQLString) },
+            action: { type: new GraphQLNonNull(ElicitationActionEnum) },
+            content: { type: GraphQLJSON },
+          },
+          resolve: (
+            _source,
+            args: { sessionId: string; id: string; action: ElicitationAction; content?: unknown },
+          ) =>
+            mcp.answer(args.sessionId, args.id, {
+              action: args.action,
+              content: args.content as ElicitationContent | null | undefined,
+            }),
         },
         truncateSession: {
           type: new GraphQLNonNull(GraphQLInt),

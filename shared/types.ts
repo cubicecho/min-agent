@@ -5,6 +5,7 @@ import { HOOK_EVENTS, INJECT_EVENTS } from "@cubicecho/agent-mcp-pool/hooks";
 import type OpenAI from "openai";
 import { z } from "zod";
 import { MODEL_CEILINGS, MODEL_DEFAULTS } from "./defaults.ts";
+import type { Elicitation, ElicitationAction } from "./elicitation.ts";
 import type { ModelTask } from "./model-tasks.ts";
 
 /**
@@ -503,6 +504,11 @@ export type StreamEvent =
   // what the servers are asked to send. Shown on the call's card; never stored, never sent to
   // the model.
   | { type: "server_log"; toolUseId: string; level: string; text: string }
+  // A call's server asking the person something mid-call. The call waits on the answer, which
+  // goes back through `answerElicitation`; `elicitation_end` says the question is gone — answered,
+  // or put away because the call ended first. Neither is stored or shown to the model.
+  | { type: "elicitation"; elicitation: Elicitation }
+  | { type: "elicitation_end"; id: string; action: ElicitationAction }
   | { type: "title"; title: string }
   | { type: "stats"; stats: TurnStats }
   // A hook that injected context or failed. The before-turn ones arrive ahead of the first

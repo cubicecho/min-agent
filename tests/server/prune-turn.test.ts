@@ -32,6 +32,7 @@ const mcp = {
   resourceServers: vi.fn(),
   call: vi.fn(),
   runHooks: vi.fn(),
+  ask: vi.fn(),
   resources: vi.fn(),
   readResource: vi.fn(),
   labelOf: vi.fn((id: string) => id),

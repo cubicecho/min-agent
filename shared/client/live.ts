@@ -1,9 +1,17 @@
+import type { Elicitation, ElicitationAction } from "../elicitation.ts";
 import type { HookNote, StreamEvent } from "../types.ts";
 
 /** One piece of an in-flight assistant turn, in arrival order. `key` is stable for React. */
 export type LivePart =
   | { kind: "reasoning" | "text"; key: string; text: string }
   | { kind: "hook"; key: string; hook: HookNote }
+  | {
+      kind: "question";
+      key: string;
+      elicitation: Elicitation;
+      /** How it ended; absent while the server is still waiting on the person. */
+      answer?: ElicitationAction;
+    }
   | {
       kind: "tool";
       key: string;
@@ -60,6 +68,17 @@ export function applyEvent(parts: LivePart[], event: StreamEvent): LivePart[] {
       );
     case "hook":
       return [...parts, { kind: "hook", key: String(parts.length), hook: event.hook }];
+    case "elicitation":
+      return [
+        ...parts,
+        { kind: "question", key: String(parts.length), elicitation: event.elicitation },
+      ];
+    case "elicitation_end":
+      return parts.map((part) =>
+        part.kind === "question" && part.elicitation.id === event.id
+          ? { ...part, answer: event.action }
+          : part,
+      );
     default:
       return parts;
   }
@@ -71,4 +90,10 @@ export const liveCharCount = (parts: LivePart[]) =>
     (total, part) =>
       part.kind === "text" || part.kind === "reasoning" ? total + part.text.length : total,
     0,
+  );
+
+/** The questions in a live turn that a server is still waiting on the person to answer. */
+export const waitingQuestions = (parts: LivePart[]) =>
+  parts.flatMap((part) =>
+    part.kind === "question" && part.answer === undefined ? [part.elicitation] : [],
   );

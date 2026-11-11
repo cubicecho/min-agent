@@ -1,4 +1,5 @@
 import {
+  type ElicitHandler,
   type HookContext,
   type HookEvent,
   McpPool,
@@ -7,7 +8,9 @@ import {
   type ServerLogEntry,
   serversWith,
 } from "@cubicecho/agent-mcp-pool";
+import { ELICITATION_DEFAULTS } from "../shared/defaults.ts";
 import type { McpServerConfig, McpServerState } from "../shared/types.ts";
+import { createElicitations } from "./elicitations.ts";
 import { VERSION } from "./paths.ts";
 
 /**
@@ -22,6 +25,9 @@ import { VERSION } from "./paths.ts";
  * its tools live under". Since 0.6.0 the pool defaults `slug` to `id`, so the rows go in as they
  * are stored.
  */
+
+/** How long a tool call gets to do its own work. See `callTimeoutMs` below. */
+const CALL_TIMEOUT_MS = 120_000;
 
 /** A server's id and the name it is shown under. */
 const idAndLabel = ({ id, label }: { id: string; label: string }) => ({ id, label });
@@ -70,15 +76,67 @@ export function createMcp(options: McpPoolOptions = {}) {
    * because a warning is what the chat shows: a tool card is read by a person looking for why a
    * call went the way it did, and a server left at its own default can say a hundred `debug` lines
    * during one search. A server that ignores the level is shown what it sends anyway.
+   *
+   * `elicitation` declares that a server may ask the person something mid-call, with no pool-wide
+   * handler behind it: every question is answered by the call that caused it, through its own
+   * `onElicit`, in the chat whose turn made the call. One the pool cannot pin on a call — two in
+   * flight on one connection — is declined, since there is nobody it could be shown to that would
+   * know what it was about.
    */
   const pool = new McpPool({
     clientName: "min-agent",
     clientVersion: VERSION,
     connectTimeoutMs: 15_000,
-    callTimeoutMs: 120_000,
+    callTimeoutMs: CALL_TIMEOUT_MS,
     logLevel: "warning",
+    elicitation: true,
     ...options,
   });
+
+  const questions = createElicitations();
+  /** A call's own working time: min-agent's two minutes, or what a test laid over them. */
+  const callTimeoutMs = options.callTimeoutMs ?? CALL_TIMEOUT_MS;
+
+  /**
+   * A call that may wait on a person: the pool's call with its working time bounded by a clock
+   * that stops while a question is open.
+   *
+   * The pool cannot stop its own clock — the SDK's request timeout is set once, when the request
+   * goes out — so the call is sent with a longer one and this keeps the two minutes. The clock
+   * firing aborts the call, and the abort is said as the timeout it is.
+   */
+  async function callAsking(
+    qualifiedName: string,
+    input: unknown,
+    onElicit: ElicitHandler,
+    signal?: AbortSignal,
+    onLog?: (entry: ServerLogEntry) => void,
+  ) {
+    const clock = workingClock(callTimeoutMs);
+    try {
+      return await pool.call(qualifiedName, input, {
+        signal: signal ? AbortSignal.any([signal, clock.signal]) : clock.signal,
+        timeoutMs: callTimeoutMs + ELICITATION_DEFAULTS.answerWaitMs,
+        ...(onLog ? { onLog } : {}),
+        onElicit: async (serverId, params, extra) => {
+          clock.pause();
+          try {
+            return await onElicit(serverId, params, extra);
+          } finally {
+            clock.resume();
+          }
+        },
+      });
+    } catch (error) {
+      const timedOut = clock.signal.aborted && signal?.aborted !== true;
+      if (timedOut) {
+        throw new Error(`"${qualifiedName}" timed out after ${callTimeoutMs}ms`);
+      }
+      throw error;
+    } finally {
+      clock.stop();
+    }
+  }
 
   /** The name a server is shown under, by its id; the id itself for one that has none. */
   const labelOf = (id: string) =>
@@ -180,13 +238,32 @@ export function createMcp(options: McpPoolOptions = {}) {
      *
      * `onLog` hears what the server logs while the call runs, which the turn passes on to the chat
      * as the call's own: agent-core's `report.log`, taken as it stands.
+     *
+     * `onElicit` answers what the server asks the person while the call runs. A person reading a
+     * question is not the tool wedging, so a call that can be asked one is not held to the pool's
+     * two minutes end to end: it runs on a clock of its own that stops while a question waits, and
+     * the pool's bound is moved out by one question's wait behind it. A call that never asks
+     * anything is cut off exactly where it was.
      */
     call: (
       qualifiedName: string,
       input: unknown,
       signal?: AbortSignal,
       onLog?: (entry: ServerLogEntry) => void,
-    ) => pool.call(qualifiedName, input, { signal, ...(onLog ? { onLog } : {}) }),
+      onElicit?: ElicitHandler,
+    ) =>
+      onElicit
+        ? callAsking(qualifiedName, input, onElicit, signal, onLog)
+        : pool.call(qualifiedName, input, { signal, ...(onLog ? { onLog } : {}) }),
+
+    /** Puts a server's question in front of the chat and waits for the person. */
+    ask: questions.ask,
+
+    /**
+     * The person's answer to a question, from the chat it was asked in. `false` for one that is
+     * no longer waiting.
+     */
+    answer: questions.answer,
 
     /**
      * Runs every enabled server's hooks for one event. Never rejects; see `server/hooks.ts`, which
@@ -237,3 +314,38 @@ export function createMcp(options: McpPoolOptions = {}) {
 
 /** The app's MCP servers. */
 export type Mcp = ReturnType<typeof createMcp>;
+
+/**
+ * A timeout that can be paused: `signal` aborts once `ms` of running time has passed. Pauses
+ * nest, so two questions open at once resume the clock only when both are answered.
+ */
+function workingClock(ms: number) {
+  const controller = new AbortController();
+  let left = ms;
+  let since = Date.now();
+  let paused = 0;
+  let stopped = false;
+  let timer = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    pause() {
+      paused += 1;
+      if (paused === 1) {
+        clearTimeout(timer);
+        left -= Date.now() - since;
+      }
+    },
+    resume() {
+      paused -= 1;
+      // A question answered after its call has settled starts nothing.
+      if (paused === 0 && !stopped) {
+        since = Date.now();
+        timer = setTimeout(() => controller.abort(), Math.max(left, 0));
+      }
+    },
+    stop() {
+      stopped = true;
+      clearTimeout(timer);
+    },
+  };
+}

@@ -2294,6 +2294,11 @@ type Mutation {
   reconnectMcpServer(id: String!): [McpServerState!]!
 
   """
+  Answers a question a tool's server asked in this chat's turn, by the `id` of its `elicitation` event. `content` is the form's fields by name, for `accept` only, and is checked against the question's schema. False when the question is no longer waiting — answered, or put away because its call ended first.
+  """
+  answerElicitation(sessionId: String!, id: String!, action: ElicitationAction!, content: JSON): Boolean!
+
+  """
   Forgets every message from `fromIdx` on, and answers with how many are left. The only write that removes a message: retrying a reply and editing a question both mean going again from a point, and what follows that point is an answer to something no longer being asked. A suffix only, so `idx` stays dense.
   """
   truncateSession(id: String!, fromIdx: Int!): Int!
@@ -2312,6 +2317,15 @@ input McpServerInput {
   hiddenTools: [String!]
   trustAnnotations: Boolean
   hooks: JSON
+}
+
+"""
+An answer to a server's question: give it the content, refuse, or put the question away.
+"""
+enum ElicitationAction {
+  accept
+  decline
+  cancel
 }
 
 type Subscription {
@@ -2335,7 +2349,7 @@ type TurnEvent {
   seq: Int!
 
   """
-  reasoning_delta | text_delta | tool_use | tool_result | server_log | title | stats | hook | done | followups | error.
+  reasoning_delta | text_delta | tool_use | tool_result | server_log | elicitation | elicitation_end | title | stats | hook | done | followups | error.
   """
   type: String!
   text: String
@@ -2355,6 +2369,16 @@ type TurnEvent {
 
   """A `HookNote`: what one hook added, or why not."""
   hook: JSON
+
+  """
+  On `elicitation`, a question a tool's server is asking the person mid-call: `id`, `toolUseId`, `serverId`, `server` (its label), `message` and `schema` (the form `requestedSchema`). Answer it with `answerElicitation`.
+  """
+  elicitation: JSON
+
+  """
+  On `elicitation_end`, how the question with this `id` ended: accept | decline | cancel.
+  """
+  action: String
   items: [String!]
   message: String
 }

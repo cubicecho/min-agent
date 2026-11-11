@@ -1,6 +1,8 @@
+import type { McpPoolOptions } from "@cubicecho/agent-mcp-pool";
 import { memoryTransport } from "@cubicecho/agent-mcp-pool/testing";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
+  CallToolRequestSchema,
   CompleteRequestSchema,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
@@ -139,7 +141,44 @@ function linkServer() {
 /** A server with tools and nothing else, which no prompt or resource listing should ask. */
 const toolsServer = () => serverWith("tools", {});
 
-const SERVERS = { docs: docsServer, broken: brokenServer, links: linkServer, tools: toolsServer };
+/** The question `asks` puts to whoever made the call, and the form it wants filled in. */
+export const BRANCH_QUESTION = {
+  message: "Which branch should I push to?",
+  requestedSchema: {
+    type: "object" as const,
+    properties: {
+      branch: { type: "string" as const, title: "Branch", enum: ["main", "dev"] },
+      force: { type: "boolean" as const, title: "Force push" },
+    },
+    required: ["branch"],
+  },
+};
+
+/**
+ * A server whose one tool asks the person a question mid-call and answers with what it was told,
+ * as a server that wants a confirmation before it writes would.
+ */
+function asksServer() {
+  const server = new Server({ name: "asks", version: "0.0.1" }, { capabilities: { tools: {} } });
+  server.setRequestHandler(ListToolsRequestSchema, () => ({
+    tools: [
+      { name: "push", description: "Pushes, asking where.", inputSchema: { type: "object" } },
+    ],
+  }));
+  server.setRequestHandler(CallToolRequestSchema, async () => {
+    const answer = await server.elicitInput(BRANCH_QUESTION);
+    return { content: [{ type: "text", text: JSON.stringify(answer) }] };
+  });
+  return server;
+}
+
+const SERVERS = {
+  docs: docsServer,
+  broken: brokenServer,
+  links: linkServer,
+  tools: toolsServer,
+  asks: asksServer,
+};
 export type FixtureServer = keyof typeof SERVERS;
 
 /** A min-agent row for one fixture server, labelled so a test can tell label from id. */
@@ -153,7 +192,15 @@ const row = (id: FixtureServer) =>
  * @returns The connected servers; `shutdown()` them after.
  */
 export async function connectFixtures(...ids: FixtureServer[]) {
-  const mcp = createMcp({ createTransport: memoryTransport(SERVERS), log: {} });
+  return connectFixturesWith({}, ...ids);
+}
+
+/**
+ * `connectFixtures` with pool options laid over the app's — a call timeout short enough to run
+ * out inside a test.
+ */
+export async function connectFixturesWith(options: McpPoolOptions, ...ids: FixtureServer[]) {
+  const mcp = createMcp({ createTransport: memoryTransport(SERVERS), log: {}, ...options });
   await mcp.sync(ids.map(row));
   return mcp;
 }

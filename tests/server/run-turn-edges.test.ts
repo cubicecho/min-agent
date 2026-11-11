@@ -43,6 +43,7 @@ const mcp = {
   readResource: vi.fn(),
   labelOf: vi.fn((id: string) => id),
   runHooks: vi.fn(),
+  ask: vi.fn(),
 };
 
 /** Every row `addMessage` was handed, as it was at that moment. */
