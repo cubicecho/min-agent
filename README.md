@@ -215,6 +215,7 @@ query    spec            the saved settings as a cubicecho.agent/1 document, wit
 query    mcpStatus       each configured server with its live connection state and tools
 query    mcpPrompts      the prompts the connected servers offer, for the composer's picker
 query    mcpPrompt       one of them expanded with its arguments, as text for a draft
+query    mcpPromptCompletions  what a server suggests for one of a prompt's arguments
 mutation setApiKey       write-only, so the key never comes back out over the API
 mutation saveMcpServers  replaces the whole set and reconnects
 mutation reconnectMcpServer
@@ -290,18 +291,35 @@ where the tool catalogue goes: a tool catalogue is bounded by what the operator 
 resource list is bounded by whatever the server happens to hold — a filesystem server pointed at
 a repository answers with the repository. `read_resource` takes a uri and finds the server
 itself, so a uri lifted out of a `[resource_link ...]` in a tool result is readable without a
-listing first.
+listing first. The listing carries each server's uri templates too, and every page of both: it is
+the pool's `resources()`, which follows the cursor to the end where min-agent once read the first
+page and stopped.
 
 **Prompts** are the server author's phrasing of a job their server is good at, parameterised.
 The protocol calls them user-controlled, so they go to the person rather than to the model: a
 button in the composer opens a picker, you fill in whatever blanks the template declares, and
 the expansion lands in the draft where you can edit it before sending. A prompt that expands to
 several messages is flattened with its roles labelled, which is lossy — the composer sends one
-user message — and is the honest version of a limitation min-agent would otherwise hide.
+user message — and is the honest version of a limitation min-agent would otherwise hide. Each
+blank offers what the server suggests for it (`completion/complete`), asked once as the picker
+opens and again whenever typing pauses; a server that cannot complete leaves a plain box.
 
 Both are capability-gated on the handshake, which the pool reports on `state()` since 2.5.0.
 Asking a server that never claimed the capability costs an error round trip per server per
-surface, and neither button nor tool appears when nothing offers one.
+surface, and neither button nor tool appears when nothing offers one. The listing, expansion,
+reading and completion are all the pool's (`prompts`, `expandPrompt`, `resources`,
+`readResource`, `complete`); what is min-agent's is the shape each takes on the way to a picker
+or a tool result.
+
+### Server logs
+
+What a server logs while one of its tools runs — MCP's `notifications/message` — lands on that
+call's card in the chat: the card says how many warnings, and opens on them. The servers are
+asked for `warning` and worse, since that is what a person reading a card is looking for. The
+log is a run event, passed through agent-core's `report.log` to the pool's `onLog`, and it is
+never stored or sent to the model: a card read back after a reload has none, as with notices.
+The pool can only tell which call a message belongs to when that call is the only request in
+flight on its server's connection, so two reads run together against one server hear nothing.
 
 ### Hooks
 

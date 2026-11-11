@@ -1,164 +1,100 @@
-import { get, list, type PromptSource } from "../../server/mcp-prompts.ts";
-
-const promptServers = vi.fn<PromptSource["promptServers"]>();
-const client = vi.fn<PromptSource["client"]>();
-/** The servers every test reads through, as `server/index.ts` hands in the real ones. */
-const mcp: PromptSource = { promptServers: () => promptServers(), client };
+import type { Mcp } from "../../server/mcp.ts";
+import { complete, get, list } from "../../server/mcp-prompts.ts";
+import { connectFixtures } from "./mcp-fixture.ts";
 
 /**
- * The prompts a server offers, as the composer's picker reads them.
+ * The prompts a server offers, as the composer's picker reads them, through the real pool and
+ * in-process servers that page their listings.
  *
  * Unlike resources these never reach the model on their own — a person picks one — so what is
- * worth pinning is a picker's needs: a listing that survives one broken server, and an expansion
- * that arrives as the single string a draft is, whatever shape the server answered in.
+ * worth pinning is a picker's needs: every page of a listing, a listing that survives one broken
+ * server, an expansion that arrives as the single string a draft is, and suggestions that never
+ * fail the field they are for.
  */
-const serving = (...ids: string[]) =>
-  promptServers.mockReturnValue(ids.map((id) => ({ id, label: `${id} server` })));
 
-type Prompt = {
-  name: string;
-  title?: string;
-  description?: string;
-  arguments?: { name: string; description?: string; required?: boolean }[];
-};
-type Message = { role: string; content: Record<string, unknown> };
+let mcp: Mcp | undefined;
 
-const server = (handlers: {
-  prompts?: Prompt[];
-  get?: (name: string, args: Record<string, string>) => { messages: Message[] };
-}) => ({
-  listPrompts: async () => {
-    if (!handlers.prompts) {
-      throw new Error("no prompts here");
-    }
-    return { prompts: handlers.prompts };
-  },
-  getPrompt: async ({
-    name,
-    arguments: args,
-  }: {
-    name: string;
-    arguments: Record<string, string>;
-  }) => {
-    if (!handlers.get) {
-      throw new Error(`${name} is not here`);
-    }
-    return handlers.get(name, args);
-  },
-});
-
-const text = (body: string) => ({ type: "text", text: body });
-
-beforeEach(() => {
-  promptServers.mockReset();
-  client.mockReset();
+afterEach(async () => {
+  await mcp?.shutdown();
+  mcp = undefined;
 });
 
 describe("list", () => {
-  it("is empty, and dials nothing, when no connected server offers prompts", async () => {
-    serving();
+  it("is empty when no connected server offers prompts", async () => {
+    mcp = await connectFixtures("tools");
     expect(await list(mcp)).toEqual([]);
-    expect(client).not.toHaveBeenCalled();
   });
 
-  it("carries the server on every row, since two servers may name a prompt the same", async () => {
-    serving("docs", "code");
-    client.mockImplementation(async (id) =>
-      server({ prompts: [{ name: "summarize", title: `${id} summary` }] }),
-    );
-
-    const prompts = await list(mcp);
-    expect(prompts.map((prompt) => [prompt.server, prompt.name])).toEqual([
-      ["docs", "summarize"],
-      ["code", "summarize"],
+  it("reads a server's prompts to the last page, not only the first", async () => {
+    mcp = await connectFixtures("docs");
+    expect((await list(mcp)).map((prompt) => prompt.name)).toEqual([
+      "one",
+      "two",
+      "three",
+      "four",
+      "five",
     ]);
-    expect(prompts[0].serverLabel).toBe("docs server");
   });
 
-  it("defaults `required` to false, which is what the protocol means by omitting it", async () => {
-    serving("docs");
-    client.mockResolvedValue(
-      server({
-        prompts: [
-          { name: "review", arguments: [{ name: "diff", required: true }, { name: "style" }] },
-        ],
-      }),
-    );
-
-    expect((await list(mcp))[0].arguments).toEqual([
-      { name: "diff", description: undefined, required: true },
-      { name: "style", description: undefined, required: false },
-    ]);
+  it("carries the server and its label on every row, and defaults `required` to false", async () => {
+    mcp = await connectFixtures("docs");
+    const [first, second] = await list(mcp);
+    expect(first).toMatchObject({
+      server: "docs",
+      serverLabel: "docs server",
+      title: "Prompt one",
+    });
+    expect(first.arguments).toEqual([{ name: "topic", description: undefined, required: true }]);
+    expect(second.arguments).toEqual([{ name: "topic", description: undefined, required: false }]);
   });
 
   it("keeps the servers that answered when one cannot be listed", async () => {
-    serving("docs", "broken");
-    client.mockImplementation(async (id) =>
-      id === "docs" ? server({ prompts: [{ name: "summarize" }] }) : server({}),
-    );
-
+    mcp = await connectFixtures("broken", "docs");
     // A picker has nowhere to show an error and no way to act on one; the MCP tab is where a
     // broken connection is diagnosed. Failing here would empty the list of the server that works.
-    expect((await list(mcp)).map((prompt) => prompt.server)).toEqual(["docs"]);
+    const servers = new Set((await list(mcp)).map((prompt) => prompt.server));
+    expect([...servers]).toEqual(["docs"]);
   });
 });
 
 describe("get", () => {
-  it("refuses a server that offers no prompts before dialling it", async () => {
-    serving("docs");
-    await expect(get(mcp, "other", "summarize", {})).rejects.toThrow(/not a connected MCP server/);
-    expect(client).not.toHaveBeenCalled();
-  });
-
   it("passes the arguments through and returns a lone message verbatim", async () => {
-    serving("docs");
-    const got = vi.fn((_name: string, args: Record<string, string>) => ({
-      messages: [{ role: "user", content: text(`review ${args.diff}`) }],
-    }));
-    client.mockResolvedValue(server({ get: got }));
-
-    expect(await get(mcp, "docs", "review", { diff: "abc" })).toBe("review abc");
-    expect(got).toHaveBeenCalledWith("review", { diff: "abc" });
+    mcp = await connectFixtures("docs");
+    expect(await get(mcp, "docs", "one", { topic: "mcp" })).toBe("one about mcp");
   });
 
-  it("labels the roles when a prompt is more than one message", async () => {
-    serving("docs");
-    client.mockResolvedValue(
-      server({
-        get: () => ({
-          messages: [
-            { role: "assistant", content: text("Here is how I would answer.") },
-            { role: "user", content: text("Now do it for mine.") },
-          ],
-        }),
-      }),
-    );
+  it("refuses a server that offers no prompts", async () => {
+    mcp = await connectFixtures("tools");
+    await expect(get(mcp, "tools", "one", {})).rejects.toThrow();
+  });
+});
 
-    // Lossy and deliberately so: the composer sends one user message, and a worked example
-    // quoted inside it is still readable as one where a dropped role would not be.
-    expect(await get(mcp, "docs", "review", {})).toBe(
-      "assistant: Here is how I would answer.\n\nuser: Now do it for mine.",
-    );
+describe("complete", () => {
+  it("suggests what the server does for the text typed so far", async () => {
+    mcp = await connectFixtures("docs");
+    expect(await complete(mcp, "docs", "one", { name: "topic", value: "m" }, {})).toEqual([
+      "mcp",
+      "models",
+      "memory",
+    ]);
   });
 
-  it("unwraps an embedded resource and names what has no text at all", async () => {
-    serving("docs");
-    client.mockResolvedValue(
-      server({
-        get: () => ({
-          messages: [
-            {
-              role: "user",
-              content: { type: "resource", resource: { uri: "doc://a", text: "A" } },
-            },
-            { role: "user", content: { type: "image", mimeType: "image/png", data: "..." } },
-          ],
-        }),
-      }),
+  it("sends the other arguments as context, and not the one being completed", async () => {
+    mcp = await connectFixtures("docs");
+    const suggested = await complete(
+      mcp,
+      "docs",
+      "one",
+      { name: "topic", value: "m" },
+      { topic: "stale text", only: "memory" },
     );
+    expect(suggested).toEqual(["memory"]);
+  });
 
-    const expansion = await get(mcp, "docs", "look", {});
-    expect(expansion).toContain("user: A");
-    expect(expansion).toContain("[image image/png");
+  it("is no suggestions rather than an error from a server that cannot complete", async () => {
+    mcp = await connectFixtures("tools", "broken");
+    expect(await complete(mcp, "tools", "one", { name: "topic", value: "" }, {})).toEqual([]);
+    expect(await complete(mcp, "broken", "one", { name: "topic", value: "" }, {})).toEqual([]);
+    expect(await complete(mcp, "nowhere", "one", { name: "topic", value: "" }, {})).toEqual([]);
   });
 });

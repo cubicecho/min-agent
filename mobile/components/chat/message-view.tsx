@@ -1,4 +1,4 @@
-import type { LivePart } from "@shared/client/live.ts";
+import type { LivePart, ServerLog } from "@shared/client/live.ts";
 import { messageText } from "@shared/client/transcript.ts";
 import { statsLine } from "@shared/client/usage.ts";
 import { shownCall } from "@shared/tool-proxy.ts";
@@ -11,7 +11,7 @@ import { MarkdownBody } from "@/components/chat/markdown.tsx";
 import { CollapsibleRow } from "@/components/collapsible-row.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { CopyButton } from "@/components/ui/copy-button";
-import { CircleAlert, Pencil, RefreshCw, Square, Zap } from "@/components/ui/icons";
+import { CircleAlert, Pencil, RefreshCw, Square, TriangleAlert, Zap } from "@/components/ui/icons";
 import { cn, type SlotNode } from "@/lib/utils.ts";
 
 type Glyph = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
@@ -133,29 +133,59 @@ const Caption = ({ text }: { text: string }) => (
   </Text>
 );
 
+/** "1 warning", "3 warnings": what a closed card says its server logged. */
+const warnings = (count: number) => `${count} ${count === 1 ? "warning" : "warnings"}`;
+
+/**
+ * A tool call: its arguments, its result, and what its server logged while it ran.
+ *
+ * The log is the live turn's only. It arrives as run events, which are for the person watching
+ * and are not stored, so a card read back from the transcript has none — the same as a turn's
+ * notices. The servers are asked for warnings and worse, so every line here is one; a server that
+ * ignores the level is shown with what it sent, at the level it said.
+ */
 function ToolCall({
   name,
   input,
   result,
   isError,
+  logs = [],
 }: {
   name: string;
   input: string;
   result?: string;
   isError?: boolean;
+  logs?: ServerLog[];
 }) {
+  const summary = result === undefined ? "running…" : preview(result) || "(no output)";
+  let icon: Glyph = logs.length ? TriangleAlert : Wrench;
+  if (isError) {
+    icon = CircleAlert;
+  }
   return (
     <Details
-      icon={isError ? CircleAlert : Wrench}
+      icon={icon}
       title={name}
       tone={isError ? "error" : undefined}
-      summary={result === undefined ? "running…" : preview(result) || "(no output)"}
+      summary={logs.length ? `${warnings(logs.length)} · ${summary}` : summary}
       content={
         <>
           <View>
             <Caption text="arguments" />
             <Mono text={input || "{}"} />
           </View>
+          {logs.length ? (
+            <View className="mt-1">
+              <Caption text="server log" />
+              {logs.map((log, index) => (
+                // Arrival order is the only identity a log line has.
+                // biome-ignore lint/suspicious/noArrayIndexKey: the list only ever grows at its end
+                <Text key={index} className="font-mono text-warning text-xs">
+                  {`${log.level}: ${log.text}`}
+                </Text>
+              ))}
+            </View>
+          ) : null}
           {result !== undefined ? (
             <View className="mt-1">
               <Caption text={isError ? "error" : "result"} />
@@ -405,7 +435,13 @@ const StoredMessages = memo(function StoredMessages({
 const LiveRow = memo(function LiveRow({ part }: { part: LivePart }) {
   if (part.kind === "tool") {
     return (
-      <ToolCall name={part.name} input={part.input} result={part.result} isError={part.isError} />
+      <ToolCall
+        name={part.name}
+        input={part.input}
+        result={part.result}
+        isError={part.isError}
+        logs={part.logs}
+      />
     );
   }
   if (part.kind === "hook") {

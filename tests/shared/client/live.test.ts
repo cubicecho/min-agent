@@ -36,6 +36,25 @@ describe("applyEvent", () => {
     expect(parts[1]).toMatchObject({ id: "call_2", result: "boom", isError: true });
   });
 
+  it("puts what a server logged on the card of the call it logged during, in order", () => {
+    const parts = fold([
+      { type: "tool_use", id: "call_1", name: "fs__read", input: "{}" },
+      { type: "tool_use", id: "call_2", name: "fs__list", input: "{}" },
+      { type: "server_log", toolUseId: "call_2", level: "warning", text: "slow disk" },
+      { type: "server_log", toolUseId: "call_2", level: "error", text: "gave up on /mnt" },
+      { type: "tool_result", toolUseId: "call_2", content: "a.txt", isError: false },
+    ]);
+
+    expect(parts[0]).not.toHaveProperty("logs");
+    expect(parts[1]).toMatchObject({
+      result: "a.txt",
+      logs: [
+        { level: "warning", text: "slow disk" },
+        { level: "error", text: "gave up on /mnt" },
+      ],
+    });
+  });
+
   it("starts a fresh text part after a tool call", () => {
     const parts = fold([
       { type: "text_delta", text: "first" },

@@ -56,7 +56,9 @@ const mcp = {
   readsOnly: vi.fn(),
   resourceServers: vi.fn(),
   call: vi.fn(),
-  client: vi.fn(),
+  resources: vi.fn(),
+  readResource: vi.fn(),
+  labelOf: vi.fn((id: string) => id),
   runHooks: vi.fn(),
 };
 
@@ -712,8 +714,8 @@ describe("a tool round trip", () => {
 
     // The identical pair shared one call, and each call was handed the turn's own signal.
     expect(mcp.call.mock.calls).toEqual([
-      ["fs__read", { path: "/a" }, controller.signal],
-      ["fs__ls", { path: "/" }, controller.signal],
+      ["fs__read", { path: "/a" }, controller.signal, expect.any(Function)],
+      ["fs__ls", { path: "/" }, controller.signal, expect.any(Function)],
     ]);
 
     const call = (id: string, name: string, args: string) => ({
@@ -903,7 +905,7 @@ describe("loading tools", () => {
         isError: false,
       },
     ]);
-    expect(mcp.call.mock.calls).toEqual([["clock__now", {}, undefined]]);
+    expect(mcp.call.mock.calls).toEqual([["clock__now", {}, undefined, expect.any(Function)]]);
     // Loading is bookkeeping: it is a round trip, and not a tool the model used.
     expect(stats).toMatchObject({ iterations: 3, toolCalls: 1 });
 
@@ -948,7 +950,9 @@ describe("loading tools", () => {
     expect(stored[3]).toMatchObject({
       tool_calls: [{ id: "c2", function: { name: "call_tool", arguments: proxied } }],
     });
-    expect(mcp.call.mock.calls).toEqual([["fs__read", { path: "/a" }, undefined]]);
+    expect(mcp.call.mock.calls).toEqual([
+      ["fs__read", { path: "/a" }, undefined, expect.any(Function)],
+    ]);
     expect(stats).toMatchObject({ iterations: 3, toolCalls: 1 });
 
     // Nothing is carried: the session's list is neither read nor written.
@@ -1207,10 +1211,15 @@ describe("what the loop decides beyond the common path", () => {
     configure({ toolDiscovery: "eager" });
     offer(READ);
     mcp.resourceServers.mockReturnValue([{ id: "fs", label: "Files" }]);
-    mcp.client.mockResolvedValue({
-      listResources: async () => ({ resources: [{ uri: "file:///a", name: "a" }] }),
-      readResource: async ({ uri }: { uri: string }) => ({ contents: [{ uri, text: "hello" }] }),
-    });
+    mcp.labelOf.mockReturnValue("Files");
+    mcp.resources.mockResolvedValue([
+      { serverId: "fs", resources: [{ uri: "file:///a", name: "a" }], templates: [] },
+    ]);
+    mcp.readResource.mockImplementation(async (_id: string, uri: string) => ({
+      uri,
+      text: "hello",
+      truncated: false,
+    }));
     script = [
       asks(
         ["c1", "list_resources", "{}"],
@@ -1246,6 +1255,37 @@ describe("what the loop decides beyond the common path", () => {
     // Not the pool's to run, and counted as tools the model used all the same.
     expect(mcp.call).not.toHaveBeenCalled();
     expect(stats).toMatchObject({ iterations: 2, toolCalls: 3 });
+  });
+
+  it("passes what a server logs during a call to the chat, on that call, and not to the model", async () => {
+    configure({ toolDiscovery: "eager" });
+    offer(READ);
+    mcp.call.mockImplementation(
+      async (
+        _name: string,
+        _input: unknown,
+        _signal: AbortSignal | undefined,
+        onLog: (entry: { level: string; data: unknown }) => void,
+      ) => {
+        onLog({ level: "warning", data: "index is stale" });
+        onLog({ level: "error", data: { code: 7 } });
+        return "contents";
+      },
+    );
+    script = [asks(["c1", "fs__read", '{"path":"/a"}']), says("Read.")];
+
+    const { events } = await run(sessionOf(), "read it");
+
+    expect(events.filter((event) => event.type === "server_log")).toEqual([
+      { type: "server_log", toolUseId: "c1", level: "warning", text: "index is stale" },
+      { type: "server_log", toolUseId: "c1", level: "error", text: '{"code":7}' },
+    ]);
+    // Before the result it explains, so a card has its warnings by the time it settles.
+    const order = events.flatMap((event) =>
+      event.type === "server_log" || event.type === "tool_result" ? [event.type] : [],
+    );
+    expect(order).toEqual(["server_log", "server_log", "tool_result"]);
+    expect(stored[2]).toEqual({ role: "tool", tool_call_id: "c1", content: "contents" });
   });
 
   it("loads a catalogued tool that is called without being loaded, and carries it", async () => {
@@ -1418,7 +1458,9 @@ describe("what the loop decides beyond the common path", () => {
       { type: "tool_use", id: "c1", name: "fs__read", input: '{"path":"/a"}' },
       { type: "tool_result", toolUseId: "c1", content: "contents of a", isError: false },
     ]);
-    expect(mcp.call.mock.calls).toEqual([["fs__read", { path: "/a" }, undefined]]);
+    expect(mcp.call.mock.calls).toEqual([
+      ["fs__read", { path: "/a" }, undefined, expect.any(Function)],
+    ]);
     expect(bodies().map(declaredTools)).toEqual([["load_tools"], ["load_tools"]]);
     expect(chat.loadedTools).toEqual([]);
   });

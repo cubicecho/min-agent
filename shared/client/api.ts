@@ -2,6 +2,7 @@ import {
   ConfigDocument,
   CreateSessionDocument,
   DeleteSessionDocument,
+  McpPromptCompletionsDocument,
   McpPromptDocument,
   McpPromptsDocument,
   type McpServerInput,
@@ -267,6 +268,23 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
      */
     mcpPrompt: async (server: string, name: string, args: Record<string, string>) =>
       (await request(McpPromptDocument, { server, name, args })).mcpPrompt,
+
+    /** Suggestions for one of a prompt's arguments, given what is typed so far. */
+    mcpPromptCompletions: async (
+      server: string,
+      name: string,
+      argument: { name: string; value: string },
+      args: Record<string, string>,
+    ) =>
+      (
+        await request(McpPromptCompletionsDocument, {
+          server,
+          name,
+          argument: argument.name,
+          value: argument.value,
+          args,
+        })
+      ).mcpPromptCompletions,
   };
 
   /**

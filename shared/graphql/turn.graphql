@@ -11,6 +11,7 @@ subscription Turn($sessionId: String!, $prompt: String!, $model: String) {
     toolUseId
     content
     isError
+    level
     title
     stats
     hook

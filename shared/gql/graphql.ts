@@ -1124,6 +1124,8 @@ export type Query = {
   health: Health;
   /** One prompt expanded with the given arguments, flattened to the single string a composer draft is. A multi-message prompt comes back with its roles labelled. */
   mcpPrompt: Scalars['String']['output'];
+  /** What the server suggests for one argument of a prompt, given its text so far and the other arguments. Empty from a server that cannot complete, or that failed to. */
+  mcpPromptCompletions: Array<Scalars['String']['output']>;
   /** The prompts the connected servers offer, for a picker. Empty when none of them does; a server that cannot be listed is omitted rather than failing the query. */
   mcpPrompts: Array<McpPrompt>;
   mcpServer?: Maybe<McpServer>;
@@ -1155,6 +1157,15 @@ export type QueryMcpPromptArgs = {
   args?: InputMaybe<Scalars['JSON']['input']>;
   name: Scalars['String']['input'];
   server: Scalars['String']['input'];
+};
+
+
+export type QueryMcpPromptCompletionsArgs = {
+  args?: InputMaybe<Scalars['JSON']['input']>;
+  argument: Scalars['String']['input'];
+  name: Scalars['String']['input'];
+  server: Scalars['String']['input'];
+  value: Scalars['String']['input'];
 };
 
 
@@ -2003,6 +2014,8 @@ export type TurnEvent = {
   input?: Maybe<Scalars['String']['output']>;
   isError?: Maybe<Scalars['Boolean']['output']>;
   items?: Maybe<Array<Scalars['String']['output']>>;
+  /** On `server_log`, the level the tool's server logged at; `text` is the message. */
+  level?: Maybe<Scalars['String']['output']>;
   message?: Maybe<Scalars['String']['output']>;
   name?: Maybe<Scalars['String']['output']>;
   /** Per-turn counter from 1. */
@@ -2011,7 +2024,7 @@ export type TurnEvent = {
   text?: Maybe<Scalars['String']['output']>;
   title?: Maybe<Scalars['String']['output']>;
   toolUseId?: Maybe<Scalars['String']['output']>;
-  /** reasoning_delta | text_delta | tool_use | tool_result | title | stats | hook | done | followups | error. */
+  /** reasoning_delta | text_delta | tool_use | tool_result | server_log | title | stats | hook | done | followups | error. */
   type: Scalars['String']['output'];
 };
 
@@ -2098,6 +2111,17 @@ export type McpPromptQueryVariables = Exact<{
 
 export type McpPromptQuery = { mcpPrompt: string };
 
+export type McpPromptCompletionsQueryVariables = Exact<{
+  server: Scalars['String']['input'];
+  name: Scalars['String']['input'];
+  argument: Scalars['String']['input'];
+  value: Scalars['String']['input'];
+  args?: InputMaybe<Scalars['JSON']['input']>;
+}>;
+
+
+export type McpPromptCompletionsQuery = { mcpPromptCompletions: Array<string> };
+
 export type SessionSummaryFragment = { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, compaction?: unknown | null, messageCount: number };
 
 export type MessageRowFragment = { id: string, idx: number, role: MessagesRoleEnum, content?: unknown | null, reasoningContent?: string | null, toolCalls?: unknown | null, toolCallId?: string | null, stats?: unknown | null, followups?: unknown | null };
@@ -2178,7 +2202,7 @@ export type TurnSubscriptionVariables = Exact<{
 }>;
 
 
-export type TurnSubscription = { turn: { seq: number, type: string, text?: string | null, id?: string | null, name?: string | null, input?: string | null, toolUseId?: string | null, content?: string | null, isError?: boolean | null, title?: string | null, stats?: unknown | null, hook?: unknown | null, items?: Array<string> | null, message?: string | null } };
+export type TurnSubscription = { turn: { seq: number, type: string, text?: string | null, id?: string | null, name?: string | null, input?: string | null, toolUseId?: string | null, content?: string | null, isError?: boolean | null, level?: string | null, title?: string | null, stats?: unknown | null, hook?: unknown | null, items?: Array<string> | null, message?: string | null } };
 
 export class TypedDocumentString<TResult, TVariables>
   extends String
@@ -2357,6 +2381,17 @@ export const McpPromptDocument = new TypedDocumentString(`
   mcpPrompt(server: $server, name: $name, args: $args)
 }
     `) as unknown as TypedDocumentString<McpPromptQuery, McpPromptQueryVariables>;
+export const McpPromptCompletionsDocument = new TypedDocumentString(`
+    query McpPromptCompletions($server: String!, $name: String!, $argument: String!, $value: String!, $args: JSON) {
+  mcpPromptCompletions(
+    server: $server
+    name: $name
+    argument: $argument
+    value: $value
+    args: $args
+  )
+}
+    `) as unknown as TypedDocumentString<McpPromptCompletionsQuery, McpPromptCompletionsQueryVariables>;
 export const SessionsDocument = new TypedDocumentString(`
     query Sessions {
   sessions {
@@ -2512,6 +2547,7 @@ export const TurnDocument = new TypedDocumentString(`
     toolUseId
     content
     isError
+    level
     title
     stats
     hook

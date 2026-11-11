@@ -39,7 +39,9 @@ const mcp = {
   readsOnly: vi.fn(),
   resourceServers: vi.fn(),
   call: vi.fn(),
-  client: vi.fn(),
+  resources: vi.fn(),
+  readResource: vi.fn(),
+  labelOf: vi.fn((id: string) => id),
   runHooks: vi.fn(),
 };
 

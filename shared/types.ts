@@ -499,6 +499,10 @@ export type StreamEvent =
   | { type: "text_delta"; text: string }
   | { type: "tool_use"; id: string; name: string; input: string }
   | { type: "tool_result"; toolUseId: string; content: string; isError: boolean }
+  // What the call's server logged while it ran, at `level` — a warning or worse, since that is
+  // what the servers are asked to send. Shown on the call's card; never stored, never sent to
+  // the model.
+  | { type: "server_log"; toolUseId: string; level: string; text: string }
   | { type: "title"; title: string }
   | { type: "stats"; stats: TurnStats }
   // A hook that injected context or failed. The before-turn ones arrive ahead of the first

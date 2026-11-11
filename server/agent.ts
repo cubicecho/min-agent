@@ -26,6 +26,7 @@ import {
   sanitizeTools,
   serverInstructionsPrompt,
   summariser,
+  type ToolCallReport,
   type ToolCallRequest,
   ToolIterationLimit,
   type Turn,
@@ -643,8 +644,16 @@ function toolRunner(
    * The arguments are read again from the model's own text, with `JSON.parse` alone. The loop
    * hands over a repaired reading; min-agent tells the model its arguments were not JSON and has
    * it write them again, and that is not the loop's to change.
+   *
+   * `report.log` goes to the pool as the call's `onLog`, so what a server logs while it runs
+   * reaches the chat as a `server-log` event on that call's card — and never the transcript,
+   * since it is for the person reading why a call went the way it did, not for the model.
    */
-  const dispatch = async ({ id, name: called, raw }: ToolCallRequest): Promise<string> => {
+  const dispatch = async (
+    { id, name: called, raw }: ToolCallRequest,
+    _signal: AbortSignal | undefined,
+    report: ToolCallReport,
+  ): Promise<string> => {
     try {
       const args = parseArgs(raw);
       // Reached only where the loop is not loading on demand itself: proxied, and eager, where a
@@ -670,7 +679,7 @@ function toolRunner(
         const { name, input } = proxiedCall(args, catalog);
         used.add(name);
         return await callOnce(answered, `${name}\u0000${JSON.stringify(input)}`, () =>
-          mcp.call(name, input, signal),
+          mcp.call(name, input, signal, report.log),
         );
       }
       if (called === LIST_RESOURCES) {
@@ -692,7 +701,7 @@ function toolRunner(
       }
       used.add(called);
       return await callOnce(answered, `${called}\u0000${raw}`, () =>
-        mcp.call(called, args, signal),
+        mcp.call(called, args, signal, report.log),
       );
     } catch (error) {
       failed.add(id);
@@ -1151,9 +1160,13 @@ export async function runTurn(
           cleared: clearedChars(session),
         });
       },
-      onEvent: ({ kind, text: delta = "" }) => {
+      onEvent: ({ kind, text: delta = "", id, level }) => {
         if (kind === "notice") {
           notice(delta);
+        }
+        if (kind === "server-log" && id) {
+          emit({ type: "server_log", toolUseId: id, level: level ?? "", text: delta });
+          return;
         }
         if (kind !== "thinking" && kind !== "output") {
           return;
