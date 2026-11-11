@@ -74,31 +74,12 @@ export function useTurn({
   const mounted = useRef(true);
   /** Whether the chat a stream belongs to is the one the reader is looking at. */
   const isShowing = (id: string) => mounted.current && showing.current === id;
-  /**
-   * The questions a tool's server is waiting on the person for, by id, with the chat whose turn
-   * asked them. Leaving that chat puts them away: nobody is looking at the form any more, and a
-   * call held open for an answer that cannot come holds its whole turn with it.
-   */
-  const questions = useRef(new Map<string, string>());
-  const putAway = useCallback((id: string, chat: string) => {
-    questions.current.delete(id);
-    // Best effort: a question that has ended already answers `false`, and one the server never
-    // hears about runs out on its own.
-    api.answerElicitation(chat, id, "cancel").catch(() => {});
-  }, []);
-  const putAllAway = useCallback(() => {
-    for (const [id, chat] of questions.current) {
-      putAway(id, chat);
-    }
-  }, [putAway]);
-  // Leaving the chat screen altogether, not only for another chat.
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      putAllAway();
     };
-  }, [putAllAway]);
+  }, []);
 
   const activeModel = model || session.data?.model || defaultModel;
   const stored = session.data?.messages ?? [];
@@ -127,7 +108,6 @@ export function useTurn({
       return;
     }
     route.current = sessionId;
-    putAllAway();
     setCreated(null);
     setDraft("");
     setModel("");
@@ -259,19 +239,12 @@ export function useTurn({
           if (event.type === "text_delta") {
             answer += event.text;
           }
-          if (event.type === "elicitation") {
-            questions.current.set(event.elicitation.id, turnId);
-            // Asked in a chat the reader has already left: there is no form to answer it in.
-            if (!isShowing(turnId)) {
-              putAway(event.elicitation.id, turnId);
-              return;
-            }
-          }
-          if (event.type === "elicitation_end") {
-            questions.current.delete(event.id);
-          }
           // Kept under the chat it belongs to whether or not that chat is on screen: switch
-          // away and back mid-turn, and the turn is still there, still going.
+          // away and back mid-turn, and the turn is still there, still going. That includes a
+          // question a tool's server is waiting on: it stays open, and its form is there to
+          // answer when the reader comes back. Nothing is left hanging for good — the server
+          // puts a question away itself after `ELICITATION_DEFAULTS.answerWaitMs`, and when the
+          // stream drops.
           turns.push(turnId, event);
         },
       });
@@ -323,17 +296,19 @@ export function useTurn({
   /**
    * Answers a question a tool's server asked in the live turn. `false` for one that is no longer
    * waiting; its `elicitation_end` is on the way.
+   *
+   * Answered as the chat on screen, because that is the only chat whose questions are drawn
+   * here — and the server only takes an answer from the chat whose turn asked.
    */
   async function answerQuestion(
     id: string,
     action: ElicitationAction,
     content?: ElicitationContent,
   ) {
-    const chat = questions.current.get(id);
-    if (!chat) {
+    if (!activeId) {
       return false;
     }
-    return api.answerElicitation(chat, id, action, content);
+    return api.answerElicitation(activeId, id, action, content);
   }
 
   /** Puts a question back in the composer, with everything it led to forgotten. */

@@ -1,4 +1,4 @@
-import { createTurnStore, IDLE_TURN } from "@shared/client/turns.ts";
+import { createTurnStore, IDLE_TURN, turnActivity } from "@shared/client/turns.ts";
 
 /** A store whose frames run when the test says so. */
 function store() {
@@ -110,5 +110,35 @@ describe("createTurnStore", () => {
     frame();
 
     expect(turns.get("a")).toBe(IDLE_TURN);
+  });
+});
+
+describe("turnActivity", () => {
+  const question = {
+    id: "q1",
+    toolUseId: "call_1",
+    serverId: "s",
+    server: "s",
+    message: "Which?",
+    schema: {},
+  };
+
+  it("is idle with no turn, running while answering, waiting on an open question", () => {
+    const { turns, frame } = store();
+    expect(turnActivity(turns.get("a"))).toBe("idle");
+
+    start(turns, "a");
+    expect(turnActivity(turns.get("a"))).toBe("running");
+
+    turns.push("a", { type: "elicitation", elicitation: question });
+    frame();
+    expect(turnActivity(turns.get("a"))).toBe("waiting");
+
+    turns.push("a", { type: "elicitation_end", id: "q1", action: "accept" });
+    frame();
+    expect(turnActivity(turns.get("a"))).toBe("running");
+
+    turns.end("a");
+    expect(turnActivity(turns.get("a"))).toBe("idle");
   });
 });

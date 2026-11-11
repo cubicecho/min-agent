@@ -1,5 +1,5 @@
 import type { StreamEvent, TurnStats } from "../types.ts";
-import { applyEvent, type LivePart } from "./live.ts";
+import { applyEvent, type LivePart, waitingQuestions } from "./live.ts";
 
 /** One chat's turn, as the pane showing that chat draws it. */
 export interface TurnState {
@@ -27,6 +27,20 @@ export const IDLE_TURN: TurnState = Object.freeze({
   failure: null,
   controller: null,
 });
+
+/**
+ * What a chat is doing, as its row in the list says it: nothing, answering, or stopped on a
+ * question that only the person can answer — the one state where the turn will not move on
+ * until somebody goes back to it.
+ */
+export type TurnActivity = "idle" | "running" | "waiting";
+
+export function turnActivity(turn: TurnState): TurnActivity {
+  if (turn.prompt === null) {
+    return "idle";
+  }
+  return waitingQuestions(turn.parts).length ? "waiting" : "running";
+}
 
 /** Runs `flush` once, later. The next animation frame by default; a test hands in its own. */
 type Schedule = (flush: () => void) => void;
