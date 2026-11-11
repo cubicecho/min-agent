@@ -467,6 +467,7 @@ describe("assertMcpServers", () => {
     url: "",
     headers: {},
     hiddenTools: [],
+    trustAnnotations: true,
     hooks: [],
     ...patch,
   });

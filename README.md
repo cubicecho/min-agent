@@ -254,7 +254,7 @@ Tools are exposed to the model as `<server id>__<tool name>`, so ids must be uni
 The panel is a list, and editing happens in a dialog over it. What you come here to read is which
 servers answered and what they are offering; a row says that in one line (where it points, its
 status, how many tools), and a broken one gives its second line over to the error instead of
-repeating an address you already typed. The eight fields behind it are for the once you write
+repeating an address you already typed. The nine fields behind it are for the once you write
 them.
 
 There is no Save button. The mutation replaces the whole set, so the dialog is the unit of
@@ -263,6 +263,20 @@ the exception that saves in place, because turning a server off is the one edit 
 without opening anything. A server that falls over while you are on another tab puts a dot on
 the MCP tab — the settings shell polls `mcpStatus` slowly on its own for that, which is all the
 dot costs.
+
+What a server says about itself when it connects — the `instructions` on its `initialize` answer —
+goes into the system prompt, after yours, under *MCP server instructions*. It is agent-core's
+`serverInstructions` that writes it, from the pool's catalogue: each server under its own name,
+fenced as that server's advice rather than the user's, and cut at about a thousand tokens so a
+server that pasted its README cannot crowd out the rest. A server is a third party, and this is
+text it controls landing where a model is most inclined to take it literally.
+
+**Trust what its tools say they do** is on for a new server, and decides which calls a turn runs
+together — see [below](#what-a-turn-does-not-make-you-wait-for). A tool can declare itself
+read-only (`readOnlyHint`); the spec calls that a claim, not a guarantee. It is on by default
+because every server here is one you added yourself, and because a false claim costs no more than
+every call cost before: they all ran together. Turn it off for a server that marks a tool with
+side effects as read-only, and every call to it runs alone.
 
 ### Resources and prompts
 
@@ -717,10 +731,13 @@ the total: it is what the request would have carried on top.
 
 ### What a turn does not make you wait for
 
-Tool calls a model asks for together run together. They arrive in one round trip and do not
-depend on each other, so the round trip costs the slowest of them rather than the sum, and a
-result is shown the moment it lands. What is *stored* stays in call order, so the transcript
-still reads the way the model wrote it. Two identical calls in one turn share a single MCP round
+Reads a model asks for together run together, so the round trip costs the slowest of them rather
+than the sum, and a result is shown the moment it lands. A read is a call to a tool its server
+marks read-only, on a server whose annotations are trusted, or one of min-agent's own —
+`load_tools`, `list_resources`, `read_resource`. Anything else runs alone, in the place the model
+asked for it: read A, read B, write C, read D runs as `[A ‖ B] → C → D`, so two writes land in the
+order the model was told they did, and a read asked for after a write sees what it wrote. What is
+*stored* stays in call order, so the transcript still reads the way the model wrote it. Two identical calls in one turn share a single MCP round
 trip, and a call that failed is not remembered as an answer — a retry is a real retry.
 
 Follow-up chips are written after the answer by a second, smaller model. The turn now sends
@@ -728,6 +745,11 @@ Follow-up chips are written after the answer by a second, smaller model. The tur
 take, so the composer unlocks with the answer instead of a beat later. A stream that idles longer
 than 15 seconds — a slow tool, a model still thinking — sends a comment frame, which clients skip,
 so nothing between here and the browser mistakes a working turn for a dead connection.
+
+Every request carries the chat's id as `X-Session-Id`, for a router in front of the model to keep
+a chat on one backend. On a llama.cpp server that reports its slots, the turn also holds a slot of
+its own and asks for the same one next turn, so a long chat keeps its cached prefix even while
+another chat's turn is running on the server.
 
 Stopping a turn keeps what it had already said. The assistant message used to be appended only
 once the stream ended, so pressing stop left the reply on screen and nothing in the transcript;

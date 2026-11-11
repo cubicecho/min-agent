@@ -246,6 +246,11 @@ export const mcpServerSchema = z
     headers: z.record(z.string(), z.string()).default({}),
     /** Tools only hooks may call. The model is never offered them and cannot call them. */
     hiddenTools: z.array(z.string()).default([]),
+    /**
+     * Believe what this server's tools say about themselves: a `readOnlyHint` call runs beside the
+     * step's other reads. Off, every call to it runs alone. See `trustAnnotations` in the schema.
+     */
+    trustAnnotations: z.boolean().default(true),
     hooks: z.array(toolHookSchema).default([]),
   })
   .superRefine((server, ctx) => {

@@ -97,29 +97,27 @@ export function createMcp() {
      */
     tools: (names?: string[]) => pool.tools({ names }),
 
-    /** Names and descriptions only — what the model browses before loading anything. */
+    /**
+     * Names and descriptions only — what the model browses before loading anything.
+     *
+     * Each server also carries the `instructions` its `initialize` answered with (pool 3.11), which
+     * agent-core's `serverInstructions` writes into the system prompt. Servers use that text for
+     * what a tool description has no room for — which tool to call first, what its ids look like —
+     * and a model without it learns the same rule by making the call and reading the error.
+     */
     catalog: () => pool.catalog(),
 
     /**
-     * What each connected server said about itself when it connected, for the system prompt.
+     * Whether a call to this tool only reads, which is what lets it run beside the step's other
+     * reads. Anything else — a write, a tool its server does not annotate, a server whose row has
+     * `trustAnnotations` off, a name nothing offers — answers false, and the turn runs that call
+     * alone, after everything asked before it and before everything asked after.
      *
-     * `initialize` carries an `instructions` string, and servers use it for the things a tool
-     * description has no room for — which tool to call first, what its ids look like, which of two
-     * overlapping tools is the cheap one. Dropping it is why a model reaches for the right server and
-     * still uses it wrongly: it learns the same rule by making the call, reading the error and trying
-     * again, at a round trip a lesson and nothing carried into the next turn.
-     *
-     * Synchronous since pool 2.5.0 reports it on `state()` (cubicecho/agent-mcp-pool#70). It went
-     * through `pool.client()` before, which is the call path's own door and dials a server sitting at
-     * `idle` — safe here only because this pool is built neither `lazy` nor with an `idleTimeoutMs`,
-     * which is a long way to reach for a string the handshake had already returned.
+     * No `servers` scope: min-agent does not scope runs, so every enabled server's tools are the
+     * turn's. Synchronous and off the pool's index, so it is asked once per call without a round
+     * trip.
      */
-    instructions: () =>
-      pool
-        .state()
-        .flatMap(({ label, instructions: text }) =>
-          text?.trim() ? [{ label, text: text.trim() }] : [],
-        ),
+    readsOnly: (qualifiedName: string) => pool.readsOnly(qualifiedName),
 
     /*
      * The connected servers that declared a capability, in configuration order — via the pool's

@@ -133,6 +133,18 @@ export const mcpServers = table("mcp_servers", {
   headers: jsonb().$type<Record<string, string>>().notNull().default({}),
   /** Tools only this row's hooks may call; the model is never offered them. */
   hiddenTools: jsonb().$type<string[]>().notNull().default([]),
+  /**
+   * Whether the pool may believe this server's tool annotations, which decides what a turn runs in
+   * parallel: a call whose tool declares `readOnlyHint` runs beside the step's other reads, and any
+   * other call — or every call, with this off — runs alone, in the place the model asked for it.
+   *
+   * On by default, unlike the pool's own default, because every row here is a server somebody
+   * added by hand to their own assistant, and because believing a lie costs no more than the turn
+   * did before the predicate existed: every call ran in parallel then. The pool's result cache,
+   * which is where a false `readOnlyHint` swallows a second `send_email`, is not turned on here.
+   * Off is for a server that marks a tool with side effects as read-only.
+   */
+  trustAnnotations: boolean().notNull().default(true),
   /** This server's own tools, called by min-agent at points in a session. See `ToolHookConfig`. */
   hooks: jsonb().$type<ToolHookConfig[]>().notNull().default([]),
   /** The order the UI lists them in, which is the order they were added. */

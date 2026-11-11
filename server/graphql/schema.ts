@@ -56,6 +56,11 @@ const McpServerConfigType = new GraphQLObjectType({
     url: { type: new GraphQLNonNull(GraphQLString) },
     headers: { type: new GraphQLNonNull(GraphQLJSON) },
     hiddenTools: { type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(GraphQLString))) },
+    trustAnnotations: {
+      type: new GraphQLNonNull(GraphQLBoolean),
+      description:
+        "Believe its tools' `readOnlyHint`, so its reads run beside a step's other reads. Off, every call to it runs alone.",
+    },
     hooks: {
       type: new GraphQLNonNull(GraphQLJSON),
       description: "The server's own tools, called at points in a session. See `ToolHookConfig`.",
@@ -76,6 +81,7 @@ const McpServerInput = new GraphQLInputObjectType({
     url: { type: GraphQLString },
     headers: { type: GraphQLJSON },
     hiddenTools: { type: new GraphQLList(new GraphQLNonNull(GraphQLString)) },
+    trustAnnotations: { type: GraphQLBoolean },
     hooks: { type: GraphQLJSON },
   },
 });

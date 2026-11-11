@@ -86,6 +86,7 @@ const blank = (taken: McpServerConfig[]): McpServerConfig => {
     url: "",
     headers: {},
     hiddenTools: [],
+    trustAnnotations: true,
     hooks: [],
   };
 };
@@ -448,6 +449,16 @@ function Editor({
 
             <form.AppField name="enabled">
               {(field) => <field.SwitchField label="Connect to it" />}
+            </form.AppField>
+
+            <form.AppField name="trustAnnotations">
+              {(field) => (
+                <field.SwitchField
+                  descriptionPlacement={placement}
+                  label="Trust what its tools say they do"
+                  description="Calls to tools it marks read-only run together. Switched off, every call to it runs alone, in the order the model asked."
+                />
+              )}
             </form.AppField>
 
             <Section

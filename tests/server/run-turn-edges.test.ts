@@ -36,7 +36,7 @@ let offered: ToolDefinition[] = [];
 const mcp = {
   catalog: vi.fn(),
   tools: vi.fn(),
-  instructions: vi.fn(),
+  readsOnly: vi.fn(),
   resourceServers: vi.fn(),
   call: vi.fn(),
   client: vi.fn(),
@@ -123,6 +123,11 @@ const refuses = (refusal: string): Reply => ({ refusal });
 const loses = (lost: string): Reply => ({ lost });
 
 async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  // The turn runs under the chat's id, so it asks llama.cpp's `/props` once for slots to pin it
+  // to. None here; `run-turn.test.ts` is where the pinning is pinned.
+  if (new URL(String(url)).pathname.endsWith("/props")) {
+    return new Response("{}", { status: 404 });
+  }
   requests.push(String(init?.body ?? url));
   log.push("request");
   const reply = String(url).endsWith("/chat/completions") ? script.shift() : undefined;
@@ -266,7 +271,7 @@ beforeEach(() => {
       ? names.flatMap((name) => offered.filter((each) => each.function.name === name))
       : offered,
   );
-  mcp.instructions.mockReturnValue([]);
+  mcp.readsOnly.mockReturnValue(false);
   mcp.resourceServers.mockReturnValue([]);
   mcp.runHooks.mockResolvedValue([]);
 });
@@ -280,6 +285,8 @@ afterEach(() => {
 describe("the order a tool step is written and said in", () => {
   it("stores the reply before announcing its calls, and every result before the next request", async () => {
     offered = [READ, LS];
+    // Two reads, so they run as one batch: both announced and called before either answers.
+    mcp.readsOnly.mockReturnValue(true);
     mcp.call.mockImplementation(async (name: string) => {
       log.push(`call ${name}`);
       return name;
@@ -312,6 +319,8 @@ describe("the order a tool step is written and said in", () => {
 describe("stopping a turn while its tools run", () => {
   it("lets every call in flight answer, and stores each answer in call order", async () => {
     offered = [READ, LS, NOW];
+    // All three read, so all three are in flight when the stop arrives.
+    mcp.readsOnly.mockReturnValue(true);
     const controller = new AbortController();
     mcp.call.mockImplementation((name: string, _input: unknown, signal: AbortSignal) => {
       // One is back before the stop; the other two are ended by it.

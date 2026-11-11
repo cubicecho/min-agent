@@ -40,7 +40,7 @@ let settings: LlmConfig;
 const mcp = {
   catalog: vi.fn(),
   tools: vi.fn(),
-  instructions: vi.fn(),
+  readsOnly: vi.fn(),
   resourceServers: vi.fn(),
   call: vi.fn(),
   runHooks: vi.fn(),
@@ -213,7 +213,7 @@ beforeEach(() => {
   }
   mcp.catalog.mockReturnValue([]);
   mcp.tools.mockReturnValue([]);
-  mcp.instructions.mockReturnValue([]);
+  mcp.readsOnly.mockReturnValue(false);
   mcp.resourceServers.mockReturnValue([]);
   mcp.runHooks.mockResolvedValue([]);
 });
