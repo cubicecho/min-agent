@@ -4,14 +4,13 @@ import { fromStored, toStored } from "../shared/messages.ts";
 import type { Session, SessionSummary, StoredMessage } from "../shared/types.ts";
 import type { Db } from "./db/client.ts";
 import { messages, type NewMessageRow, type SessionRow, sessions } from "./db/schema.ts";
-import { clampPruning } from "./pruning.ts";
 
 /**
  * Sessions and their messages.
  *
  * A turn only ever appends, so this exposes the append rather than a save: `addMessage` writes
- * the one row a step produced, and `patchMessage` fills in the stats and follow-ups that are
- * only known once the turn is over. Nothing here edits a message.
+ * the one row a step produced, and `patchMessage` fills in what is only known after it: the
+ * hooks' context on a question, the stats and follow-ups on a reply. Nothing else edits a message.
  *
  * `truncateSession` is the one thing that removes any, and it removes a suffix: retrying a
  * reply and editing a question both mean "forget from here", and what follows the cut is
@@ -26,15 +25,16 @@ const summarize = (row: SessionRow): SessionSummary => ({
   model: row.model,
   usage: row.usage ?? undefined,
   loadedTools: row.loadedTools,
-  compaction: row.compaction ?? undefined,
-  pruning: row.pruning ?? undefined,
   messageCount: row.messageCount,
 });
 
 /** The session's own columns — never its messages, which are only ever appended. */
 export type SessionPatch = Partial<
-  Pick<Session, "title" | "model" | "usage" | "loadedTools" | "compaction" | "pruning" | "ledger">
->;
+  Pick<Session, "title" | "model" | "usage" | "loadedTools" | "ledger">
+> & {
+  /** Null forgets it, for the next turn to rebuild from the messages. */
+  transcript?: Session["transcript"] | null;
+};
 
 /**
  * Builds the store over a database: `server/index.ts` hands it the process's, a test its own.
@@ -67,6 +67,7 @@ export function createStore(db: Db) {
     const { messageCount, ...summary } = summarize(row);
     return {
       ...summary,
+      ...(row.transcript ? { transcript: row.transcript } : {}),
       ...(row.ledger.length ? { ledger: row.ledger } : {}),
       messages: rows.map(toStored),
     };
@@ -121,12 +122,22 @@ export function createStore(db: Db) {
     });
   }
 
-  /** What is only known once the turn has finished: what it cost, and what to ask next. */
+  /**
+   * What is only known once a message is stored: what the turn cost and what to ask next, and the
+   * context its hooks put on a question, which the loop gathers once the question is in.
+   */
   async function patchMessage(
     id: string,
-    patch: Pick<StoredMessage, "stats" | "followups">,
+    { hook_context, ...patch }: Pick<StoredMessage, "stats" | "followups" | "hook_context">,
   ): Promise<void> {
-    await db.update(messages).set(patch).where(eq(messages.id, id));
+    const columns = {
+      ...patch,
+      ...(hook_context === undefined ? {} : { hookContext: hook_context }),
+    };
+    if (!Object.keys(columns).length) {
+      return;
+    }
+    await db.update(messages).set(columns).where(eq(messages.id, id));
   }
 
   /**
@@ -135,10 +146,9 @@ export function createStore(db: Db) {
    * The counters are derived rather than adjusted: `messageCount` is where the transcript now
    * ends, and the banked usage is what the turns that are left still add up to — a decrement
    * would have to trust that the rows and the totals never drifted, and this does not have to.
-   * A compaction is dropped if it summarised anything past the cut: it is a description of
-   * messages that no longer exist, and the next turn would send it as if they did. A pruning marker
-   * past the cut is pulled back to it, for the mirror of that reason: left where it was, the next
-   * tool results appended would land behind it and be sent as stubs the model never saw whole.
+   * The model's transcript goes, with the ledger indexed into it: it may have been compacted or
+   * stubbed past the cut, and it does not line up with the rows closely enough to be cut where they
+   * are. The next turn rebuilds it from the messages that are left.
    *
    * `idx` stays dense because only a suffix ever goes, which is what lets the client keep
    * treating a message's position in the array as its index.
@@ -163,11 +173,8 @@ export function createStore(db: Db) {
         messageCount: from,
         updatedAt: new Date(),
         usage: usageOf(kept),
-        compaction:
-          session.compaction && session.compaction.through <= from ? session.compaction : null,
-        pruning: clampPruning(session.pruning, from) ?? null,
-        // A reading that reached past the cut counted messages that are gone.
-        ledger: (session.ledger ?? []).filter((entry) => entry.through < from),
+        transcript: null,
+        ledger: [],
       })
       .where(eq(sessions.id, id));
 

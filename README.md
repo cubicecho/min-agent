@@ -180,7 +180,7 @@ Four tables, created by the migrations in `drizzle/`, which `runMigrations()` ap
 ```
 settings      one row, id 'default' — Settings → Agent
 mcp_servers   one row per server, ordered by position — Settings → MCP
-sessions      one per chat: title, dates, token totals, compaction and pruning state, ledger
+sessions      one per chat: title, dates, token totals, the model's transcript, ledger
 messages      one per message, ordered by (session_id, idx), cascade-deleted with the session
 ```
 
@@ -361,9 +361,9 @@ already offer.
 
 | Event | When | What `{{…}}` can use | Can add context |
 | --- | --- | --- | --- |
-| `sessionStart` | ahead of a chat's first turn | `prompt` | yes |
-| `beforeTurn` | ahead of every turn | `prompt`, `turn.index` | yes |
-| `afterTurn` | once a turn is answered | `prompt`, `reply`, `turn.index`, `turn.messages` | no |
+| `sessionStart` | ahead of a chat's first question | `prompt` | yes |
+| `beforeExchange` | ahead of every question | `prompt`, `turn.index` | yes |
+| `afterExchange` | once a question is answered | `prompt`, `reply`, `turn.index`, `turn.messages` | no |
 | `beforeCompact` | as the head of a chat is summarised | `compacting`, `range.from`, `range.through` | no |
 | `sessionDelete` | when a chat is deleted | — | no |
 
@@ -372,7 +372,7 @@ Every event also has `session.id`, `host` (`min-agent`) and `now`.
   as an array.
 - A placeholder inside a longer string is filled in as text.
 - A hook whose value is missing is skipped.
-- A hook that asks for something its event never has, such as `{{reply}}` on `beforeTurn`, is
+- A hook that asks for something its event never has, such as `{{reply}}` on `beforeExchange`, is
   refused when you save.
 
 `sessionEnd` exists in the pool but min-agent never fires it, because a chat here never ends:
@@ -391,11 +391,11 @@ A hook with `inject` set adds what the tool returns to the request, as a
 
 A hook that fails or times out costs the turn its context, never the turn itself. Under the reply,
 a line says what each hook added or why it failed. Context opens like thinking does, to show
-exactly what the model was given. A failed `afterTurn` line is kept with the turn.
+exactly what the model was given. A failed `afterExchange` line is kept with the turn.
 
-`afterTurn` is told the question as you typed it, without the context the hooks added to it, and
-each message under its index in the stored chat. That is the index `beforeCompact` uses when the
-same message is folded later, so a memory server sees one message, not two.
+`afterExchange` is told the question as you typed it, without the context the hooks added to it.
+agent-core's loop fires every event but `sessionDelete`, and `turn.index` is the question's place in
+the chat, compacted or not.
 
 **Hide from the model** (the switch beside each tool) takes a tool out of what the model is
 offered, and refuses the model's calls to it, while this row's hooks can still call it. That is
@@ -405,9 +405,9 @@ what makes a memory server work without the model's help. This is
 ```jsonc
 "hiddenTools": ["zeromem_remember", "zeromem_ingest", "zeromem_forget_session"],
 "hooks": [
-  { "id": "recall", "on": "beforeTurn", "tool": "zeromem_recall", "inject": true, "maxTokens": 800,
+  { "id": "recall", "on": "beforeExchange", "tool": "zeromem_recall", "inject": true, "maxTokens": 800,
     "args": { "query": "{{prompt}}", "exclude_session": "min-agent:{{session.id}}", "format": "text" } },
-  { "id": "remember", "on": "afterTurn", "tool": "zeromem_remember",
+  { "id": "remember", "on": "afterExchange", "tool": "zeromem_remember",
     "args": { "session_id": "min-agent:{{session.id}}", "turns": "{{turn.messages}}" } },
   { "id": "save-before-compact", "on": "beforeCompact", "tool": "zeromem_remember",
     "args": { "session_id": "min-agent:{{session.id}}", "turns": "{{compacting}}" } },
@@ -479,9 +479,9 @@ compounds: a session that loaded a whole Gmail server on turn two started turn t
 wandered into an unrelated one, and burned 167k prompt tokens over 13 iterations on a question that
 needed one call.
 
-Within a turn, an identical `(tool, arguments)` pair is answered from the first result instead of
-being re-executed, with a note saying so. Models otherwise re-call a tool that disappointed them —
-six identical calls in a row, in one observed case.
+When one reply asks for the same read twice — the same tool and arguments — the loop makes the
+call once and answers both. Anything that is not a read is made every time it is asked for, since
+twice is twice.
 
 ### Schema compatibility
 
@@ -664,77 +664,45 @@ this one's with only the unused guesses gone.
 
 ### Context compaction
 
-A session that runs long eventually stops fitting. Compaction is the answer: once the last turn
-reported using **75%** of the context window, the oldest messages are replaced — for the purpose
-of the API call only — by a summary of them: a user message holding the notes and the assistant's
-one-line acknowledgement, which is how agent-core has sent a fold since 4.23.1, so the request
-never carries a second system message.
+A session that runs long eventually stops fitting. agent-core's loop handles it, before each
+request of a turn: once the window is past **75%** full, the oldest messages are replaced by a
+summary of them — a user message holding the notes and the assistant's one-line acknowledgement,
+so the request never carries a second system message. It needs a **Context window** and a
+**Context compaction** task model; without either nothing is compacted. A summary that fails, or
+a `beforeCompact` hook with `veto` set that declines, leaves the transcript as it was.
 
-Nothing is deleted. `session.compaction` records `{ summary, through, at }` and the messages stay
-on disk in full; `through` is simply the index the transcript is rebuilt from, so the UI still
-shows the whole history and a later fold re-summarises from the previous summary onward. That also
-means the summary *accumulates* — the model is handed the old summary plus the newly folded turns
-and asked for the merged one, so a fact stated in the first message survives an arbitrary number
-of folds.
+Two records are kept of a chat. The **messages** are every row, whole, as the chat shows them, and
+only ever appended to. The **transcript** (`sessions.transcript`, kept out of the API) is what the
+model was sent, as the loop handed it back after the last turn — compacted, old tool results
+stubbed, each question carrying its hooks' context — and the next turn is that with its question
+on the end. A later compaction continues the previous summary rather than summarising it again,
+so a fact stated in the first message survives any number of them.
 
-The cut point is the fussy part. It has to land **immediately before a `user` message**, because a
-transcript that opens mid-exchange — a tool result with no assistant call above it, an assistant
-turn answering nothing — is rejected by most servers. agent-core's `planCompaction()` walks
-backwards from the end accumulating a tail worth about 35% of the window, then advances the cut
-forward to the next `user` message. If that leaves fewer than two messages folded, it folds
-inside the last question's tool loop instead — at a reply after the question, which is kept whole
-and sent after the summary — and gives up only if that folds too little as well. A fold that
-would not pay for itself is not worth a round trip.
+The token ledger the loop keeps — what each request reported its prompt as — is stored beside the
+transcript (`sessions.ledger`) and handed back on the next turn, so where to cut is weighed by what
+the server said the messages cost and only the rest is estimated.
 
-What a message weighs in that walk is measured where it can be. Every request reports its prompt
-tokens, and two requests of one turn where the second only appended to the first differ by exactly
-what was appended — the chat template's tokens, the hooks' context and a tool result's real density
-included. agent-core keeps those readings as a token ledger, and min-agent stores each turn's on
-the session, a failed turn's included (`sessions.ledger`, indexed into the stored transcript,
-kept out of the API), so the next fold weighs the messages it covers by what the server said
-they cost and estimates only the rest. Whether to fold at all is still the last turn's reported total.
-
-Like titling, a failure is swallowed: the turn proceeds on the full transcript, which is the
-behaviour you had before compaction existed.
-
-Compaction is driven by what the *last* turn cost, so a single huge paste or an unusually large
-tool result can still overrun a window nothing had a chance to fold. When it does, the endpoint's
-complaint comes back with the number the turn was working to added to it — the whole difficulty of
-that failure is that the two disagree, and the usual cause is a **Context window** larger than what
-the server actually serves (llama.cpp will list a 256k model it loaded at `-c 16384`). So the
-server is asked what it serves (agent-core's `servedWindow`, from llama.cpp's `/props` or LM
-Studio's model listing): less than the turn was built to, and the message names the figure; at
-least as much, and the setting is left out of it, since the turn simply outgrew a right window.
+A single huge paste or an unusually large tool result can still overrun the window. When it does,
+the endpoint's complaint comes back with the number the turn was working to added to it — the
+usual cause is a **Context window** larger than what the server actually serves (llama.cpp will
+list a 256k model it loaded at `-c 16384`). So the server is asked what it serves (agent-core's
+`servedWindow`, from llama.cpp's `/props` or LM Studio's model listing): less than the turn was
+built to, and the message names the figure; at least as much, and the setting is left out of it,
+since the turn simply outgrew a right window.
 
 ### Clearing old tool results
 
 A file read forty steps ago is still ten thousand tokens on every request since, long after the
 model took what it wanted from it. So old tool results are sent as a one-line stub —
-`[result cleared, 12,345 chars]`, agent-core's stub — while the stored message
-and what the chat shows stay whole.
+`[result cleared, 12,345 chars]` — while the stored message and what the chat shows stay whole.
 
 The fussy part is the prompt cache. "All but the latest five results" is a window that slides:
-applied per request, every new result pushes an older one out, rewrites a message in the middle
-of the history, and loses the cache from there on — once per tool call. So the cut is stored
-instead. `session.pruning` records `{ through, at }`, results before `through` are sent as stubs
-and results from it on are sent whole, and a request is the one before it with only its tail
-added for as long as the marker stays where it is.
-
-`planPrune()` in `server/pruning.ts` decides when it moves — agent-core's `planPrune()` on
-min-agent's policy, with its `pruneThrough()` making the stubs — and it is asked at the start of a
-turn and after each step's results are in — a long turn of tool calls is where the window fills, and
-nothing compacts mid-turn. The marker goes onto the fifth result from the end, and only:
-
-- **with a compaction**, which has just rewritten the head of the request, so whatever a move
-  clears is free; or
-- **when the move would clear a quarter of the window**, by the planner's own count. A move costs
-  one cache miss from the old marker onward, so it has to buy something. With no window known it
-  never moves on its own, and a conversation that is mostly talk never moves it at all.
-
-It never moves backwards. A result of 256 characters or fewer is left as it is, and so is a
-proxied `load_tools` result that carries definitions — the only copy of those schemas the model
-has. An on-demand load's result and the resource tools' are cleared like any other: the first
-only repeats what the tool array declares, and a resource can be read again.
+applied per request, every new result pushes an older one out and loses the cache from there on,
+once per tool call. So the loop's prune moves a boundary instead, before a request, onto the
+fifth result from the end, and only beside a compaction — which has rewritten the head anyway —
+or when the move would clear a quarter of the window. It never moves backwards, a result of 256
+characters or fewer is left as it is, and so is a proxied `load_tools` result carrying
+definitions, the only copy of those schemas the model has.
 
 ## Turn statistics
 
@@ -807,8 +775,9 @@ marks read-only, on a server whose annotations are trusted, or one of min-agent'
 `load_tools`, `list_resources`, `read_resource`. Anything else runs alone, in the place the model
 asked for it: read A, read B, write C, read D runs as `[A ‖ B] → C → D`, so two writes land in the
 order the model was told they did, and a read asked for after a write sees what it wrote. What is
-*stored* stays in call order, so the transcript still reads the way the model wrote it. Two identical calls in one turn share a single MCP round
-trip, and a call that failed is not remembered as an answer — a retry is a real retry.
+*stored* stays in call order, so the transcript still reads the way the model wrote it. Two
+identical reads in one reply share a single MCP round trip, and a call that failed is not
+remembered as an answer — a retry is a real retry.
 
 Follow-up chips are written after the answer by a second, smaller model. The turn now sends
 `done` as soon as the reply is complete and keeps the stream open only for the second the chips
@@ -912,10 +881,9 @@ Only a suffix is ever removed, which is what keeps `idx` dense and lets the clie
 treating a message's position in the array as its index. The session's own columns are derived
 again rather than decremented — `messageCount` is where the transcript now ends, and the banked
 usage is what the remaining turns add up to — because a decrement has to trust that the rows and
-the totals never drifted, and this does not. A compaction that summarised anything past the cut
-is dropped: it describes messages that no longer exist, and the next turn would send it as
-though they did. A pruning marker past the cut is pulled back to it, so the results that arrive
-next are not behind it.
+the totals never drifted, and this does not. The model's transcript is dropped with its ledger,
+since it may have been compacted past the cut, and the next turn rebuilds it from the messages
+that are left.
 
 Neither button is offered while a turn is running. There is one stream and one composer, and
 rewinding underneath a reply that is still arriving has no sensible reading.

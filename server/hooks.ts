@@ -1,18 +1,17 @@
 import * as core from "@cubicecho/agent-core";
-import type { HookContext, HookEvent, HookMessage } from "@cubicecho/agent-mcp-pool";
+import type { HookContext, HookEvent } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
-import type { HookNote, Session, StoredMessage, StreamEvent } from "../shared/types.ts";
+import type { HookNote, StoredMessage, StreamEvent } from "../shared/types.ts";
 import type { Mcp } from "./mcp.ts";
 
 /**
  * The MCP servers' hooks, fired at min-agent's points in a session.
  *
- * The pool runs them and never lets one fail a turn, and agent-core's hooks module decides what a
- * session looks like to them, where their context lands in a request, and what is said about each
- * one. This is the layer between the two that is min-agent's own: the pool as the runner, the
- * preface that names it, and a note as the chat's stream carries it. `agent.ts` calls it at each
- * point but `afterTurn`, which the loop fires with what `afterTurnHooks` tells it, and the
- * sessions `onWrite` hook in `graphql/schema.ts` calls it for a delete.
+ * The pool runs them and never lets one fail a turn, and agent-core's loop fires them around each
+ * question: `sessionStart` and `beforeExchange` before its first request, `beforeCompact` ahead of
+ * a compaction, `afterExchange` once there is an answer. This is the layer between the two that is
+ * min-agent's own: the pool as the runner, the preface that names it, and a note as the chat's
+ * stream carries it. The sessions `onWrite` hook in `graphql/schema.ts` fires `sessionDelete`.
  *
  * `sessionEnd` is never fired. A chat does not end, it is only left, and a hook bound to it
  * would wait for something that does not happen here.
@@ -51,54 +50,23 @@ const told = (emit?: (event: StreamEvent) => void) =>
   emit && ((hook: HookNote) => emit({ type: "hook", hook }));
 
 /**
- * A stretch of the transcript as a memory server reads it: what the user and the assistant
- * said, and nothing else. Tool calls and their results are left out.
- *
- * The uuid is the chat's id, the message's index in the stored transcript and a digest of what
- * it says, so the same turn sent twice (afterTurn, then again when it is compacted) is one
- * memory, and an answer retried into the same position is another. The index is the stored
- * one because this reads `session.messages`, never a request a compaction has shortened.
- *
- * @param session The chat, with its whole transcript.
- * @param from The first index, inclusive.
- * @param to The end, exclusive. Defaults to the end of the transcript.
- * @returns The messages in that stretch that said something.
- */
-export function turnMessages(session: Session, from: number, to?: number): HookMessage[] {
-  return core.turnMessages(session.id, session.messages, from, to);
-}
-
-/**
- * Which turn of the session begins at `before`, from 0: the user messages ahead of it.
- *
- * @param messages The stored transcript.
- * @param before Where the turn begins. Defaults to the end of the transcript.
- * @returns The count.
- */
-export const turnIndex = (messages: readonly StoredMessage[], before?: number) =>
-  core.turnIndex(messages, before);
-
-/**
  * Said once, above the blocks, so the model reads them as background and not as instructions.
  *
  * min-agent's own wording rather than agent-core's, and passed with each call rather than set
  * for the process: it is in every request that carries context, so a word changed here misses
  * the prompt cache for every chat already under way.
  */
-const PREFACE =
+export const PREFACE =
   "The <context> blocks below were added by min-agent's MCP servers for this message. They " +
   "are background the user did not write and may not be relevant. The user's message follows them.";
 
 /**
  * A question as the model is sent it: the hooks' context ahead of what the user typed.
  *
- * It goes on the question, not in the system prompt, because it is about the question. It also
- * keeps the system prompt fixed: a prompt that changed every turn would miss the prompt cache
- * every turn. The context is stored beside the question rather than in it (`hook_context`), so
- * it is never remembered as something the user said — and it is sent with that question on every
- * later request too, not only on its own turn. A past question that lost its context changed
- * the request from there on, and the answer after it and all its tool traffic were prefilled
- * again on every turn.
+ * The context is stored beside the question rather than in it (`hook_context`), so it is never
+ * shown as something the user said, and put back on it whenever the transcript is rebuilt from
+ * the stored rows: a past question that lost its context changes the request from there on, and
+ * the server's prefix cache with it.
  *
  * @param message The question as the user typed it.
  * @param context The hooks' context. Empty returns `message` as it is.
@@ -114,47 +82,58 @@ export function withContext(
   return sent as OpenAI.ChatCompletionUserMessageParam;
 }
 
-/** What `gather` found for a request. */
-export interface Gathered {
-  /** The `<context>` blocks, or empty when no hook added anything. */
-  context: string;
-  notes: HookNote[];
+/**
+ * The hooks as the loop takes them, for one question.
+ *
+ * `turnBase` puts the question back in the chat's own numbering: the loop counts the questions of
+ * the transcript it is handed, and a compacted one holds fewer than the chat has asked.
+ *
+ * @param mcp The servers whose hooks run.
+ * @param context The chat, the question as typed and its place in the chat, counted from 0.
+ * @param options `first` fires `sessionStart` too. `turnBase` is the questions the chat has asked
+ * that the transcript no longer holds. `emit` hears each note as a `hook` event.
+ * @returns What `runAgentLoop` takes as `hooks`.
+ */
+export function exchangeHooks(
+  mcp: HookPool,
+  { session, prompt, index }: { session: { id: string }; prompt: string; index: number },
+  {
+    first,
+    turnBase,
+    emit,
+  }: { first: boolean; turnBase: number; emit?: (event: StreamEvent) => void },
+): core.AgentLoopHooks {
+  const { SessionStart, BeforeExchange, BeforeCompact, AfterExchange } = core.HookEvent;
+  return {
+    run: runnerOf(mcp),
+    // The loop puts its own `turn` on what it tells `afterExchange`.
+    context: { session, host: HOST, prompt, turn: { index } },
+    fire: [...(first ? [SessionStart] : []), BeforeExchange, BeforeCompact, AfterExchange],
+    preface: PREFACE,
+    question: prompt,
+    turnBase,
+    // `afterExchange`'s are said by the turn once they are stored with its stats, as before.
+    onNote: emit && ((note) => note.event !== AfterExchange && emit({ type: "hook", hook: note })),
+  };
 }
 
 /**
- * Runs the injecting events' hooks ahead of a request and builds what they add to it.
+ * How many questions a transcript holds ahead of a point, as agent-core counts them for a hook's
+ * `turn.index`.
  *
- * On the path of the first token, so the bounds matter:
- * - Each hook gets 3s unless its row says otherwise.
- * - `signal` ends all of them.
- * - A hook that fails costs the turn its context, never the turn.
- * - Blocks are capped per hook and 2000 tokens in total, so a generous server cannot crowd out
- *   the conversation it was meant to inform.
- *
- * @param mcp The servers whose hooks run.
- * @param events Which to run, in the order their context is assembled and the budget spent.
- * @param context What the hooks are told.
- * @param options `signal` is the turn's. `emit` hears each note as a `hook` event.
- * @returns The context to send with the question, and a note for each hook worth mentioning.
+ * @param messages The stored rows, or the model's transcript.
+ * @param before Where to stop counting. Defaults to the end.
+ * @returns The count.
  */
-export async function gather(
-  mcp: HookPool,
-  events: readonly HookEvent[],
-  context: HookContext,
-  { signal, emit }: { signal?: AbortSignal; emit?: (event: StreamEvent) => void } = {},
-): Promise<Gathered> {
-  return core.gather(runnerOf(mcp), events, context, {
-    signal,
-    onNote: told(emit),
-    maxTokens: core.HOOK_CONTEXT_TOKENS,
-  });
-}
+export const turnIndex = (
+  messages: readonly (StoredMessage | OpenAI.ChatCompletionMessageParam)[],
+  before?: number,
+) => core.turnIndex(messages as OpenAI.ChatCompletionMessageParam[], before);
 
 /**
  * Runs the hooks for an event that reads what happened and adds nothing to a request.
  *
- * No signal: these run once the turn has been answered, and a reader who stops listening
- * at that point has not asked for the turn not to be remembered.
+ * No signal: a reader who stops listening has not asked for the chat not to be remembered.
  *
  * @param mcp The servers whose hooks run.
  * @param event `sessionDelete`, or any other event whose hooks add nothing to a request.
@@ -169,68 +148,6 @@ export async function notify(
   emit?: (event: StreamEvent) => void,
 ): Promise<HookNote[]> {
   return core.notify(runnerOf(mcp), event, context, told(emit));
-}
-
-/**
- * The hooks as agent-core's `runCompaction` takes them, for a fold of this chat.
- *
- * It adds `compacting` and `range` itself, from the plan, and tells `beforeCompact` beside the
- * summary rather than ahead of it: no `honourVeto`, so a hook cannot stop a fold and adds no
- * time to one. No `onNote` either, as `notify` has no `emit` when nobody is listening — a fold
- * is not part of the turn the chat is watching.
- *
- * @param mcp The servers whose hooks run.
- * @param session The chat being folded.
- * @returns The pool as the runner, and what every hook here is told.
- */
-export const compactionHooks = (
-  mcp: HookPool,
-  session: Pick<Session, "id">,
-): NonNullable<core.CompactionRunOptions["hooks"]> => ({
-  run: runnerOf(mcp),
-  context: { session: { id: session.id }, host: HOST },
-});
-
-/**
- * The hooks as the loop takes them, for it to tell `afterTurn` once the turn has its answer, and
- * to fire nothing else.
- *
- * `beforeTurn` stays min-agent's own `gather`, because it overlaps the fold, which the loop's
- * would wait behind; and the fold is min-agent's too, so the loop has no `beforeCompact` to fire.
- *
- * The loop reads the turn off the transcript it was handed, which is not the stored one in two
- * ways, and the rest of this says how to put it back:
- * - Its question carries the recall. `question` is what the user typed, so a memory server files
- *   what was asked rather than what it was reminded of.
- * - A fold replaced the head with its summary, and an empty system prompt may lead it. `offset`
- *   moves each position back onto the stored index, so a message is told under the uuid the next
- *   fold's `beforeCompact` names it by. `turnBase` is the questions the fold took and did not send
- *   again: the one it kept is still in the request, and counted there.
- *
- * @param mcp The servers whose hooks run.
- * @param session The chat, its question stored at `turnStart`, and the fold in force.
- * @param prompt The question as the user typed it.
- * @param turnStart Where the question is stored.
- * @param sentAt Where the question is in the transcript the loop is handed.
- * @returns What `runAgentLoop` takes as `hooks`.
- */
-export function afterTurnHooks(
-  mcp: HookPool,
-  session: Pick<Session, "id" | "messages" | "compaction">,
-  prompt: string,
-  turnStart: number,
-  sentAt: number,
-): core.AgentLoopHooks {
-  const fold = session.compaction;
-  const kept = fold?.question !== undefined && fold.question < fold.through ? 1 : 0;
-  return {
-    run: runnerOf(mcp),
-    context: { session: { id: session.id }, host: HOST, prompt },
-    fire: [core.HookEvent.AfterTurn],
-    question: prompt,
-    turnBase: fold ? turnIndex(session.messages, fold.through) - kept : 0,
-    offset: turnStart - sentAt,
-  };
 }
 
 /**

@@ -1,9 +1,6 @@
-import { SUMMARY_ACK, SUMMARY_LEAD } from "@cubicecho/agent-core";
 import { forApi } from "../../server/agent.ts";
 import type { StoredMessage } from "../../shared/types.ts";
-import { sessionOf, textOf, turnStats } from "../helpers.ts";
-
-const session = (messages: StoredMessage[]) => sessionOf({ messages });
+import { textOf, turnStats } from "../helpers.ts";
 
 describe("forApi", () => {
   const transcript: StoredMessage[] = [
@@ -19,15 +16,15 @@ describe("forApi", () => {
   ];
 
   it("sends a past question with its context, the same as on its own turn", () => {
-    const onItsTurn = forApi(session(transcript.slice(0, 1)))[0];
-    const later = forApi(session(transcript))[0];
+    const onItsTurn = forApi(transcript.slice(0, 1))[0];
+    const later = forApi(transcript)[0];
     expect(later).toEqual(onItsTurn);
     expect(later.content).toContain("<context>tea</context>");
     expect(textOf(later).endsWith("first")).toBe(true);
   });
 
   it("sends the context under min-agent's preface, ahead of what the user typed", () => {
-    expect(forApi(session(transcript))[0]).toEqual({
+    expect(forApi(transcript)[0]).toEqual({
       role: "user",
       content:
         "The <context> blocks below were added by min-agent's MCP servers for this message. " +
@@ -37,7 +34,7 @@ describe("forApi", () => {
   });
 
   it("sends none of min-agent's own fields", () => {
-    const sent = forApi(session(transcript));
+    const sent = forApi(transcript);
     for (const message of sent) {
       for (const field of ["hook_context", "reasoning_field", "stats", "followups"]) {
         expect(message).not.toHaveProperty(field);
@@ -70,7 +67,7 @@ describe("forApi", () => {
     ];
     /** What each reply carried back, by its index in the request. */
     const carried = (replay?: "all" | "tool-loop" | "none") =>
-      forApi(session(working), replay).flatMap((message, at) => {
+      forApi(working, replay).flatMap((message, at) => {
         const thought = message as { reasoning_content?: string; reasoning?: string };
         return message.role === "assistant"
           ? [[at, thought.reasoning_content ?? thought.reasoning ?? null]]
@@ -103,7 +100,7 @@ describe("forApi", () => {
     });
 
     it("goes back under the field it arrived in", () => {
-      const sent = forApi(session(working));
+      const sent = forApi(working);
       expect(sent[1]).toHaveProperty("reasoning_content", "look first");
       expect(sent[5]).toHaveProperty("reasoning", "look again");
       expect(sent[5]).not.toHaveProperty("reasoning_content");
@@ -111,10 +108,10 @@ describe("forApi", () => {
 
     it("takes OpenRouter's reasoning blocks with it, under the same policy", () => {
       const details = [{ type: "reasoning.encrypted", data: "opaque" }];
-      const chat = session([
+      const chat: StoredMessage[] = [
         { role: "user", content: "q" },
         { role: "assistant", content: "a", reasoning_content: "r", reasoning_details: details },
-      ]);
+      ];
       expect(forApi(chat)[1]).toEqual({
         role: "assistant",
         content: "a",
@@ -127,39 +124,12 @@ describe("forApi", () => {
 
   it("sends a reply with neither text nor calls as an empty string, which Ollama will take", () => {
     const sent = forApi(
-      session([
+      [
         { role: "user", content: "q" },
         { role: "assistant", content: null, reasoning_content: "only thought" },
-      ]),
+      ],
       "none",
     );
     expect(sent[1]).toEqual({ role: "assistant", content: "" });
-  });
-
-  it("sends a fold's summary where the head was, first, and the rest as it would be anyway", () => {
-    const folded = {
-      ...session(transcript),
-      compaction: { summary: "we chose tea", through: 1, at: "2026-01-01T00:00:00.000Z" },
-    };
-    const sent = forApi(folded, "none");
-    // A user message and its acknowledgement since agent-core 4.23.1, never a second system one.
-    expect(sent).toEqual([
-      { role: "user", content: `${SUMMARY_LEAD}we chose tea` },
-      { role: "assistant", content: SUMMARY_ACK },
-      { role: "assistant", content: "One." },
-      { role: "user", content: "second" },
-    ]);
-    // The stored transcript is not what was rewritten.
-    expect(folded.messages).toBe(transcript);
-    expect(transcript).toHaveLength(3);
-  });
-
-  it("keeps a kept question's context behind a summary", () => {
-    const sent = forApi({
-      ...session([{ role: "user", content: "zeroth" }, ...transcript]),
-      compaction: { summary: "notes", through: 1, at: "2026-01-01T00:00:00.000Z" },
-    });
-    expect(sent).toHaveLength(5);
-    expect(sent[2]).toEqual(forApi(session(transcript))[0]);
   });
 });

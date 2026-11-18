@@ -59,46 +59,25 @@ export interface TurnSettings {
    * different request, not the same one again.
    */
   openRetries: number;
-  /**
-   * The share of the last request's prompt that has to come back from the cache. A request that
-   * finds less is logged as a cache miss.
-   */
-  cachedShare: number;
-  /** How much of a tool call's unparsable arguments the error quotes. */
-  quotedArgumentChars: number;
 }
 
 export const TURN_DEFAULTS: Readonly<TurnSettings> = Object.freeze({
   openRetries: 2,
-  cachedShare: 0.9,
-  quotedArgumentChars: 200,
 });
 
 export interface PruningSettings {
-  /**
-   * How many of the latest tool results a move of the marker leaves whole. agent-core's default.
-   *
-   * Read where the marker is *placed*, not where the stubs are made: `planPrune` puts the marker
-   * on the fifth result from the end, and `sentWithStubs` then clears everything behind it.
-   * Handing this to `pruneToolResults` instead would keep the last five results *behind* the
-   * marker whole, and the next move would stub them — changing the request from somewhere before
-   * the old marker rather than from it. Either way the model keeps the same five results at the
-   * moment of a move.
-   */
+  /** How many of the latest tool results a move of the loop's prune boundary leaves whole. */
   keepLast: number;
   /** A result this long or shorter is left whole wherever it is. agent-core's default. */
   maxChars: number;
   /**
-   * The share of the window a move must clear before the marker moves on its own.
+   * The share of the window a move must clear before the boundary moves on its own.
    *
-   * A move costs one cache miss, from the old marker to the end of the request, and what it buys
+   * A move costs one cache miss, from the old boundary to the end of the request, and what it buys
    * is the window: every token cleared is one the conversation can use before a compaction — a
-   * summariser's round trip, a miss from the very head, and the detail a summary loses — or, in a
-   * long turn of tool steps, before the request overflows, since nothing compacts mid-turn. At a
-   * quarter of the window a conversation can move the marker at most three times on its way from
-   * empty to compaction's three quarters, each move hands a quarter of the window back for one
-   * re-read of what lies after the old marker, and a conversation that is mostly talk never moves
-   * it at all.
+   * summariser's round trip, a miss from the very head, and the detail a summary loses. At a
+   * quarter of the window a conversation can move it at most three times on its way from empty to
+   * compaction's three quarters, and a conversation that is mostly talk never moves it at all.
    *
    * A constant and not a setting, like the planner's own ratios: the number that would go in the
    * box is a share of a window that already is a setting.

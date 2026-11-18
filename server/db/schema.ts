@@ -163,16 +163,16 @@ export const sessions = table("sessions", {
   usage: jsonb().$type<TokenUsage>(),
   /** Tools pulled in on demand, kept for the rest of the session so they load once. */
   loadedTools: jsonb().$type<string[]>().notNull().default([]),
-  /** Set once the transcript outgrew the window; the head is sent as a summary instead. */
-  compaction: jsonb().$type<NonNullable<Session["compaction"]>>(),
-  /** How far old tool results are sent as stubs. Null until the rule first moves it. */
-  pruning: jsonb().$type<NonNullable<Session["pruning"]>>(),
   /**
-   * What each request a turn sent reported its prompt as, and how far into `messages` it reached:
-   * agent-core's token ledger, indexed into the stored transcript. Two entries of one epoch
-   * subtract to what the messages between them cost, which is what a fold is planned from where
-   * there is a reading — see `server/compaction.ts`. The runner's cache rather than anything a
-   * person sets, so it is kept out of the API.
+   * What the model was sent, as the loop handed it back after the last turn — see
+   * `Session.transcript`. Null where it is rebuilt from the messages. The runner's own, so it is
+   * kept out of the API.
+   */
+  transcript: jsonb().$type<NonNullable<Session["transcript"]>>(),
+  /**
+   * What each request a turn sent reported its prompt as, and how far into `transcript` it
+   * reached: agent-core's token ledger, which the loop plans compaction from where there is a
+   * reading. The runner's cache rather than anything a person sets, so it is kept out of the API.
    */
   ledger: jsonb().$type<TokenLedger>().notNull().default([]),
   /**

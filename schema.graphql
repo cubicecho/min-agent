@@ -321,8 +321,6 @@ type Session {
   model: String!
   usage: JSON
   loadedTools: JSON!
-  compaction: JSON
-  pruning: JSON
   messageCount: Int!
 
   """
@@ -411,8 +409,6 @@ type SessionCountNonNullAggregate {
   model: Int!
   usage: Int!
   loadedTools: Int!
-  compaction: Int!
-  pruning: Int!
   messageCount: Int!
 }
 
@@ -1453,8 +1449,6 @@ input CreateSessionInput {
   model: String
   usage: JSON
   loadedTools: JSON
-  compaction: JSON
-  pruning: JSON
   messageCount: Int
 }
 
@@ -1466,8 +1460,6 @@ input UpdateSessionInput {
   model: String
   usage: JSON
   loadedTools: JSON
-  compaction: JSON
-  pruning: JSON
   messageCount: Int
 }
 
@@ -1488,8 +1480,6 @@ input SessionFilters {
   model: StringFilter
   usage: JSONFilter
   loadedTools: JSONFilter
-  compaction: JSONFilter
-  pruning: JSONFilter
   messageCount: IntFilter
   messages: MessageListRelationFilter
 
@@ -1596,8 +1586,6 @@ input SessionOrderBy {
   model: InnerOrder
   usage: InnerOrder
   loadedTools: InnerOrder
-  compaction: InnerOrder
-  pruning: InnerOrder
   messageCount: InnerOrder
 }
 
@@ -1637,8 +1625,6 @@ input SessionCountNonNullHaving {
   model: AggregateNumberFilter
   usage: AggregateNumberFilter
   loadedTools: AggregateNumberFilter
-  compaction: AggregateNumberFilter
-  pruning: AggregateNumberFilter
   messageCount: AggregateNumberFilter
 }
 
@@ -2146,8 +2132,6 @@ enum SessionDistinctColumn {
   model
   usage
   loadedTools
-  compaction
-  pruning
   messageCount
 }
 

@@ -8,7 +8,7 @@ import {
 import OpenAI from "openai";
 import { endpoint } from "../../server/config.ts";
 import { llmConfigSchema } from "../../shared/types.ts";
-import { messagesOf, textOf } from "../helpers.ts";
+import { messagesOf, streamed, textOf } from "../helpers.ts";
 
 /**
  * What the tool-select model is sent, and what is made of its answer.
@@ -34,18 +34,8 @@ const catalog: CatalogServer[] = [
 
 const config = llmConfigSchema.parse({ baseUrl: "http://box:8080/v1", apiKey: "k" });
 
-/** A chat completion whose whole answer is `content`. */
-const completion = (content: string) =>
-  new Response(
-    JSON.stringify({
-      id: "c",
-      object: "chat.completion",
-      created: 0,
-      model: "small",
-      choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
-    }),
-    { status: 200, headers: { "content-type": "application/json" } },
-  );
+/** A chat completion whose whole answer is `content`, streamed as every side task is. */
+const completion = (content: string) => streamed(content);
 
 /**
  * An error saying `message`. A 400 is how a server refuses a field it does not take.
@@ -157,14 +147,14 @@ describe("preselect", () => {
     expect(bodies[2]).not.toHaveProperty("response_format");
   });
 
-  it("answers a failed request with nothing and a notice, so the turn goes on", async () => {
+  it("answers a request that fails every retry with nothing and a notice, so the turn goes on", async () => {
     const notices: string[] = [];
     const bodies = serving(() => failure("the model fell over", 500));
 
     expect(await choose(notices)).toEqual([]);
-    expect(bodies).toHaveLength(1);
-    expect(notices).toHaveLength(1);
-    expect(notices[0]).toMatch(/^preselect: .*the model fell over/);
+    // A 5xx is sent again twice, as any side task's is since agent-core 6.
+    expect(bodies).toHaveLength(3);
+    expect(notices.at(-1)).toMatch(/^preselect: /);
   });
 
   it("throws a stop, which is what ends the turn it was planning for", async () => {

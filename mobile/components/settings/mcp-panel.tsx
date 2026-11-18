@@ -283,7 +283,7 @@ function Editor({
     form.pushFieldValue("hooks", {
       id: nextHookId(form.state.values.hooks),
       enabled: true,
-      on: "beforeTurn",
+      on: "beforeExchange",
       tool: toolNames[0] ?? "",
       argsText: "",
       inject: false,

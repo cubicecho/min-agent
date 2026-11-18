@@ -1,48 +1,45 @@
 import {
   type AgentLoopResult,
-  applyCompaction,
   ask,
   ContextOverflow,
   carryOver,
   clean,
-  compact as compactTokens,
   contextLimitFor,
   type Endpoint,
-  expandNames,
   failedRun,
+  formatTokens,
   isOverflow,
-  LOAD_TOOLS,
   LOAD_TOOLS_DEFINITION,
   listModels as listEndpointModels,
   listLines,
-  loadResult,
   PROXY_TOOLS,
-  preselect,
-  proxiedCall,
-  pruneNotice,
   REASONING_CONTENT,
   ReasoningReplay,
-  requestedNames,
   runAgentLoop,
-  runCompaction,
+  type SideTask,
+  SUMMARY_LEAD,
   sanitizeTools,
   servedWindow,
   serverInstructionsPrompt,
-  summariser,
   type ToolCallReport,
   type ToolCallRequest,
   ToolIterationLimit,
   type Turn,
-  type TurnUsage,
   tryAsk,
+  withContext as withContextAt,
 } from "@cubicecho/agent-core";
-import { type ElicitHandler, McpPoolError, type ToolDefinition } from "@cubicecho/agent-mcp-pool";
+import type { ElicitHandler, ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { measureRequest, splitContext } from "../shared/client/usage.ts";
 import { MS_PER_SECOND } from "../shared/consts.ts";
-import { FOLLOWUP_DEFAULTS, TITLE_DEFAULTS, TURN_DEFAULTS } from "../shared/defaults.ts";
+import {
+  FOLLOWUP_DEFAULTS,
+  PRUNING_DEFAULTS,
+  TITLE_DEFAULTS,
+  TURN_DEFAULTS,
+} from "../shared/defaults.ts";
 import { messageOf } from "../shared/errors.ts";
-import { CALL_TOOL, shownCall } from "../shared/tool-proxy.ts";
+import { shownCall } from "../shared/tool-proxy.ts";
 import {
   type ContextBreakdown,
   emptyUsage,
@@ -56,17 +53,8 @@ import {
   type TokenUsage,
   type TurnStats,
 } from "../shared/types.ts";
-import { appendLedger, planFold } from "./compaction.ts";
 import { endpoint, type Settings } from "./config.ts";
-import {
-  afterTurnHooks,
-  compactionHooks,
-  type Gathered,
-  gather,
-  HOST,
-  turnIndex,
-  withContext,
-} from "./hooks.ts";
+import { exchangeHooks, turnIndex, withContext } from "./hooks.ts";
 import type { TurnInbox } from "./inbox.ts";
 import type { Mcp } from "./mcp.ts";
 import {
@@ -77,7 +65,6 @@ import {
   type ResourceSource,
   read as readResource,
 } from "./mcp-resources.ts";
-import { clearedChars, planPrune, sentWithStubs } from "./pruning.ts";
 import type { SessionPatch, Store } from "./store.ts";
 
 /**
@@ -126,101 +113,6 @@ function titleFrom(text: string) {
  * it has not heard of — because those two latch per endpoint and no model is implicated.
  */
 const notice = (message: string) => console.warn(`[agent] ${message}`);
-
-/**
- * Folds the settled head of a long transcript into a summary, if it has grown far enough into
- * the window to need it. Returns a note for the log; the work is the mutation of `session`.
- *
- * The messages themselves are never deleted — only `compaction.through` moves — so the chat
- * still shows the whole history and the next compaction can build on this summary.
- *
- * Where to cut, the summary and the hooks are agent-core's. What is done with the record is
- * min-agent's: it is stored on the session, and nothing is when there is none.
- */
-async function compact(
-  { mcp, store }: TurnDeps,
-  session: Session,
-  config: LlmConfig,
-  model: string,
-  contextLimit: number,
-  signal?: AbortSignal,
-): Promise<string> {
-  // Whether to fold is decided by what the last turn reported using, which is the server's own
-  // count of the request the next one extends. Where to cut is weighed message by message, from
-  // the session's ledger where a pair of readings covers them (`planFold`).
-  const used = latestCount(session, "contextTokens");
-  // No plan when the window is not three quarters used, or no legal cut folds enough.
-  const plan = planFold(session, contextLimit, used);
-  if (!plan) {
-    return "";
-  }
-
-  // A memory server gets what is about to be folded away while the summary is written. Beside
-  // it, not ahead of it: nothing is deleted, only what is sent changes, so filing it is not a
-  // rescue worth making the turn wait for. No record comes back for an empty summary.
-  const record = await runCompaction(
-    session.messages,
-    plan,
-    summariser(endpoint(config), model, { signal, onNotice: notice }),
-    { hooks: compactionHooks(mcp, session) },
-  );
-  if (!record) {
-    return "";
-  }
-
-  session.compaction = record;
-  await store.updateSession(session.id, { compaction: record });
-  console.log(`[agent] compacted ${record.through} message(s) at ${used}/${contextLimit} tokens`);
-  return record.summary;
-}
-
-/**
- * Moves the session's pruning marker if the rule says it has earned a move, and says whether it
- * did. See `planPrune` for the rule and `server/pruning.ts` for why there is a marker at all.
- *
- * Stored like a fold: the transcript is not touched, only where `forApi` starts sending tool
- * results whole. A move changes the request from the old marker on, so the caller should expect
- * the next request to miss the prompt cache, once.
- *
- * @param compacted Whether a fold was stored on this turn, which makes a move free.
- */
-async function prune(
-  { store }: TurnDeps,
-  session: Session,
-  contextLimit: number,
-  compacted = false,
-): Promise<boolean> {
-  const plan = planPrune(session, contextLimit, { compacted });
-  if (!plan) {
-    return false;
-  }
-
-  const from = session.pruning?.through ?? 0;
-  session.pruning = { through: plan.through, at: new Date().toISOString() };
-  await store.updateSession(session.id, { pruning: session.pruning });
-  console.log(
-    `[agent] ${pruneNotice(plan, compacted)}, before message ${plan.through} (was ${from})`,
-  );
-  return true;
-}
-
-/**
- * A count off the last turn that has one. A turn whose server reported no usage is stored with
- * stats and without counts, and is walked past: an older number is a better estimate than none.
- *
- * @param count `lastPromptTokens` is the last turn's final prompt, which the next turn's first
- * request should find cached. `contextTokens` is what the last turn actually cost, which is the
- * best estimate of what the next one will.
- */
-function latestCount(session: Session, count: "lastPromptTokens" | "contextTokens"): number {
-  for (let i = session.messages.length - 1; i >= 0; i--) {
-    const counted = session.messages[i].stats?.[count];
-    if (counted) {
-      return counted;
-    }
-  }
-  return 0;
-}
 
 /**
  * Names a session from its opening message, using whichever model is configured for the task.
@@ -275,44 +167,26 @@ async function suggestFollowups(
 }
 
 /**
- * The transcript as the server should see it: private bookkeeping stripped, each question sent
- * with the context its hooks added, each reply with the thinking `replay` says it carries, the
- * tool results behind the pruning marker sent as stubs, and — once a session has been compacted —
- * the folded head replaced by its summary.
+ * The stored rows as the model should see them, for a chat whose transcript has to be rebuilt:
+ * one that has not run a turn yet, or one a retry or an edit cut back. Private bookkeeping is
+ * stripped, each question is sent with the context its hooks added, and each reply with the
+ * thinking `replay` says it carries.
  *
  * `stats` and `followups` are display artifacts, and strict servers reject unknown message
- * fields. The context is sent on every question that had one, the old as well as the new, so a
- * request is the one before it with only its tail added. See `withContext`.
- *
- * The thinking is decided here rather than left to the loop, because every step is sent this
- * rather than the loop's own transcript: what the loop writes onto its messages never reaches the
- * endpoint, and a row from an earlier turn only ever comes from here. Under `all` it goes back on
- * every reply that had some. Thinking models (gpt-oss, DeepSeek, Qwen3.x, GLM) need theirs back
- * between tool calls, their templates drop what they do not want, and a request whose replies
- * match what was generated keeps the server's prompt cache. Under `tool-loop` it goes back only
- * on the calls of the question being answered, and under `none` never. An endpoint that refuses
- * the field is latched off and sent the request again without it, by the loop.
+ * fields. The thinking goes back under the field it arrived in: under `all` on every reply that had
+ * some, under `tool-loop` only on the calls of the question being answered, and under `none` never
+ * — the loop's own rule for what it writes, applied to rows it did not write.
  *
  * A reply with no calls and no text goes as `""` rather than `null`: Ollama refuses the second
  * on every later request, and such a row is what a reply that only thought leaves behind.
  *
- * The stubs are made here and nowhere else, so the stored rows and the chat keep every result
- * whole. They go in ahead of the fold because the marker, like `compaction.through`, is an index
- * into the stored transcript. See `sentWithStubs`.
- *
+ * @param messages The rows, ending before the question about to be asked.
  * @param replay Which replies carry their thinking. agent-core's default when not given.
  */
 export function forApi(
-  session: Session,
+  messages: readonly StoredMessage[],
   replay: ReasoningReplayPolicy = ReasoningReplay.All,
 ): OpenAI.ChatCompletionMessageParam[] {
-  // `from: 0` because the system prompt is a separate argument and never in the transcript:
-  // the summary is the request's first message, with nothing kept ahead of it.
-  const messages = applyCompaction(
-    sentWithStubs(session.messages, session.pruning),
-    session.compaction,
-    { from: 0 },
-  );
   // The question being answered: under `tool-loop` only what came after it is its tool loop.
   const question = messages.findLastIndex((message) => message.role === "user");
   return messages.map((message, at) => {
@@ -384,9 +258,9 @@ async function withWindow(
   if (served >= contextLimit) {
     return error;
   }
-  const serves = served > 0 ? ` (${compactTokens(served)})` : "";
+  const serves = served > 0 ? ` (${formatTokens(served)})` : "";
   return new ContextOverflow(
-    `${detail} — this turn was built to ${compactTokens(contextLimit)} tokens, so the window ` +
+    `${detail} — this turn was built to ${formatTokens(contextLimit)} tokens, so the window ` +
       `in Settings → Agent is larger than what the server actually serves${serves}.`,
   );
 }
@@ -509,14 +383,6 @@ export interface RunOptions {
 
 type Emit = (event: StreamEvent) => void;
 
-/** What the servers' hooks are told about a turn before it. The loop tells them after it. */
-interface TurnHookContext {
-  session: { id: string };
-  host: string;
-  prompt: string;
-  turn: { index: number };
-}
-
 /** Appends to the session and writes the row at the index it landed on, which is its id. */
 async function append({ store }: TurnDeps, session: Session, message: StoredMessage) {
   session.messages.push(message);
@@ -555,8 +421,8 @@ async function planTurn({ mcp, settings }: TurnDeps, session: Session, model: st
   // does not gain the capability mid-turn, and a turn that offers a tool on one step and not the
   // next is a turn the model cannot plan across.
   const offersResources = mcp.resourceServers().length > 0;
-  // Nothing is carried when proxied: a definition loaded last turn is already in the history, and
-  // one a compaction folded away has to be loadable again rather than answered "already loaded".
+  // Nothing is carried when proxied: a definition loaded last turn is already in the transcript,
+  // and one a compaction took out has to be loadable again rather than answered "already loaded".
   const carried = proxied ? [] : (session.loadedTools ?? []);
   // The servers' own guidance, as the loop writes it into the request (`serverInstructions`) from
   // the same catalogue: built here as well only so the breakdown can say how much of the system
@@ -568,9 +434,6 @@ async function planTurn({ mcp, settings }: TurnDeps, session: Session, model: st
   // the prompt cache for the whole transcript. What is loaded is said where it does not move the
   // prefix instead — the tool array, and the `load_tools` result.
   const head = config.systemPrompt.trim();
-  // Whether the request opens with a system message of the loop's. With none, an empty one is
-  // sent all the same, as it always was; see `transcript` in `runTurn`.
-  const hasSystem = Boolean(head || guidance || onDemand);
   return {
     config,
     model: chosenModel,
@@ -585,7 +448,6 @@ async function planTurn({ mcp, settings }: TurnDeps, session: Session, model: st
     carried,
     guidance,
     head,
-    hasSystem,
   };
 }
 
@@ -597,16 +459,11 @@ type TurnPlan = Awaited<ReturnType<typeof planTurn>>;
  * answering a load with the definitions themselves.
  *
  * The resource tools are no server's, so they are the loop's `hostTools`: declared in every mode,
- * never catalogued, loaded, or reached through `call_tool`. `call_tool` is listed on demand so that
- * it stays the host's there — a chat switched out of proxied mode still has it in its history —
- * answered here, where it does not load or carry what it names.
+ * never catalogued, loaded, or reached through `call_tool`.
  */
-function declaredTools({ mcp }: TurnDeps, { offersResources, proxied, native }: TurnPlan) {
+function declaredTools({ mcp }: TurnDeps, { offersResources, proxied }: TurnPlan) {
   const hostTools: ToolDefinition[] = offersResources ? RESOURCE_TOOLS : [];
-  const callTool = PROXY_TOOLS.filter(
-    (tool): tool is ToolDefinition => tool.type === "function" && tool.function.name === CALL_TOOL,
-  );
-  const tools: ToolDefinition[] = [...(native ? callTool : []), ...mcp.tools()];
+  const tools: ToolDefinition[] = mcp.tools();
   // As declared, before a server that cannot build a grammar is sent them relaxed: the breakdown
   // has always measured these. Proxied, `load_tools` is the proxy's, worded for `call_tool`.
   const own = proxied ? PROXY_TOOLS : [LOAD_TOOLS_DEFINITION];
@@ -620,35 +477,12 @@ function declaredTools({ mcp }: TurnDeps, { offersResources, proxied, native }: 
 }
 
 /**
- * The turn's tool calls and what they leave behind: which calls failed.
+ * The turn's tool calls: how one is run, and which may run beside the others.
  */
-function toolRunner(
-  { mcp }: TurnDeps,
-  { catalog, native, carried }: TurnPlan,
-  session: Session,
-  emit: Emit,
-  signal?: AbortSignal,
-) {
-  // What a `load_tools` answered here has loaded, for its "already loaded". On demand and proxied
-  // the loop answers loads and keeps its own; a load reaches here only eager, where a model copies
-  // the call out of an on-demand chat's history.
-  const loaded = new Set(carried);
-  // Identical call -> identical result, for the turn. See `callOnce`.
-  const answered = new Map<string, Promise<string>>();
-  // Calls `dispatch` answered with a failure. It answers rather than throws; see below.
-  const failed = new Set<string>();
-
+function toolRunner({ mcp }: TurnDeps, session: Session, emit: Emit, signal?: AbortSignal) {
   /**
-   * Runs one call and answers with what the model reads — a failure included, which is noted in
-   * `failed` rather than thrown. The loop rethrows what a dispatcher throws once the turn has
-   * been stopped, and a call the stop ended has an answer worth keeping: which call it was, and
-   * that it did not finish.
-   *
-   * Arguments the loop had to repair to read are refused, in the model's own words. The loop
-   * reads almost-JSON — single quotes, a trailing comma, JSON inside a string — and says so in
-   * `repaired`; min-agent tells the model its arguments were not JSON and has it write them again,
-   * and that is not the loop's to change. A proxied `call_tool` arrives as the tool it names, with
-   * `repaired` saying whether the `call_tool`'s own arguments took a repair.
+   * Runs one call and answers with what the model reads. What it throws, the model reads too, in
+   * the loop's wording, and the chat's card shows it as a failure.
    *
    * `report.log` goes to the pool as the call's `onLog`, so what a server logs while it runs
    * reaches the chat as a `server-log` event on that call's card — and never the transcript,
@@ -658,7 +492,7 @@ function toolRunner(
    * on this turn's stream, so it reaches the chat whose turn made the call and nobody else's.
    */
   const dispatch = async (
-    { id, name: called, args, raw, repaired }: ToolCallRequest,
+    { id, name, args }: ToolCallRequest,
     _signal: AbortSignal | undefined,
     report: ToolCallReport,
   ): Promise<string> => {
@@ -669,165 +503,31 @@ function toolRunner(
         waiting,
         emit,
       );
-    try {
-      if (repaired) {
-        throw new Error(
-          `model produced invalid tool arguments: ${raw.slice(0, TURN_DEFAULTS.quotedArgumentChars)}`,
-        );
-      }
-      // Reached only eager, where a model copies the call out of an on-demand chat's history:
-      // on demand and proxied, the loop answers its own loads.
-      if (called === LOAD_TOOLS) {
-        const resolved = expandNames(requestedNames(args), catalog);
-        // What was loaded before this call, so a repeat load is answered "already loaded"
-        // rather than as fresh — the model's cue to call the tool instead of loading again.
-        const before = new Set(loaded);
-        for (const name of resolved.matched) {
-          loaded.add(name);
-        }
-        if (resolved.matched.length === 0) {
-          failed.add(id);
-        }
-        return loadResult(resolved, catalog, before);
-      }
-      if (native && called === CALL_TOOL) {
-        // Plain on demand, where `call_tool` is the host's: a chat switched out of proxied mode
-        // still has it in its history, and the model may copy it. Proxied, the loop looks
-        // through it and this is handed the tool it names.
-        const { name, input } = proxiedCall(args, catalog);
-        return await callOnce(answered, `${name}\u0000${JSON.stringify(input)}`, () =>
-          mcp.call(name, input, signal, report.log, asking),
-        );
-      }
-      if (called === LIST_RESOURCES) {
-        return await listResources(mcp);
-      }
-      if (called === READ_RESOURCE) {
-        // Named rather than positional in the schema, so an empty one is a model that filled
-        // the call in wrongly — worth saying so, since the uri is the whole of the request.
-        const uri = typeof args.uri === "string" ? args.uri.trim() : "";
-        if (!uri) {
-          throw new Error("read_resource needs a uri; pass the one list_resources gave.");
-        }
-        return await readResource(mcp, uri);
-      }
-      return await callOnce(answered, `${called}\u0000${raw}`, () =>
-        mcp.call(called, args, signal, report.log, asking),
-      );
-    } catch (error) {
-      failed.add(id);
-      return messageOf(error);
+    if (name === LIST_RESOURCES) {
+      return await listResources(mcp);
     }
+    if (name === READ_RESOURCE) {
+      // Named rather than positional in the schema, so an empty one is a model that filled the
+      // call in wrongly — worth saying so, since the uri is the whole of the request.
+      const uri = typeof args.uri === "string" ? args.uri.trim() : "";
+      if (!uri) {
+        throw new Error("read_resource needs a uri; pass the one list_resources gave.");
+      }
+      return await readResource(mcp, uri);
+    }
+    return await mcp.call(name, args, signal, report.log, asking);
   };
 
   /**
-   * Whether a call only reads, and so may run beside the step's other reads. The pool answers for
-   * a server's tools, from their `readOnlyHint` where the row trusts it. min-agent's own tools —
-   * a load, a resource listing or read — change nothing a write could see. A `call_tool` on demand
-   * is asked about the tool it names; proxied, the loop has already looked through it. One that
-   * names nothing readable is a barrier, and is refused on its turn anyway.
+   * Whether a call only reads, and so may run beside the turn's other reads and be answered once
+   * when the model asks for it twice. The pool answers for a server's tools, from their
+   * `readOnlyHint` where the row trusts it; min-agent's own resource tools change nothing. Proxied,
+   * the loop has already looked through `call_tool` to the tool it names.
    */
-  const reads = ({ name, args }: ToolCallRequest): boolean => {
-    if (name === LOAD_TOOLS || name === LIST_RESOURCES || name === READ_RESOURCE) {
-      return true;
-    }
-    if (native && name === CALL_TOOL) {
-      try {
-        return mcp.readsOnly(proxiedCall(args, catalog).name);
-      } catch {
-        return false;
-      }
-    }
-    return mcp.readsOnly(name);
-  };
+  const reads = ({ name }: ToolCallRequest): boolean =>
+    name === LIST_RESOURCES || name === READ_RESOURCE || mcp.readsOnly(name);
 
-  return { dispatch, reads, failed };
-}
-
-/**
- * What has to land before the question is stored: the fold, the shortlist of tools, the hooks'
- * context and the pruning marker.
- *
- * @returns The shortlist, what the hooks gathered, and whether the head of the request moved,
- * in which case the first request is not expected to find the last turn's prompt cached.
- */
-async function settleHistory(
-  deps: TurnDeps,
-  { config, contextLimit, onDemand, catalog }: TurnPlan,
-  session: Session,
-  prompt: string,
-  hookContext: TurnHookContext,
-  emit: Emit,
-  signal?: AbortSignal,
-) {
-  // Two small-model calls and the hooks have to land before the first token is asked for, and
-  // none depends on another, so they overlap. Compaction goes before the user's message is
-  // appended, so the summary covers settled history and the question that prompted it stays
-  // verbatim. A session's first turn is also its start.
-  // Read before a compaction can move it: a fold rewrites the history, and the miss after one is
-  // expected rather than worth a warning.
-  const foldedThrough = session.compaction?.through;
-  const compactionModel = contextLimit ? modelForTask(config, "compaction") : "";
-  const preselectModel = onDemand ? modelForTask(config, "toolSelect") : "";
-  const [, preselected = [], gathered] = await Promise.all([
-    compactionModel
-      ? tryAsk(
-          "compaction",
-          () => compact(deps, session, config, compactionModel, contextLimit, signal),
-          { onNotice: notice },
-        )
-      : undefined,
-    // A guess at the tools this request needs, so the chat model opens with them in hand rather
-    // than spending a round trip on `load_tools`. agent-core's, which holds the reply to a schema
-    // and gives up to an empty list on its own — a stop excepted, which still ends the turn.
-    preselectModel
-      ? preselect(endpoint(config), preselectModel, catalog, prompt, { signal, onNotice: notice })
-      : undefined,
-    gather(
-      deps.mcp,
-      session.messages.length === 0 ? ["sessionStart", "beforeTurn"] : ["beforeTurn"],
-      hookContext,
-      { signal, emit },
-    ),
-  ]);
-  if (preselected.length) {
-    console.log(`[agent] preselected: ${preselected.join(", ")}`);
-  }
-  // After the fold rather than beside it, because a fold makes this free: the head of the request
-  // has just been rewritten, so the miss a move costs is already being paid. And before the
-  // question, for compaction's reason — what is cleared is settled history.
-  const prunedAtStart = await prune(
-    deps,
-    session,
-    contextLimit,
-    session.compaction?.through !== foldedThrough,
-  );
-  const folded = session.compaction?.through !== foldedThrough;
-  return { preselected, gathered, headMoved: folded || prunedAtStart };
-}
-
-/**
- * Stores the question.
- *
- * @returns The index of the question, which is where this turn begins.
- */
-async function askQuestion(
-  deps: TurnDeps,
-  session: Session,
-  prompt: string,
-  context: Gathered["context"],
-) {
-  const question: StoredMessage = {
-    role: "user",
-    content: prompt,
-    ...(context ? { hook_context: context } : {}),
-  };
-  await append(deps, session, question);
-  // Where this turn begins, so the request can be split into what was already there and what
-  // this question added — the tool traffic it goes on to produce lands after it too. Proxied, the
-  // shortlist goes after it as well: the loop writes it into the history as a `load_tools`
-  // exchange, since the tool array has nowhere to put it.
-  return session.messages.length - 1;
+  return { dispatch, reads };
 }
 
 /**
@@ -875,15 +575,15 @@ interface AnsweredTurn {
   assistant: StoredMessage;
   assistantRow: string;
   stats: TurnStats;
-  /** The `afterTurn` hooks' failures, once the loop has told them the turn. */
-  remembered: AgentLoopResult["afterTurn"];
+  /** The `afterExchange` hooks' failures, once the loop has told them the turn. */
+  remembered: AgentLoopResult["afterExchange"];
   emit: Emit;
   signal?: AbortSignal;
 }
 
 /**
- * What follows an answered turn, while the reply is already being read: the servers' `afterTurn`
- * hooks and the follow-up suggestions.
+ * What follows an answered turn, while the reply is already being read: the servers'
+ * `afterExchange` hooks and the follow-up suggestions.
  */
 async function afterTurn(
   { store }: TurnDeps,
@@ -939,148 +639,157 @@ async function afterTurn(
 }
 
 /**
- * Runs one user turn to completion: streams the reply, executes any MCP tool
- * calls, and loops until the model stops asking for tools. Each message is written as it is
- * produced, so a crash mid-run still leaves readable history.
+ * Where the question is in a transcript that ends with it and whatever followed: the user message
+ * `steers` before the last one of them, since each message the person typed while the turn ran is
+ * a user message after it. A compaction's summary is a user message too, but always ahead of it.
+ *
+ * @param messages The transcript, the loop's or a request's.
+ * @param steers How many typed messages the loop took after the question.
+ * @returns The index, or -1 where there is no such message.
+ */
+function questionAt(messages: readonly OpenAI.ChatCompletionMessageParam[], steers: number) {
+  let left = steers;
+  for (let at = messages.length - 1; at >= 0; at--) {
+    if (messages[at].role === "user" && left-- === 0) {
+      return at;
+    }
+  }
+  return -1;
+}
+
+/** How a tool result the loop stubbed reads: `[result cleared, 12,345 chars]`. */
+const STUB = /^\[result cleared, ([\d,]+) chars\]$/;
+
+/**
+ * What the request would have carried on top of what it did, had the tool results the loop
+ * stubbed gone whole: each stub's count less the stub itself.
+ */
+function clearedChars(messages: readonly OpenAI.ChatCompletionMessageParam[]): number {
+  let cleared = 0;
+  for (const message of messages) {
+    const counted =
+      message.role === "tool" && typeof message.content === "string"
+        ? STUB.exec(message.content)?.[1]
+        : undefined;
+    if (counted) {
+      cleared += Math.max(
+        0,
+        Number(counted.replaceAll(",", "")) - (message.content as string).length,
+      );
+    }
+  }
+  return cleared;
+}
+
+/** Whether a message is a compaction's summary, a user message only by its role. */
+const isSummary = (message: OpenAI.ChatCompletionMessageParam | undefined) =>
+  message?.role === "user" &&
+  typeof message.content === "string" &&
+  message.content.startsWith(SUMMARY_LEAD);
+
+/** Whether a transcript opens with a compaction's summary, which is where the loop writes one. */
+const isCompacted = ([first]: readonly OpenAI.ChatCompletionMessageParam[]) => isSummary(first);
+
+/**
+ * The side tasks the loop runs itself, each on the model the settings give it: the summary a
+ * compaction writes, and the shortlist of tools a question opens with.
+ */
+function sideTasks(config: LlmConfig): Record<string, SideTask> {
+  const server = endpoint(config);
+  const tasks: Record<string, SideTask> = {};
+  for (const task of ["compaction", "toolSelect"] as const) {
+    const model = modelForTask(config, task);
+    if (model) {
+      tasks[task] = { model, endpoint: server };
+    }
+  }
+  return tasks;
+}
+
+/**
+ * Runs one user turn to completion: streams the reply, executes any MCP tool calls, and loops
+ * until the model stops asking for tools. Each message is written as it is produced, so a crash
+ * mid-run still leaves readable history.
+ *
+ * The loop is agent-core's, and so is everything around a request: the hooks before and after
+ * the question, the shortlist of tools, stubbing old tool results and compacting the transcript
+ * as the window fills. What is min-agent's is the two records it keeps of a chat — the rows it
+ * shows, appended as the loop writes each message, and the transcript the model was sent, which
+ * the next turn continues — and what follows an answer: the stats, the title and the follow-ups.
  */
 export async function runTurn(
   { session, prompt, model, onEvent, signal, inbox }: RunOptions,
   deps: TurnDeps,
 ) {
   const plan = await planTurn(deps, session, model);
-  const { config, contextLimit, catalog, discovery, native, carried, guidance, head, hasSystem } =
+  const { config, contextLimit, catalog, discovery, onDemand, native, carried, guidance, head } =
     plan;
   const chosenModel = plan.model;
   const emit = onEvent ?? (() => {});
 
-  // What the servers' hooks are told about this turn. The index is counted before the question
-  // is appended, so it is this turn's own.
-  const hookContext = {
-    session: { id: session.id },
-    host: HOST,
-    prompt,
-    turn: { index: turnIndex(session.messages) },
-  };
-
-  const { preselected, gathered, headMoved } = await settleHistory(
-    deps,
-    plan,
-    session,
-    prompt,
-    hookContext,
-    emit,
-    signal,
+  // What the model has been sent so far, before the question goes on the end of it. A chat with no
+  // transcript of its own has it rebuilt from the rows, which hold every message whole.
+  const history = session.transcript ?? forApi(session.messages, config.reasoningReplay);
+  // The questions the chat has asked that a compaction took out of the transcript, so the hooks
+  // are told the question's place in the chat rather than in what is left of it.
+  // The loop leaves a summary out of its count, so it is left out of what is subtracted too.
+  const turnBase = Math.max(
+    0,
+    turnIndex(session.messages) - turnIndex(history.filter((message) => !isSummary(message))),
   );
+  const first = session.messages.length === 0;
 
   session.model = chosenModel;
-  const turnStart = await askQuestion(deps, session, prompt, gathered.context);
-  const { dispatch, reads, failed } = toolRunner(deps, plan, session, emit, signal);
+  const questionIndex = session.messages.length;
+  const questionRow = await append(deps, session, { role: "user", content: prompt });
+  const { dispatch, reads } = toolRunner(deps, session, emit, signal);
 
   const titling = startTitle(deps, config, session, prompt, emit, signal);
   await deps.store.updateSession(session.id, { title: session.title, model: chosenModel });
 
   // The turn's usage is banked once the loop hands back its sum: on its answer, or on what it
-  // throws, which carries what the steps before the failure cost.
+  // throws, which carries what the turns before the failure cost.
   const banked = session.usage ?? emptyUsage();
   const bank = async (usage: TokenUsage | undefined, patch: SessionPatch = {}) => {
-    if (!usage) {
-      return;
-    }
-    session.usage = add(banked, usage);
-    await deps.store.updateSession(session.id, { usage: session.usage, ...patch });
+    session.usage = usage ? add(banked, usage) : session.usage;
+    await deps.store.updateSession(session.id, {
+      ...(usage ? { usage: session.usage } : {}),
+      ...patch,
+    });
   };
   let streamedMs = 0;
+  // How many messages the person typed while the turn ran, which the loop took after the question.
+  let steers = 0;
   // Measured on the way out, in characters, because nothing on the way back reports it: a
   // completion says how many prompt tokens it read and nothing about where they came from.
   let lastRequest: ContextBreakdown | null = null;
-  // The turn before's last prompt, which the first step should find cached. The loop holds every
-  // later step to the one before it (`cacheBroken`), but it cannot see a request from before it
-  // began, so this one comparison is min-agent's — unless a compaction just rewrote the history
-  // under it, or the pruning marker moved and turned results it had sent whole into stubs.
-  const lastTurnPrompt = headMoved ? 0 : latestCount(session, "lastPromptTokens");
-  // Whether the marker moved ahead of this step, which the loop reads as a history rewritten: a
-  // miss the request is expected to make, and nothing to warn about.
-  let prunedBeforeStep = false;
-  let previousPrompt = lastTurnPrompt;
-  /**
-   * Says so when a request found much less of the last one cached than it should have. Nothing
-   * min-agent sends moves a prefix it sent before, a compaction or a move of the pruning marker
-   * aside, so such a request is the server's doing — an eviction, a side task on the same slot —
-   * or a prefix that moved anyway. Only where the server said what it cached.
-   *
-   * @param usage The step's own report, with the loop's diagnosis on it from the second step on.
-   * @param previous The prompt the request before it reported.
-   * @param step Which step of the turn this is.
-   */
-  const warnOnCacheMiss = (usage: TurnUsage, previous: number, step: number) => {
-    const missed =
-      step === 0
-        ? usage.uncached !== undefined && usage.cached < previous * TURN_DEFAULTS.cachedShare
-        : usage.cacheBroken === true && prunedBeforeStep === false;
-    if (!missed) {
-      return;
-    }
-    const why = step > 0 && usage.cacheBreakReason ? ` (${usage.cacheBreakReason})` : "";
-    console.warn(
-      `[agent] prompt cache missed: ${usage.cached} of ${usage.prompt} cached, ` +
-        `after a ${previous}-token request${why}`,
-    );
-  };
-  // The marker's check between tool steps, which is where a long turn needs it: nothing compacts
-  // mid-turn, and a turn of thirty tool calls is thirty results replayed whole on every step. Owed
-  // from the moment a step's last result is stored, and paid before the next request or, where
-  // the turn ends there instead — the iteration cap, a stop — on the way out: `beforeStep` is not
-  // called after the last step. A move is a miss the next request is expected to make, so it is
-  // not held to the last one's prompt.
-  let pruneOwed = false;
-  const pruneBetweenSteps = async () => {
-    if (pruneOwed === false) {
-      return;
-    }
-    pruneOwed = false;
-    prunedBeforeStep = await prune(deps, session, contextLimit);
-  };
 
   // The calls of the last reply stored, by id: a reply the loop splits into one message per call
   // is stored whole, as the model wrote it, and the pieces after the first are already in it.
   let storedCalls = new Set<string>();
   // The last assistant row written, which the turn's stats are patched onto.
   let assistantRow = "";
-  // How many of the step's calls have no result stored yet.
-  let unanswered = 0;
-
-  // The transcript is the session's, not the loop's: `forApi` strips what is private, sends each
-  // question with its hooks' context and the pruned results as stubs, and replaces a folded head
-  // with its summary. So every step is handed it afresh, and the loop's own copy — which carries
-  // repaired arguments where the stored row has the model's own — is never what is sent.
-  //
-  // An empty system prompt is still sent as a message, as it always was; the loop leaves one out.
-  const transcript = (): OpenAI.ChatCompletionMessageParam[] => {
-    const history = forApi(session, config.reasoningReplay);
-    return hasSystem ? history : [{ role: "system", content: "" }, ...history];
-  };
 
   const { hostTools, hostNames, tools, definitions } = declaredTools(deps, plan);
-  const sent = transcript();
+  const tasks = sideTasks(config);
 
   let result: AgentLoopResult;
   try {
     result = await runAgentLoop({
-      // No `contextLength`, on purpose: the loop would size each request against it and refuse
-      // one here rather than a round trip later, and min-agent's is the *configured* window,
-      // which `withWindow` exists to say may be larger than what the server serves. A guard read
-      // off the number under suspicion would refuse turns for the wrong reason.
       config: {
         ...plan.server,
         model: chosenModel,
         maxTokens: config.maxTokens,
         temperature: config.temperature,
         reasoningEffort: config.reasoningEffort,
-        // `forApi` applies it to what is sent; the loop is told so its own transcript agrees.
         reasoningReplay: config.reasoningReplay,
         maxToolIterations: config.maxToolIterations,
         toolDiscovery: discovery,
         maxRetries: TURN_DEFAULTS.openRetries,
+        // What compaction and pruning plan against, and what each request is sized against before
+        // it is sent. None set is none of the three.
+        ...(contextLimit > 0 ? { contextLength: contextLimit } : {}),
+        tasks,
       },
       // On demand and proxied the loop appends the catalogue itself, after the guidance.
       system: head,
@@ -1088,12 +797,13 @@ export async function runTurn(
       // a third party, and this is text it controls landing where a model is most inclined to take
       // it literally.
       serverInstructions: true,
-      messages: sent,
+      messages: [...history, { role: "user", content: prompt }],
+      ledger: session.ledger,
       tools,
       hostTools,
       catalog,
       // Carried from the last turn, which the loop does not read proxied: a definition loaded
-      // there is already in the history.
+      // there is already in the transcript.
       loaded: carried,
       // The resource tools go first, ahead of `load_tools` and of the proxy's two tools, where they
       // have always been declared; the loop puts its host tools after its own. Everything else
@@ -1104,54 +814,57 @@ export async function runTurn(
           ? (a, b) =>
               Number(hostNames.includes(a) === false) - Number(hostNames.includes(b) === false)
           : false,
-      // The same head on every step, the first included: the shortlist is loaded like anything
-      // else, at the end, rather than given a first step of its own that no later step matches.
-      // Proxied, the loop writes it after the question as a `load_tools` exchange instead.
-      preselected,
+      // A guess at the tools this question needs, so the chat model opens with them in hand rather
+      // than spending a round trip on `load_tools`. Loaded like anything else, at the end, rather
+      // than given a first turn of its own that no later turn matches.
+      preselect: onDemand && Boolean(tasks.toolSelect),
       preselectRouting: "append",
-      // Reads run together, so a round trip costs the slowest of them rather than the sum. Anything
-      // else runs alone, in the place the model asked for it: two writes in one reply would land
-      // in whichever order they finished, and the model is then told they happened in its order.
+      // Old tool results stubbed once the window fills, then the head summarised, each only when
+      // its own rule says it has earned the cache miss it costs.
+      prune: {
+        keepLast: PRUNING_DEFAULTS.keepLast,
+        maxChars: PRUNING_DEFAULTS.maxChars,
+        minShare: PRUNING_DEFAULTS.windowShare,
+      },
+      compact: Boolean(tasks.compaction),
+      // Reads run together, so a round trip costs the slowest of them rather than the sum, and a
+      // read asked for twice in one reply is answered once. Anything else runs alone, in the place
+      // the model asked for it, every time it is asked: two writes in one reply would land in
+      // whichever order they finished, and the model is then told they happened in its order.
       parallel: reads,
-      // `callOnce` instead: for the turn rather than the step, and with a note on the repeat.
-      dedupeToolCalls: false,
+      dedupeToolCalls: reads,
       // A reply that is only a call written as text is still the answer here.
       recoverToolCalls: false,
       signal,
       // The chat's own key, so a long conversation keeps a llama.cpp slot — and the prefix cached
       // in it — from one turn to the next, even while another chat's turn is running.
       session: session.id,
-      // `afterTurn` alone. The question is the last message the loop is handed.
-      hooks: afterTurnHooks(deps.mcp, session, prompt, turnStart, sent.length - 1),
+      hooks: exchangeHooks(
+        deps.mcp,
+        { session: { id: session.id }, prompt, index: turnIndex(session.messages, questionIndex) },
+        { first, turnBase, emit },
+      ),
       dispatch,
-      beforeStep: async (_sent, step) => {
-        if (step === 0) {
-          return undefined;
-        }
-        await pruneBetweenSteps();
-        return transcript();
-      },
-      // What the person typed while the turn ran, taken between its steps and said on the
-      // stream as it lands. Stored by `onMessage` below, before `beforeStep` reads the session.
+      // What the person typed while the turn ran, taken between its requests and said on the
+      // stream as it lands. Stored by `onMessage` below.
       takeInput: inbox
         ? () => {
             const taken = inbox.take();
             if (!taken) {
               return undefined;
             }
+            steers++;
             emit({ type: "steer", ids: taken.ids, text: taken.text });
             return { role: "user", content: taken.text };
           }
         : undefined,
       onRequest: (request) => {
-        // The request opens with a system message every time — the loop's, or the empty one
-        // `transcript` sends — and the rest is the history as it went out.
-        const [opening, ...history] = request.messages;
-        // The tail of the request is this turn's own messages: the question, and whatever the
-        // model has done about it so far. `forApi` only ever replaces the head with a summary,
-        // so the last n messages of the request are the last n of the session.
+        const [opening, ...rest] = request.messages;
+        const hasSystem = opening?.role === "system";
+        const sent = hasSystem ? rest : request.messages;
+        const question = questionAt(sent, steers);
         lastRequest = measureRequest({
-          system: typeof opening?.content === "string" ? opening.content : "",
+          system: hasSystem && typeof opening.content === "string" ? opening.content : "",
           systemPrompt: config.systemPrompt,
           guidance,
           tools: sanitizeTools(
@@ -1159,10 +872,10 @@ export async function runTurn(
               tool.type === "function" ? (definitions.get(tool.function.name) ?? []) : [],
             ),
           ),
-          history,
-          turnLength: session.messages.length - turnStart,
-          compacted: Boolean(session.compaction),
-          cleared: clearedChars(session),
+          history: [...sent],
+          turnLength: question < 0 ? 0 : sent.length - question,
+          compacted: isCompacted(sent),
+          cleared: clearedChars(sent),
         });
       },
       onEvent: ({ kind, text: delta = "", id, level }) => {
@@ -1180,24 +893,16 @@ export async function runTurn(
       },
       onToolCall: ({ id, name, raw }) => emit({ type: "tool_use", id, ...shownCall(name, raw) }),
       onToolResult: ({ id, ok, content }) =>
-        emit({
-          type: "tool_result",
-          toolUseId: id,
-          content,
-          isError: ok === false || failed.has(id),
-        }),
+        emit({ type: "tool_result", toolUseId: id, content, isError: ok === false }),
       // Each message is written as it is produced, so a crash mid-run still leaves readable
       // history: the reply before its tools run, every result before the next request.
-      onMessage: async (message, step, turn, written) => {
+      onMessage: async (message, _turn, reply, written) => {
         if (message.role === "tool") {
           await append(deps, session, {
             role: "tool",
             tool_call_id: message.tool_call_id,
             content: message.content as string,
           });
-          if (--unanswered === 0) {
-            pruneOwed = true;
-          }
           return;
         }
         // The only user message the loop writes: what `takeInput` handed it.
@@ -1208,7 +913,7 @@ export async function runTurn(
         if (message.role !== "assistant") {
           return;
         }
-        if (!turn || !written) {
+        if (!reply || !written) {
           // The loop's own: a call of a reply it split, which the stored reply holds already, or a
           // proxied shortlist's `load_tools`, which nothing the model wrote holds.
           const isStored = message.tool_calls?.every((call) => storedCalls.has(call.id)) ?? false;
@@ -1218,43 +923,35 @@ export async function runTurn(
           return;
         }
 
-        warnOnCacheMiss(turn.usage, step === 0 ? lastTurnPrompt : previousPrompt, step);
-        previousPrompt = turn.usage.prompt;
-        prunedBeforeStep = false;
-        const { wallMs = 0, firstTokenMs } = turn.usage;
+        const { wallMs = 0, firstTokenMs } = reply.usage;
         streamedMs += firstTokenMs === undefined ? 0 : Math.max(0, wallMs - firstTokenMs);
-
-        unanswered = turn.toolCalls.length;
-        storedCalls = new Set(turn.toolCalls.map((call) => call.id));
-        assistantRow = await append(deps, session, storedReply(written.raw, turn));
+        storedCalls = new Set(reply.toolCalls.map((call) => call.id));
+        assistantRow = await append(deps, session, storedReply(written.raw, reply));
       },
     });
   } catch (error) {
-    // What the steps before the failure reported is kept, as an answered turn's is, and before a
-    // partial reply is stored below: the loop's transcript ends where the stored one does.
     const failure = failedRun(error);
-    const measured = failure?.ledger?.length ? failure.ledger : undefined;
-    if (failure && measured) {
-      session.ledger = appendLedger(session, failure.messages, measured);
-    }
-    await bank(failure?.usage, measured ? { ledger: session.ledger } : {});
-    await pruneBetweenSteps();
-    // Stopping a turn used to throw away everything it had already said: the assistant message
-    // is only appended once the stream ends, so an abort left the reply on screen and nothing in
-    // the transcript. Keep the part that streamed — the loop hands it back as the failure's
-    // `partial`, calls begun left off since nothing will answer them — then let the error
-    // through. The route stays quiet about a turn its reader ended.
+    // Stopping a turn keeps what it had already said: the loop hands the reply in flight back as
+    // the failure's `partial`, calls begun left off since nothing will answer them. It goes in the
+    // rows and in the transcript both, so what the next turn sends is what the chat shows.
     const partial = failure?.partial;
-    if (signal?.aborted && (partial?.content || partial?.reasoning)) {
-      await append(
-        deps,
-        session,
-        storedReply(
-          { role: "assistant", content: partial.content },
-          { reasoning: partial.reasoning ?? "" },
-        ),
-      );
+    const kept =
+      signal?.aborted && (partial?.content || partial?.reasoning)
+        ? storedReply(
+            { role: "assistant", content: partial.content },
+            { reasoning: partial.reasoning ?? "" },
+          )
+        : undefined;
+    if (kept) {
+      await append(deps, session, kept);
     }
+    // The transcript as it stood, to go on from. Without one — a failure from outside the loop —
+    // the next turn rebuilds it from the rows.
+    session.transcript = failure
+      ? [...failure.messages, ...(kept ? forApi([kept], config.reasoningReplay) : [])]
+      : undefined;
+    session.ledger = failure?.ledger ?? [];
+    await bank(failure?.usage, { transcript: session.transcript ?? null, ledger: session.ledger });
     if (error instanceof ToolIterationLimit) {
       throw new Error(error.message);
     }
@@ -1269,10 +966,23 @@ export async function runTurn(
     inbox?.close();
   }
 
-  // What the turn's requests reported, kept for the next fold to weigh the messages by.
-  session.ledger = appendLedger(session, result.messages, result.ledger);
-  await bank(result.usage, { ledger: session.ledger });
-  // The loop returns on the step that asked for no tools, whose reply is the last row written.
+  if (result.preselected.length) {
+    console.log(`[agent] preselected: ${result.preselected.join(", ")}`);
+  }
+  // The question as it was sent, its hooks' context on it, so the next turn's requests begin with
+  // this one's — and the row, so a transcript rebuilt from the rows puts it back too.
+  const asked = questionAt(result.messages, steers);
+  session.transcript =
+    result.context && asked >= 0
+      ? withContextAt(result.messages, asked, result.context, result.preface)
+      : result.messages;
+  session.ledger = result.ledger;
+  if (result.context) {
+    session.messages[questionIndex].hook_context = result.context;
+    await deps.store.patchMessage(questionRow, { hook_context: result.context });
+  }
+  await bank(result.usage, { transcript: session.transcript, ledger: session.ledger });
+  // The loop returns on the turn that asked for no tools, whose reply is the last row written.
   const assistant = session.messages[session.messages.length - 1];
   const breakdown = lastRequest ? splitContext(lastRequest, result.turn.usage.prompt) : undefined;
   const stats = turnStats({
@@ -1281,7 +991,7 @@ export async function runTurn(
     model: chosenModel,
     contextLimit,
     breakdown,
-    hooks: gathered.notes,
+    hooks: result.notes,
   });
   assistant.stats = stats;
   // What was called, in the order it was loaded, and only what was loaded: a name the model
@@ -1309,64 +1019,11 @@ export async function runTurn(
     assistant,
     assistantRow,
     stats,
-    remembered: result.afterTurn,
+    remembered: result.afterExchange,
     emit,
     signal,
   });
   return stats;
-}
-
-/** A tool that ran and failed, as opposed to a call that could not be made. */
-const isToolError = (error: unknown) =>
-  error instanceof McpPoolError && error.code === "tool-error";
-
-/**
- * Makes a tool call at most once per turn for the same name and arguments, replaying the answer
- * to a repeat. A model that a tool disappoints often asks again, word for word, and replaying the
- * answer with a note ends that loop without spending another MCP round trip.
- *
- * The in-flight promise is what is kept rather than the settled string, so two identical calls in
- * one round trip share a single MCP call instead of racing each other.
- *
- * A call that could not be made is not an answer: a server in backoff, a connect that failed, a
- * timeout, a stop. It is forgotten so a retry is a real retry. A tool that ran and rejected its
- * arguments *is* an answer — the same arguments get the same one — so it is kept and replayed like
- * a result. Telling the two apart is what the pool's `tool-error` code is for.
- *
- * @param answered The turn's calls so far, by `key`.
- * @param key The tool's name and its raw arguments.
- * @param run Makes the call, when it has not been made.
- */
-export async function callOnce(
-  answered: Map<string, Promise<string>>,
-  key: string,
-  run: () => Promise<string>,
-): Promise<string> {
-  const previous = answered.get(key);
-  if (previous === undefined) {
-    const inFlight = run();
-    answered.set(key, inFlight);
-    inFlight.catch((error: unknown) => {
-      const isTransient = isToolError(error) === false;
-      if (isTransient) {
-        answered.delete(key);
-      }
-    });
-    return inFlight;
-  }
-  try {
-    return `${await previous}\n\n(Identical call already made this turn; the result is unchanged. Use it rather than calling again.)`;
-  } catch (error) {
-    // Only a tool's own rejection is certain to repeat. Anything else reached this caller because
-    // it was sharing a call still in flight, and is forgotten already.
-    const isTransient = isToolError(error) === false;
-    if (isTransient) {
-      throw error;
-    }
-    throw new Error(
-      `${messageOf(error)}\n\n(Identical call already failed this turn; it will fail the same way again. Change the arguments or try something else.)`,
-    );
-  }
 }
 
 const add = (a: TokenUsage | undefined, b: TokenUsage): TokenUsage => ({
