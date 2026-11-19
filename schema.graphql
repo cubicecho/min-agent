@@ -10,6 +10,7 @@ type Setting {
   toolDiscovery: SettingsToolDiscoveryEnum!
   reasoningEffort: SettingsReasoningEffortEnum!
   reasoningReplay: String!
+  agentSampling: Boolean!
   taskModels: JSON!
   pricing: JSON!
   voiceBaseUrl: String!
@@ -138,6 +139,7 @@ type SettingCountNonNullAggregate {
   toolDiscovery: Int!
   reasoningEffort: Int!
   reasoningReplay: Int!
+  agentSampling: Int!
   taskModels: Int!
   pricing: Int!
   voiceBaseUrl: Int!
@@ -195,6 +197,7 @@ type SettingGroupKeys {
   sttModel: String
   ttsModel: String
   ttsVoice: String
+  agentSampling: Boolean
   speakReplies: Boolean
 }
 
@@ -601,6 +604,7 @@ input UpdateSettingInput {
   toolDiscovery: SettingsToolDiscoveryEnum
   reasoningEffort: SettingsReasoningEffortEnum
   reasoningReplay: String
+  agentSampling: Boolean
   taskModels: JSON
   pricing: JSON
   voiceBaseUrl: String
@@ -631,6 +635,7 @@ input SettingFilters {
   toolDiscovery: SettingsToolDiscoveryEnumFilter
   reasoningEffort: SettingsReasoningEffortEnumFilter
   reasoningReplay: StringFilter
+  agentSampling: BooleanFilter
   taskModels: JSONFilter
   pricing: JSONFilter
   voiceBaseUrl: StringFilter
@@ -953,6 +958,80 @@ input SettingsReasoningEffortEnumFilter {
   NOT: SettingsReasoningEffortEnumFilter
 }
 
+input BooleanFilter {
+  """Equal to"""
+  eq: Boolean
+
+  """Not equal to"""
+  ne: Boolean
+
+  """Less than"""
+  lt: Boolean
+
+  """Less than or equal to"""
+  lte: Boolean
+
+  """Greater than"""
+  gt: Boolean
+
+  """Greater than or equal to"""
+  gte: Boolean
+  like: String
+  notLike: String
+  ilike: String
+  notIlike: String
+
+  """
+  Matches values starting with the given string. `%`, `_` and `\` are matched literally.
+  """
+  startsWith: String
+
+  """
+  Matches values ending with the given string. `%`, `_` and `\` are matched literally.
+  """
+  endsWith: String
+
+  """
+  Matches values containing the given string. `%`, `_` and `\` are matched literally.
+  """
+  contains: String
+
+  """Case-insensitive `startsWith`."""
+  iStartsWith: String
+
+  """Case-insensitive `endsWith`."""
+  iEndsWith: String
+
+  """Case-insensitive `contains`."""
+  iContains: String
+
+  """
+  When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own.
+  """
+  insensitive: Boolean
+
+  """Matches any one of these values (SQL `IN`)"""
+  inArray: [Boolean!]
+
+  """Matches none of these values (SQL `NOT IN`)"""
+  notInArray: [Boolean!]
+
+  """When true, matches rows where the column is NULL"""
+  isNull: Boolean
+
+  """When true, matches rows where the column is not NULL"""
+  isNotNull: Boolean
+
+  """At least one branch matches; ANDed with any sibling operators"""
+  OR: [BooleanFilter!]
+
+  """Every branch matches"""
+  AND: [BooleanFilter!]
+
+  """Negates the nested operators"""
+  NOT: BooleanFilter
+}
+
 input JSONFilter {
   """JSON equality on the whole value"""
   eq: JSON
@@ -1052,80 +1131,6 @@ enum JSONPathCast {
   BOOLEAN
 }
 
-input BooleanFilter {
-  """Equal to"""
-  eq: Boolean
-
-  """Not equal to"""
-  ne: Boolean
-
-  """Less than"""
-  lt: Boolean
-
-  """Less than or equal to"""
-  lte: Boolean
-
-  """Greater than"""
-  gt: Boolean
-
-  """Greater than or equal to"""
-  gte: Boolean
-  like: String
-  notLike: String
-  ilike: String
-  notIlike: String
-
-  """
-  Matches values starting with the given string. `%`, `_` and `\` are matched literally.
-  """
-  startsWith: String
-
-  """
-  Matches values ending with the given string. `%`, `_` and `\` are matched literally.
-  """
-  endsWith: String
-
-  """
-  Matches values containing the given string. `%`, `_` and `\` are matched literally.
-  """
-  contains: String
-
-  """Case-insensitive `startsWith`."""
-  iStartsWith: String
-
-  """Case-insensitive `endsWith`."""
-  iEndsWith: String
-
-  """Case-insensitive `contains`."""
-  iContains: String
-
-  """
-  When true, every comparison operator in this object matches case-insensitively — `eq`, `ne`, the ordering operators, `inArray`/`notInArray` and the pattern operators all compare `lower(column)` against `lower(operand)`. Applies only to the operators beside it; a nested `AND`/`OR`/`NOT` branch sets its own.
-  """
-  insensitive: Boolean
-
-  """Matches any one of these values (SQL `IN`)"""
-  inArray: [Boolean!]
-
-  """Matches none of these values (SQL `NOT IN`)"""
-  notInArray: [Boolean!]
-
-  """When true, matches rows where the column is NULL"""
-  isNull: Boolean
-
-  """When true, matches rows where the column is not NULL"""
-  isNotNull: Boolean
-
-  """At least one branch matches; ANDed with any sibling operators"""
-  OR: [BooleanFilter!]
-
-  """Every branch matches"""
-  AND: [BooleanFilter!]
-
-  """Negates the nested operators"""
-  NOT: BooleanFilter
-}
-
 input SettingOrderBy {
   id: InnerOrder
   baseUrl: InnerOrder
@@ -1138,6 +1143,7 @@ input SettingOrderBy {
   toolDiscovery: InnerOrder
   reasoningEffort: InnerOrder
   reasoningReplay: InnerOrder
+  agentSampling: InnerOrder
   taskModels: InnerOrder
   pricing: InnerOrder
   voiceBaseUrl: InnerOrder
@@ -1246,6 +1252,7 @@ input SettingCountNonNullHaving {
   toolDiscovery: AggregateNumberFilter
   reasoningEffort: AggregateNumberFilter
   reasoningReplay: AggregateNumberFilter
+  agentSampling: AggregateNumberFilter
   taskModels: AggregateNumberFilter
   pricing: AggregateNumberFilter
   voiceBaseUrl: AggregateNumberFilter
@@ -2065,6 +2072,7 @@ enum SettingDistinctColumn {
   toolDiscovery
   reasoningEffort
   reasoningReplay
+  agentSampling
   taskModels
   pricing
   voiceBaseUrl
@@ -2087,6 +2095,7 @@ enum SettingGroupByColumn {
   toolDiscovery
   reasoningEffort
   reasoningReplay
+  agentSampling
   voiceBaseUrl
   sttModel
   ttsModel

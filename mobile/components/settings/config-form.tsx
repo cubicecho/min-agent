@@ -41,6 +41,7 @@ export type Draft = {
   toolDiscovery: "eager" | "ondemand" | "proxy";
   reasoningEffort: ReasoningEffort;
   reasoningReplay: ReasoningReplayPolicy;
+  agentSampling: boolean;
   taskModels: Record<string, string>;
   voiceBaseUrl: string;
   sttModel: string;

@@ -204,6 +204,17 @@ describe("a turn on an agent", () => {
     }
   });
 
+  it("sends the sampling settings where they are turned on for agents", async () => {
+    settings = { ...settings, agentSampling: true };
+    await run("helper");
+
+    expect(requests[0]).toMatchObject({
+      temperature: 0.4,
+      max_tokens: 2048,
+      reasoning_effort: "high",
+    });
+  });
+
   it("cards the agent's own calls from its progress", async () => {
     const events = await run("helper");
 

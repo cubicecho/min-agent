@@ -799,11 +799,18 @@ export async function runTurn(
     result = await runAgentLoop({
       config: plan.remote
         ? {
-            // The agent's sampling is its own: a field its override policy does not let a request
-            // set refuses the whole request, and min-agent's settings always hold a value.
+            // The agent's sampling is its own unless the settings say otherwise: a field its override
+            // policy does not let a request set refuses the whole request.
             ...plan.server,
             model: chosenModel,
             remoteAgent: true,
+            ...(config.agentSampling
+              ? {
+                  maxTokens: config.maxTokens,
+                  temperature: config.temperature,
+                  reasoningEffort: config.reasoningEffort,
+                }
+              : {}),
             reasoningReplay: config.reasoningReplay,
             maxToolIterations: config.maxToolIterations,
             maxRetries: TURN_DEFAULTS.openRetries,

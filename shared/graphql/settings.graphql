@@ -12,6 +12,7 @@ query Config {
     toolDiscovery
     reasoningEffort
     reasoningReplay
+    agentSampling
     taskModels
     pricing
     voiceBaseUrl

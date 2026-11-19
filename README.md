@@ -430,8 +430,10 @@ agent-core's `remoteAgent` mode:
 
 - Every MCP tool and resource tool goes out as one of the app's own, whatever **Tool loading**
   says. `load_tools` and `call_tool` are names the agent keeps for itself and refuses as an app's.
-- No temperature, reply ceiling or reasoning effort is sent. An agent's override policy says which
-  of those a request may set, and one it does not allow refuses the whole request.
+- No temperature, reply ceiling or reasoning effort is sent, unless **Send these to ai-router
+  agents** is on (Settings → Agent). An agent's override policy says which of those a request may
+  set, and one it does not allow refuses the whole request, so turn it on only for agents that
+  take them.
 - No window, compaction, pruning or preselection: those are the agent's to do.
 - The agent's own tool calls are carded in the chat from its progress, beside the ones it hands
   back.
