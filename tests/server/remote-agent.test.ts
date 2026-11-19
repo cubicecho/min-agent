@@ -238,6 +238,24 @@ describe("a turn on an agent", () => {
     expect(reply?.reasoning_content).toBe("Look it up.\n\nGreen, then.");
   });
 
+  it("keeps the agent's own calls on the reply, for their cards, and sends them to no model", async () => {
+    await run("helper");
+
+    const reply = chat.messages.at(-1);
+    expect(reply?.agent_calls).toEqual([
+      {
+        id: "srv-1",
+        name: "web__search",
+        arguments: '{"q":"tea"}',
+        content: "green",
+        isError: false,
+      },
+    ]);
+    // A call of the agent's is not one of the chat's rows, nor in what the model is sent next.
+    expect(chat.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(JSON.stringify(chat.transcript)).not.toContain("srv-1");
+  });
+
   it("runs a plain model on the same server as it always has", async () => {
     await run("plain");
 

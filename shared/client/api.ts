@@ -29,6 +29,7 @@ import {
 } from "../gql/graphql.ts";
 import { toStored } from "../messages.ts";
 import type {
+  AgentCall,
   LlmConfig,
   LlmConfigView,
   McpPrompt,
@@ -97,6 +98,7 @@ const detail = (row: NonNullable<SessionDetailQuery["session"]>): Session => ({
       toolCalls: message.toolCalls as ToolCall[] | null,
       stats: message.stats as TurnStats | null,
       followups: message.followups as string[] | null,
+      agentCalls: message.agentCalls as AgentCall[] | null,
     }),
   ),
 });

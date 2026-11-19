@@ -365,6 +365,7 @@ enum MessageDistinctColumn {
   toolCallId
   stats
   followups
+  agentCalls
   createdAt
 }
 
@@ -461,6 +462,7 @@ type Message {
   toolCallId: String
   stats: JSON
   followups: JSON
+  agentCalls: JSON
   createdAt: DateTime!
 
   """
@@ -551,6 +553,7 @@ type MessageCountNonNullAggregate {
   toolCallId: Int!
   stats: Int!
   followups: Int!
+  agentCalls: Int!
   createdAt: Int!
 }
 
@@ -1658,6 +1661,7 @@ input MessageFilters {
   toolCallId: StringFilter
   stats: JSONFilter
   followups: JSONFilter
+  agentCalls: JSONFilter
   createdAt: DateTimeFilter
 
   """Matches rows whose session matches these filters"""
@@ -1835,6 +1839,7 @@ input MessageOrderBy {
   toolCallId: InnerOrder
   stats: InnerOrder
   followups: InnerOrder
+  agentCalls: InnerOrder
   createdAt: InnerOrder
 
   """Order by columns of the related session row"""
@@ -1883,6 +1888,7 @@ input MessageCountNonNullHaving {
   toolCallId: AggregateNumberFilter
   stats: AggregateNumberFilter
   followups: AggregateNumberFilter
+  agentCalls: AggregateNumberFilter
   createdAt: AggregateNumberFilter
 }
 

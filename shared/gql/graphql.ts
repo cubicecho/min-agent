@@ -628,6 +628,7 @@ export enum McpTransport {
 }
 
 export type Message = {
+  agentCalls?: Maybe<Scalars['JSON']['output']>;
   content?: Maybe<Scalars['JSON']['output']>;
   createdAt: Scalars['DateTime']['output'];
   /** Opaque cursor of this row's position in the query's ordering. Pass it as `after` to resume from here. Only set on rows returned by a list query. */
@@ -695,6 +696,7 @@ export type MessageCountDistinctHaving = {
 };
 
 export type MessageCountNonNullAggregate = {
+  agentCalls: Scalars['Int']['output'];
   content: Scalars['Int']['output'];
   createdAt: Scalars['Int']['output'];
   followups: Scalars['Int']['output'];
@@ -712,6 +714,7 @@ export type MessageCountNonNullAggregate = {
 };
 
 export type MessageCountNonNullHaving = {
+  agentCalls?: InputMaybe<AggregateNumberFilter>;
   content?: InputMaybe<AggregateNumberFilter>;
   createdAt?: InputMaybe<AggregateNumberFilter>;
   followups?: InputMaybe<AggregateNumberFilter>;
@@ -730,6 +733,7 @@ export type MessageCountNonNullHaving = {
 
 /** Columns of Message that a query can be made distinct on */
 export enum MessageDistinctColumn {
+  AgentCalls = 'agentCalls',
   Content = 'content',
   CreatedAt = 'createdAt',
   Followups = 'followups',
@@ -753,6 +757,7 @@ export type MessageFilters = {
   NOT?: InputMaybe<MessageFilters>;
   /** At least one branch matches; ANDed with any sibling fields */
   OR?: InputMaybe<Array<MessageFilters>>;
+  agentCalls?: InputMaybe<JsonFilter>;
   content?: InputMaybe<JsonFilter>;
   createdAt?: InputMaybe<DateTimeFilter>;
   followups?: InputMaybe<JsonFilter>;
@@ -862,6 +867,7 @@ export type MessageMinHaving = {
 };
 
 export type MessageOrderBy = {
+  agentCalls?: InputMaybe<InnerOrder>;
   content?: InputMaybe<InnerOrder>;
   createdAt?: InputMaybe<InnerOrder>;
   followups?: InputMaybe<InnerOrder>;
@@ -2149,7 +2155,7 @@ export type McpPromptCompletionsQuery = { mcpPromptCompletions: Array<string> };
 
 export type SessionSummaryFragment = { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, messageCount: number };
 
-export type MessageRowFragment = { id: string, idx: number, role: MessagesRoleEnum, content?: unknown | null, reasoningContent?: string | null, toolCalls?: unknown | null, toolCallId?: string | null, stats?: unknown | null, followups?: unknown | null };
+export type MessageRowFragment = { id: string, idx: number, role: MessagesRoleEnum, content?: unknown | null, reasoningContent?: string | null, toolCalls?: unknown | null, toolCallId?: string | null, stats?: unknown | null, followups?: unknown | null, agentCalls?: unknown | null };
 
 export type SessionsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -2161,7 +2167,7 @@ export type SessionDetailQueryVariables = Exact<{
 }>;
 
 
-export type SessionDetailQuery = { session?: { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, messageCount: number, messages: Array<{ id: string, idx: number, role: MessagesRoleEnum, content?: unknown | null, reasoningContent?: string | null, toolCalls?: unknown | null, toolCallId?: string | null, stats?: unknown | null, followups?: unknown | null }> } | null };
+export type SessionDetailQuery = { session?: { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, messageCount: number, messages: Array<{ id: string, idx: number, role: MessagesRoleEnum, content?: unknown | null, reasoningContent?: string | null, toolCalls?: unknown | null, toolCallId?: string | null, stats?: unknown | null, followups?: unknown | null, agentCalls?: unknown | null }> } | null };
 
 export type CreateSessionMutationVariables = Exact<{ [key: string]: never; }>;
 
@@ -2314,6 +2320,7 @@ export const MessageRowFragmentDoc = new TypedDocumentString(`
   toolCallId
   stats
   followups
+  agentCalls
 }
     `, {"fragmentName":"MessageRow"}) as unknown as TypedDocumentString<MessageRowFragment, unknown>;
 export const McpStatusDocument = new TypedDocumentString(`
@@ -2480,6 +2487,7 @@ fragment MessageRow on Message {
   toolCallId
   stats
   followups
+  agentCalls
 }`) as unknown as TypedDocumentString<SessionDetailQuery, SessionDetailQueryVariables>;
 export const CreateSessionDocument = new TypedDocumentString(`
     mutation CreateSession {

@@ -21,6 +21,7 @@ fragment MessageRow on Message {
   toolCallId
   stats
   followups
+  agentCalls
 }
 
 query Sessions {
