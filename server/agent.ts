@@ -65,6 +65,7 @@ import {
   type ResourceSource,
   read as readResource,
 } from "./mcp-resources.ts";
+import { isRemoteAgent } from "./remote-agent.ts";
 import type { SessionPatch, Store } from "./store.ts";
 
 /**
@@ -401,16 +402,20 @@ async function planTurn({ mcp, settings }: TurnDeps, session: Session, model: st
   }
 
   const server = endpoint(config);
-  const contextLimit = await contextLimitFor(
-    { ...server, model: chosenModel },
-    config.contextLimit,
-  );
+  // An agent behind the endpoint runs its own loop: the turn is a thin client of it, and the
+  // window, the compaction and the tool loading are the agent's. See `server/remote-agent.ts`.
+  const remote = await isRemoteAgent(server, chosenModel);
+  const contextLimit = remote
+    ? 0
+    : await contextLimitFor({ ...server, model: chosenModel }, config.contextLimit);
 
   // In on-demand mode the model sees a name-only catalogue up front and pulls in the
   // definitions it needs as the turn runs.
   const catalog = mcp.catalog();
-  // The setting, except that with nothing to catalogue there is nothing to load on demand.
-  const discovery: ToolDiscovery = catalog.length > 0 ? config.toolDiscovery : "eager";
+  // The setting, except that with nothing to catalogue there is nothing to load on demand, and an
+  // agent is sent every tool: a loop's own `load_tools` is a name it will not take as the app's.
+  const discovery: ToolDiscovery =
+    catalog.length > 0 && remote === false ? config.toolDiscovery : "eager";
   const onDemand = discovery !== "eager";
   // On demand, but with a tool array that never changes: definitions come back as `load_tools`
   // results and run through `call_tool`. The loop's own proxied mode. See `shared/tool-proxy.ts`.
@@ -438,6 +443,7 @@ async function planTurn({ mcp, settings }: TurnDeps, session: Session, model: st
     config,
     model: chosenModel,
     server,
+    remote,
     contextLimit,
     catalog,
     discovery,
@@ -771,26 +777,52 @@ export async function runTurn(
   let assistantRow = "";
 
   const { hostTools, hostNames, tools, definitions } = declaredTools(deps, plan);
-  const tasks = sideTasks(config);
+  // An agent's own side tasks are its own, so the loop is given none to run against it.
+  const tasks = plan.remote ? {} : sideTasks(config);
+
+  // The calls carded and answered so far, so one told by the loop and by an agent's progress is
+  // shown once.
+  const carded = new Set<string>();
+  const answered = new Set<string>();
+  const once = (seen: Set<string>) => (id: string, show: () => void) => {
+    if (seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    show();
+  };
+  const announce = once(carded);
+  const answer = once(answered);
 
   let result: AgentLoopResult;
   try {
     result = await runAgentLoop({
-      config: {
-        ...plan.server,
-        model: chosenModel,
-        maxTokens: config.maxTokens,
-        temperature: config.temperature,
-        reasoningEffort: config.reasoningEffort,
-        reasoningReplay: config.reasoningReplay,
-        maxToolIterations: config.maxToolIterations,
-        toolDiscovery: discovery,
-        maxRetries: TURN_DEFAULTS.openRetries,
-        // What compaction and pruning plan against, and what each request is sized against before
-        // it is sent. None set is none of the three.
-        ...(contextLimit > 0 ? { contextLength: contextLimit } : {}),
-        tasks,
-      },
+      config: plan.remote
+        ? {
+            // The agent's sampling is its own: a field its override policy does not let a request
+            // set refuses the whole request, and min-agent's settings always hold a value.
+            ...plan.server,
+            model: chosenModel,
+            remoteAgent: true,
+            reasoningReplay: config.reasoningReplay,
+            maxToolIterations: config.maxToolIterations,
+            maxRetries: TURN_DEFAULTS.openRetries,
+          }
+        : {
+            ...plan.server,
+            model: chosenModel,
+            maxTokens: config.maxTokens,
+            temperature: config.temperature,
+            reasoningEffort: config.reasoningEffort,
+            reasoningReplay: config.reasoningReplay,
+            maxToolIterations: config.maxToolIterations,
+            toolDiscovery: discovery,
+            maxRetries: TURN_DEFAULTS.openRetries,
+            // What compaction and pruning plan against, and what each request is sized against
+            // before it is sent. None set is none of the three.
+            ...(contextLimit > 0 ? { contextLength: contextLimit } : {}),
+            tasks,
+          },
       // On demand and proxied the loop appends the catalogue itself, after the guidance.
       system: head,
       // Attributed per server and fenced as that server's advice, not the user's: an MCP server is
@@ -821,11 +853,13 @@ export async function runTurn(
       preselectRouting: "append",
       // Old tool results stubbed once the window fills, then the head summarised, each only when
       // its own rule says it has earned the cache miss it costs.
-      prune: {
-        keepLast: PRUNING_DEFAULTS.keepLast,
-        maxChars: PRUNING_DEFAULTS.maxChars,
-        minShare: PRUNING_DEFAULTS.windowShare,
-      },
+      prune: plan.remote
+        ? false
+        : {
+            keepLast: PRUNING_DEFAULTS.keepLast,
+            maxChars: PRUNING_DEFAULTS.maxChars,
+            minShare: PRUNING_DEFAULTS.windowShare,
+          },
       compact: Boolean(tasks.compaction),
       // Reads run together, so a round trip costs the slowest of them rather than the sum, and a
       // read asked for twice in one reply is answered once. Anything else runs alone, in the place
@@ -878,9 +912,30 @@ export async function runTurn(
           cleared: clearedChars(sent),
         });
       },
-      onEvent: ({ kind, text: delta = "", id, level }) => {
+      onEvent: (event) => {
+        const { kind, text: delta = "", id, level } = event;
         if (kind === "notice") {
           notice(delta);
+        }
+        // An agent's own calls, as its progress tells them: carded like the turn's, once each,
+        // since the calls it hands back are told by the loop as well.
+        const isAgents = "seq" in event && Boolean(id);
+        if (isAgents && kind === "tool-call") {
+          announce(id as string, () =>
+            emit({ type: "tool_use", id: id as string, ...shownCall(event.name ?? "", delta) }),
+          );
+          return;
+        }
+        if (isAgents && kind === "tool-result") {
+          answer(id as string, () =>
+            emit({
+              type: "tool_result",
+              toolUseId: id as string,
+              content: delta,
+              isError: event.ok === false,
+            }),
+          );
+          return;
         }
         if (kind === "server-log" && id) {
           emit({ type: "server_log", toolUseId: id, level: level ?? "", text: delta });
@@ -891,9 +946,12 @@ export async function runTurn(
         }
         emit({ type: kind === "output" ? "text_delta" : "reasoning_delta", text: delta });
       },
-      onToolCall: ({ id, name, raw }) => emit({ type: "tool_use", id, ...shownCall(name, raw) }),
+      onToolCall: ({ id, name, raw }) =>
+        announce(id, () => emit({ type: "tool_use", id, ...shownCall(name, raw) })),
       onToolResult: ({ id, ok, content }) =>
-        emit({ type: "tool_result", toolUseId: id, content, isError: ok === false }),
+        answer(id, () =>
+          emit({ type: "tool_result", toolUseId: id, content, isError: ok === false }),
+        ),
       // Each message is written as it is produced, so a crash mid-run still leaves readable
       // history: the reply before its tools run, every result before the next request.
       onMessage: async (message, _turn, reply, written) => {

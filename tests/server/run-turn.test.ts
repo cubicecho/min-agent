@@ -187,6 +187,11 @@ async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Res
     probes.push(String(url));
     return new Response("{}", { status: 404 });
   }
+  // The listing min-agent reads for an agent's mark: none, so every model here is plain.
+  // `remote-agent.test.ts` is where an agent is listed.
+  if (pathname.endsWith("/v1/models")) {
+    return new Response("{}", { status: 404 });
+  }
   if (pathname.endsWith("/props")) {
     probes.push(String(url));
     const props = {
