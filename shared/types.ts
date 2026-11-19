@@ -1,10 +1,5 @@
 // Types only, from here: agent-core is the server's, and nothing of it may reach the app's bundle.
-import type {
-  CompactionRecord,
-  ReasoningField,
-  ReasoningReplay,
-  TokenLedger,
-} from "@cubicecho/agent-core";
+import type { ReasoningField, ReasoningReplay, TokenLedger } from "@cubicecho/agent-core";
 import type { HookEvent, McpStatus } from "@cubicecho/agent-mcp-pool";
 import { HOOK_EVENTS, INJECT_EVENTS } from "@cubicecho/agent-mcp-pool/hooks";
 import type OpenAI from "openai";
@@ -326,7 +321,7 @@ export interface ContextBreakdown {
   /**
    * Not a part of the request but what is missing from it: what the tool results sent as stubs
    * would have added had they gone whole, on the same scale as the parts. Left out of their
-   * total, and absent when nothing was cleared. See `Session.pruning`.
+   * total, and absent when nothing was cleared.
    */
   cleared?: number;
 }
@@ -410,24 +405,6 @@ export type StoredMessage = OpenAI.ChatCompletionMessageParam & {
   followups?: string[];
 };
 
-/**
- * How far a session's tool results are cleared from what is replayed.
- *
- * The same kind of thing as a compaction record, and stored beside it for the same reason: the
- * transcript stays whole and only what is sent changes. A tool result at an index below `through`
- * is sent as a one-line stub saying how much was there; one at or after it is sent whole. The
- * marker is stored rather than worked out per request because "all but the latest few" is a
- * window that slides, and a window that slides rewrites a message in the middle of the history
- * on every tool step. It is moved by a rule, rarely, and each move costs the prompt cache once.
- * See `server/pruning.ts`.
- */
-export interface PruningRecord {
-  /** Index into `messages`: the first message whose tool result is still sent whole. */
-  through: number;
-  /** ISO 8601, when the marker was last moved. */
-  at: string;
-}
-
 export interface Session {
   id: string;
   title: string;
@@ -439,23 +416,18 @@ export interface Session {
   /** Tools pulled in on demand, kept for the rest of the session so they load once. */
   loadedTools?: string[];
   /**
-   * Set once the transcript outgrew the window; the head is sent as a summary instead. Written by
-   * the model and kept in pg. agent-core's record of a fold: `summary` is the notes on messages
-   * `[0, through)`, `through` the index into `messages` the request is rebuilt from, and `at`
-   * when it was written.
+   * What the model was sent, as the loop handed it back after the last turn: compacted, with old
+   * tool results stubbed and each question carrying its hooks' context. The next turn is this
+   * with its question on the end. Absent where it has to be rebuilt from `messages` — a chat that
+   * has not run a turn yet, or one cut back by a retry or an edit. Server-side only, like `ledger`.
    */
-  compaction?: CompactionRecord;
+  transcript?: OpenAI.ChatCompletionMessageParam[];
   /**
-   * How far old tool results are sent as stubs. Absent until the rule first fires, and a session
-   * without one is sent whole. See `PruningRecord`.
-   */
-  pruning?: PruningRecord;
-  /**
-   * What the requests of earlier turns reported their prompts as, indexed into `messages`.
+   * What the requests of earlier turns reported their prompts as, indexed into `transcript`.
    * Server-side only: it is the runner's, and the API leaves it out. Absent is no readings yet.
    */
   ledger?: TokenLedger;
-  /** Raw chat-completions turns — replayed verbatim on the next request. */
+  /** Every message of the chat, whole, as it is shown. Only ever appended to by a turn. */
   messages: StoredMessage[];
 }
 
@@ -465,7 +437,9 @@ export interface Session {
  * turn, and it has no business touching the messages table to draw a column of titles.
  */
 
-export type SessionSummary = Omit<Session, "messages" | "ledger"> & { messageCount: number };
+export type SessionSummary = Omit<Session, "messages" | "ledger" | "transcript"> & {
+  messageCount: number;
+};
 
 /**
  * `idle` is registered-but-not-connected: a success state, not a failure. min-agent runs the pool
@@ -525,7 +499,7 @@ export type StreamEvent =
   | { type: "title"; title: string }
   | { type: "stats"; stats: TurnStats }
   // A hook that injected context or failed. The before-turn ones arrive ahead of the first
-  // token; an afterTurn failure can arrive after `done`, like the follow-up chips.
+  // token; an afterExchange failure can arrive after `done`, like the follow-up chips.
   | { type: "hook"; hook: HookNote }
   | { type: "done" }
   // Follow-up chips are written after `done`, so a turn that produces them keeps the stream

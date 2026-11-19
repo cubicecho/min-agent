@@ -123,7 +123,7 @@ export const endpoint = (config: LlmConfig): Endpoint => ({
  *
  * `validateHooks` is the pool's, and it runs here rather than in `mcpServerSchema` because that
  * schema is bundled into the app, which cannot load the pool. What it catches — a `{{reply}}` on
- * `beforeTurn`, where there is no reply yet — would otherwise be a hook skipped on every turn
+ * `beforeExchange`, where there is no reply yet — would otherwise be a hook skipped on every turn
  * with nothing but a server log to say why. Every problem goes back at once, one per line, so
  * fixing one does not reveal the next on the following save.
  */

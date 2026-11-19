@@ -80,7 +80,6 @@ const summary = (row: SessionSummaryFragment): SessionSummary => ({
   model: row.model,
   usage: (row.usage as TokenUsage | null) ?? undefined,
   loadedTools: (row.loadedTools as string[] | null) ?? undefined,
-  compaction: (row.compaction as Session["compaction"] | null) ?? undefined,
   messageCount: row.messageCount,
 });
 

@@ -233,9 +233,6 @@ const results = (events: StreamEvent[]) =>
     event.type === "tool_result" ? [[event.toolUseId, event.content, event.isError]] : [],
   );
 
-/** Every marker the turn stored, in order. */
-const markers = () => updates.flatMap((patch) => ("pruning" in patch ? [patch.pruning] : []));
-
 /** A tool call as a stored assistant message carries it. */
 const call = (id: string, name: string, args: string) => ({
   id,
@@ -326,7 +323,7 @@ describe("the order a tool step is written and said in", () => {
 });
 
 describe("stopping a turn while its tools run", () => {
-  it("lets every call in flight answer, and stores each answer in call order", async () => {
+  it("keeps the answer that came back, and stores the loop's for the calls the stop cut short", async () => {
     offered = [READ, LS, NOW];
     // All three read, so all three are in flight when the stop arrives.
     mcp.readsOnly.mockReturnValue(true);
@@ -355,11 +352,9 @@ describe("stopping a turn while its tools run", () => {
     expect(error).toBeInstanceOf(Error);
     expect(requests).toHaveLength(1);
     expect(mcp.call).toHaveBeenCalledTimes(3);
-    expect(results(events)).toEqual([
-      ["c2", "12:00", false],
-      ["c1", "stopped by the reader", true],
-      ["c3", "stopped by the reader", true],
-    ]);
+    // A call stopped part-way has no result to tell the chat of; the one that answered does.
+    expect(results(events)).toEqual([["c2", "12:00", false]]);
+    const stopped = "Stopped before this call finished.";
     expect(stored).toEqual([
       { role: "user", content: "look" },
       {
@@ -371,9 +366,9 @@ describe("stopping a turn while its tools run", () => {
           call("c3", "fs__ls", "{}"),
         ],
       },
-      { role: "tool", tool_call_id: "c1", content: "stopped by the reader" },
+      { role: "tool", tool_call_id: "c1", content: stopped },
       { role: "tool", tool_call_id: "c2", content: "12:00" },
-      { role: "tool", tool_call_id: "c3", content: "stopped by the reader" },
+      { role: "tool", tool_call_id: "c3", content: stopped },
     ]);
     // Cut off, not ended: no stats and no `done`.
     expect(patches).toEqual([]);
@@ -408,7 +403,7 @@ describe("stopping a turn while its tools run", () => {
     expect(mcp.call).not.toHaveBeenCalled();
     expect(events).toEqual([]);
     expect(stored.slice(2)).toEqual([
-      { role: "tool", tool_call_id: "c1", content: "Not run: the run stopped first." },
+      { role: "tool", tool_call_id: "c1", content: "Not run: stopped before this call started." },
     ]);
   });
 });
@@ -493,56 +488,6 @@ describe("a turn that ends on the step after a long load", () => {
   });
 });
 
-describe("the pruning marker at the end of a turn that did not finish", () => {
-  /** What reading `/n` returns: 2000 characters, as `prune-turn.test.ts` has it. */
-  const file = (n: number | string) => `file ${n} ${"x".repeat(2000 - `file ${n} `.length)}`;
-  const reads = (count: number) =>
-    Array.from({ length: count }, (_, at) =>
-      asks([`c${at}`, "fs__read", JSON.stringify({ path: `/${at}` })]),
-    );
-
-  beforeEach(() => {
-    offered = [READ];
-    mcp.call.mockImplementation(async (_name: string, args: { path: string }) =>
-      file(args.path.slice(1)),
-    );
-  });
-
-  it("moves after the step the iteration cap ends on", async () => {
-    // The eighth result is the one that earns a move in this window.
-    configure({ contextLimit: 4000, maxToolIterations: 8 });
-    script = [...reads(8), says("never asked for")];
-    const chat = sessionOf();
-
-    const { error } = await run(chat, "read them all");
-
-    expect(error?.message).toBe("Stopped after 8 tool iterations.");
-    expect(requests).toHaveLength(8);
-    expect(markers()).toHaveLength(1);
-    expect(chat.pruning).toEqual(markers()[0]);
-  });
-
-  it("moves after a step the reader stopped the turn behind", async () => {
-    configure({ contextLimit: 4000 });
-    const controller = new AbortController();
-    script = [...reads(8), says("never asked for")];
-    const chat = sessionOf();
-
-    const { error } = await run(chat, "read them all", {
-      signal: controller.signal,
-      onEvent: (event) => {
-        if (event.type === "tool_result" && event.toolUseId === "c7") {
-          controller.abort();
-        }
-      },
-    });
-
-    expect(error).toBeInstanceOf(Error);
-    expect(requests).toHaveLength(8);
-    expect(markers()).toHaveLength(1);
-  });
-});
-
 /** What agent-core's loop says of a reply that ended on `finish_reason: "length"`. */
 const LENGTH_NOTICE = "[agent] the model stopped at maxTokens (4096); this turn is cut short";
 
@@ -573,24 +518,22 @@ describe("arguments a model gets wrong", () => {
   });
 
   /**
-   * The call is refused as it is in eager mode, but the loop has loaded the tool by then: it
-   * loads a catalogued tool the moment it is called by name. Before #52 the arguments were read
-   * first and nothing was declared. It is carried, as the loop's `used` has it: the model did
-   * call it, and only the arguments were what min-agent refused. Before the loop said which
-   * calls it had repaired, the refusal came ahead of min-agent's own count of what was called.
+   * The loop loads a catalogued tool the moment it is called by name, and runs the call on the
+   * arguments it repaired. It is carried, as the loop's `used` has it: the model did call it.
    */
-  it("refuses a catalogued tool called with almost-JSON arguments, having loaded it", async () => {
+  it("runs a catalogued tool called with almost-JSON arguments, having loaded it", async () => {
     configure({ toolDiscovery: "ondemand" });
     offered = [READ, LS];
-    script = [asks(["c1", "fs__read", "{'path': '/a',}"]), says("Sorry.")];
+    mcp.call.mockResolvedValue("contents");
+    script = [asks(["c1", "fs__read", "{'path': '/a',}"]), says("Read.")];
     const chat = sessionOf();
 
     const { events } = await run(chat, "read it");
 
-    expect(mcp.call).not.toHaveBeenCalled();
-    expect(results(events)).toEqual([
-      ["c1", "model produced invalid tool arguments: {'path': '/a',}", true],
+    expect(mcp.call.mock.calls.map(([name, input]) => [name, input])).toEqual([
+      ["fs__read", { path: "/a" }],
     ]);
+    expect(results(events)).toEqual([["c1", "contents", false]]);
     expect(bodies().map(declaredTools)).toEqual([["load_tools"], ["load_tools", "fs__read"]]);
     expect(chat.loadedTools).toEqual(["fs__read"]);
   });
@@ -610,22 +553,22 @@ describe("arguments a model gets wrong", () => {
   });
 
   /**
-   * The loop opens JSON inside a string and says it took a repair, and that is what is refused.
-   * Before it said so, `JSON.parse` read the outer string, and the pool was handed a string where
-   * the tool had asked for an object.
+   * The loop opens JSON inside a string, and the pool is handed the object it held. Before the
+   * loop read it, `JSON.parse` read the outer string, and the pool was handed a string where the
+   * tool had asked for an object.
    */
-  it("refuses an object written inside a string, as it refuses any repair", async () => {
+  it("opens an object written inside a string, and runs the call with it", async () => {
     offered = [READ];
     mcp.call.mockResolvedValue("contents");
     const written = JSON.stringify(JSON.stringify({ path: "/a" }));
-    script = [asks(["c1", "fs__read", written]), says("Sorry.")];
+    script = [asks(["c1", "fs__read", written]), says("Read.")];
 
     const { events } = await run(sessionOf(), "read it");
 
-    expect(mcp.call).not.toHaveBeenCalled();
-    expect(results(events)).toEqual([
-      ["c1", `model produced invalid tool arguments: ${written}`, true],
+    expect(mcp.call.mock.calls.map(([name, input]) => [name, input])).toEqual([
+      ["fs__read", { path: "/a" }],
     ]);
+    expect(results(events)).toEqual([["c1", "contents", false]]);
   });
 
   /**
@@ -690,7 +633,7 @@ describe("a request refused or lost on the first step", () => {
 
     expect(error).toBeUndefined();
     expect(stored[1]).toMatchObject({ role: "assistant", content: "answered" });
-    const supports = capabilitiesFor("https://api.openai.com/v1");
+    const supports = capabilitiesFor({ baseUrl: "https://api.openai.com/v1" });
     expect(modelCapabilitiesFor(supports, "gpt-4o").reasoningEffort).toBe(false);
   });
 

@@ -65,51 +65,52 @@ describe("session store", () => {
     expect(count).toBe(0);
   });
 
-  it("keeps a pruning marker, and reads back none where none was stored", async () => {
+  it("keeps the model's transcript and its ledger, and reads back none where none was stored", async () => {
     const session = await store.createSession();
-    expect((await store.getSession(session.id))?.pruning).toBeUndefined();
+    const read = async () => await store.getSession(session.id);
+    expect((await read())?.transcript).toBeUndefined();
+    expect((await read())?.ledger).toBeUndefined();
 
-    const marker = { through: 4, at: "2026-01-01T00:00:00.000Z" };
-    await store.updateSession(session.id, { pruning: marker });
-
-    expect((await store.getSession(session.id))?.pruning).toEqual(marker);
-  });
-
-  it("pulls a pruning marker back to the cut, and leaves one behind it alone", async () => {
-    const session = await store.createSession();
-    for (let idx = 0; idx < 6; idx++) {
-      await store.addMessage(session.id, idx, { role: "user", content: `message ${idx}` });
-    }
-    const marker = { through: 5, at: "2026-01-01T00:00:00.000Z" };
-    await store.updateSession(session.id, { pruning: marker });
-
-    // Past the cut: left there, the next results appended would arrive already cleared.
-    await store.truncateSession(session.id, 3);
-    expect((await store.getSession(session.id))?.pruning).toEqual({ ...marker, through: 3 });
-
-    // Behind it: what was cleared stays cleared, so the request's prefix does not move.
-    await store.updateSession(session.id, { pruning: { ...marker, through: 1 } });
-    await store.truncateSession(session.id, 2);
-    expect((await store.getSession(session.id))?.pruning).toEqual({ ...marker, through: 1 });
-  });
-
-  it("keeps the ledger, and forgets the readings that reached past a cut", async () => {
-    const session = await store.createSession();
-    expect((await store.getSession(session.id))?.ledger).toBeUndefined();
-    for (let idx = 0; idx < 6; idx++) {
-      await store.addMessage(session.id, idx, { role: "user", content: `message ${idx}` });
-    }
-    const ledger = [
-      { through: 0, prompt: 100, epoch: 0 },
-      { through: 2, prompt: 180, epoch: 0 },
-      { through: 4, prompt: 260, epoch: 1 },
+    const transcript = [
+      { role: "user" as const, content: "hi" },
+      { role: "assistant" as const, content: "Hello." },
     ];
-    await store.updateSession(session.id, { ledger });
-    expect((await store.getSession(session.id))?.ledger).toEqual(ledger);
+    const ledger = [{ through: 0, prompt: 100, epoch: 0 }];
+    await store.updateSession(session.id, { transcript, ledger });
+    expect((await read())?.transcript).toEqual(transcript);
+    expect((await read())?.ledger).toEqual(ledger);
 
-    // A reading through message 4 counted messages that are gone once the transcript ends at 3.
+    await store.updateSession(session.id, { transcript: null });
+    expect((await read())?.transcript).toBeUndefined();
+  });
+
+  it("forgets the transcript and its ledger at a cut, for the next turn to rebuild", async () => {
+    const session = await store.createSession();
+    for (let idx = 0; idx < 6; idx++) {
+      await store.addMessage(session.id, idx, { role: "user", content: `message ${idx}` });
+    }
+    await store.updateSession(session.id, {
+      transcript: [{ role: "user", content: "message 0" }],
+      ledger: [{ through: 0, prompt: 100, epoch: 0 }],
+    });
+
     await store.truncateSession(session.id, 3);
-    expect((await store.getSession(session.id))?.ledger).toEqual(ledger.slice(0, 2));
+    const cut = await store.getSession(session.id);
+    expect(cut?.transcript).toBeUndefined();
+    expect(cut?.ledger).toBeUndefined();
+    expect(cut?.messages).toHaveLength(3);
+  });
+
+  it("stores the hooks' context on a question after the question", async () => {
+    const session = await store.createSession();
+    const id = await store.addMessage(session.id, 0, { role: "user", content: "hi" });
+    await store.patchMessage(id, { hook_context: "<context>tea</context>" });
+    const [question] = (await store.getSession(session.id))?.messages ?? [];
+    expect(question).toEqual({
+      role: "user",
+      content: "hi",
+      hook_context: "<context>tea</context>",
+    });
   });
 
   it("returns null for a session that is not there", async () => {

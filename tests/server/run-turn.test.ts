@@ -19,15 +19,7 @@ import {
   type StreamEvent,
   type TurnStats,
 } from "../../shared/types.ts";
-import {
-  declaredTools,
-  errorOf,
-  jsonBody,
-  messagesOf,
-  sessionOf,
-  textOf,
-  turnStats,
-} from "../helpers.ts";
+import { declaredTools, errorOf, jsonBody, messagesOf, sessionOf, textOf } from "../helpers.ts";
 import { hookRunnerOver } from "./helpers.ts";
 
 /**
@@ -209,6 +201,11 @@ async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Res
   if (!reply) {
     return new Response("{}", { status: 404 });
   }
+  // A side task streams since agent-core 6, so its answer goes as the one delta of a stream.
+  const isStreamed = jsonBody(String(init?.body ?? "{}")).stream === true;
+  if ("answer" in reply && isStreamed) {
+    return streamOf({ chunks: [chunk({ content: reply.answer }, "stop"), USAGE] }, init?.signal);
+  }
   if ("answer" in reply) {
     return Response.json({
       id: "completion",
@@ -227,8 +224,19 @@ async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Res
     });
   }
 
+  return streamOf(reply, init?.signal);
+}
+
+/**
+ * @param reply The chunks to send, and whether the stream then hangs until it is aborted.
+ * @param signal The request's, which a hanging stream ends on.
+ * @returns A server-sent event stream of the chunks.
+ */
+function streamOf(
+  reply: { chunks: object[]; hangs?: boolean },
+  signal: AbortSignal | null | undefined,
+): Response {
   const encoder = new TextEncoder();
-  const signal = init?.signal;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       for (const each of reply.chunks) {
@@ -353,14 +361,14 @@ async function run(
 }
 
 /**
- * @param patch What differs from a quiet, successful `beforeTurn` hook.
+ * @param patch What differs from a quiet, successful `beforeExchange` hook.
  * @returns One hook's outcome, as the pool reports it.
  */
 const outcome = (patch: Partial<HookOutcome>): HookOutcome => ({
   serverId: "mem",
   label: "Memory",
   hookId: "recall",
-  event: "beforeTurn",
+  event: "beforeExchange",
   ok: true,
   ms: 1,
   inject: false,
@@ -415,7 +423,7 @@ afterEach(() => {
 });
 
 describe("the request body", () => {
-  it("declares every tool when eager, and sends a system message even when it is empty", async () => {
+  it("declares every tool when eager, and sends no system message when there is none", async () => {
     configure({ toolDiscovery: "eager", systemPrompt: "" });
     offer(READ, LS, NOW);
     script = [says("hello")];
@@ -434,7 +442,6 @@ describe("the request body", () => {
         stream_options: { include_usage: true },
         model: "m",
         messages: [
-          { role: "system", content: "" },
           { role: "user", content: "earlier" },
           // The thinking goes back on an earlier turn's reply too, as `reasoningReplay` defaults.
           { role: "assistant", content: "before", reasoning_content: "thinking" },
@@ -707,11 +714,16 @@ describe("a plain answer", () => {
       { role: "assistant", content: "Hello.", stats },
     ]);
     const usage = { promptTokens: 100, completionTokens: 10, totalTokens: 110 };
-    // The turn's one request, which carried the question: kept for the next fold to weigh by.
+    // The turn's one request, which carried the question: kept for the next compaction to weigh
+    // by, indexed into the transcript the model was sent, which the next turn goes on from.
     const ledger = [{ through: 0, prompt: 100, epoch: 0 }];
+    const transcript = [
+      { role: "user", content: "hi there" },
+      { role: "assistant", content: "Hello." },
+    ];
     expect(updates).toEqual([
       { title: "hi there", model: "m" },
-      { usage, ledger },
+      { usage, transcript, ledger },
     ]);
     expect(chat).toMatchObject({ title: "hi there", model: "m", usage });
   });
@@ -744,9 +756,10 @@ describe("a tool round trip", () => {
 
     const { events, stats } = await run(sessionOf(), "read it", { signal: controller.signal });
 
-    const repeated =
-      "contents of a\n\n(Identical call already made this turn; the result is unchanged. " +
-      "Use it rather than calling again.)";
+    // The loop answers an identical read from the first one, word for word.
+    const repeated = "contents of a";
+    // What a tool threw, as the loop words it for the model.
+    const boom = "Error: boom";
     const unparsed = 'model produced invalid tool arguments: {"path":';
     expect(events.slice(0, 6)).toEqual([
       { type: "tool_use", id: "c1", name: "fs__read", input: '{"path":"/a"}' },
@@ -756,7 +769,7 @@ describe("a tool round trip", () => {
       { type: "tool_result", toolUseId: "c3", content: unparsed, isError: true },
       { type: "tool_use", id: "c4", name: "fs__read", input: '{"path":"/a"}' },
       // As each lands, not in call order: the failure is back before the read beside it.
-      { type: "tool_result", toolUseId: "c2", content: "boom", isError: true },
+      { type: "tool_result", toolUseId: "c2", content: boom, isError: true },
     ]);
     // The pair that shared a call land together, in whichever order their promises settle.
     expect(events.slice(6, 8)).toEqual(
@@ -795,15 +808,24 @@ describe("a tool round trip", () => {
         ],
       },
       { role: "tool", tool_call_id: "c1", content: "contents of a" },
-      { role: "tool", tool_call_id: "c2", content: "boom" },
+      { role: "tool", tool_call_id: "c2", content: boom },
       { role: "tool", tool_call_id: "c3", content: unparsed },
       { role: "tool", tool_call_id: "c4", content: repeated },
       { role: "assistant", content: "Done." },
     ]);
-    // The second step is sent the first step's traffic exactly as it was stored.
+    // The second step is sent the first step's traffic as it was stored, but for the arguments
+    // that did not parse: the loop replays those as `{}`, which a server that parses replayed
+    // arguments takes, where the row keeps what the model wrote.
+    const [question, reply, ...results] = stored.slice(0, 6);
+    const replayed = structuredClone(reply) as {
+      tool_calls: { function: { arguments: string } }[];
+    };
+    replayed.tool_calls[2].function.arguments = "{}";
     expect(bodies()[1].messages).toEqual([
       { role: "system", content: "Be brief." },
-      ...stored.slice(0, 6),
+      question,
+      replayed,
+      ...results,
     ]);
     expect(stats).toMatchObject({ iterations: 2, toolCalls: 4, promptTokens: 200 });
   });
@@ -889,8 +911,10 @@ describe("a tool round trip", () => {
 
     await run(sessionOf(), "look");
 
-    // Never `call_tool` or `load_tools`: the pool knows neither, and would call each a write.
-    expect(mcp.readsOnly.mock.calls).toEqual([["fs__read"], ["fs__ls"]]);
+    // Never `call_tool` or `load_tools`: the pool knows neither, and would call each a write. Each
+    // tool is asked twice, once whether it may run beside the others and once whether a repeat of
+    // it may be answered from the first.
+    expect(mcp.readsOnly.mock.calls).toEqual([["fs__read"], ["fs__read"], ["fs__ls"], ["fs__ls"]]);
   });
 
   it("goes on with what was typed once the calls have answered, stored where it landed", async () => {
@@ -961,7 +985,7 @@ describe("a tool round trip", () => {
     ]);
   });
 
-  it("keeps what the steps before a failure reported, for the next fold to weigh by", async () => {
+  it("keeps the transcript and what the steps before a failure reported, to go on from", async () => {
     configure({ toolDiscovery: "eager", maxToolIterations: 2 });
     offer(LS);
     mcp.call.mockResolvedValue("a.txt");
@@ -971,15 +995,32 @@ describe("a tool round trip", () => {
     const { error } = await run(chat, "look around");
 
     expect(error?.message).toBe("Stopped after 2 tool iterations.");
-    // Both requests, indexed into the stored transcript: the question, then the first result. One
-    // epoch, as the second request only added to the first.
+    // Both requests, indexed into the transcript the model was sent: the question, then the first
+    // result. One epoch, as the second request only added to the first.
     const ledger = [
       { through: 0, prompt: 100, epoch: 0 },
       { through: 2, prompt: 100, epoch: 0 },
     ];
+    const ls = (id: string, path: string) => ({
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        { id, type: "function", function: { name: "fs__ls", arguments: JSON.stringify({ path }) } },
+      ],
+    });
+    // The transcript as the loop left it, every call answered, for the next turn to go on from.
+    const transcript = [
+      { role: "user", content: "look around" },
+      ls("c1", "/"),
+      { role: "tool", tool_call_id: "c1", content: "a.txt" },
+      ls("c2", "/tmp"),
+      { role: "tool", tool_call_id: "c2", content: "a.txt" },
+    ];
     expect(chat.ledger).toEqual(ledger);
+    expect(chat.transcript).toEqual(transcript);
     expect(updates.at(-1)).toEqual({
       usage: { promptTokens: 200, completionTokens: 20, totalTokens: 220 },
+      transcript,
       ledger,
     });
   });
@@ -1142,18 +1183,20 @@ describe("loading tools", () => {
 describe("hooks", () => {
   it("stores the context beside the question, and sends it on the question", async () => {
     mcp.runHooks.mockImplementation(async (event: string) =>
-      event === "beforeTurn" ? [outcome({ inject: true, text: "likes tea" })] : [],
+      event === "beforeExchange" ? [outcome({ inject: true, text: "likes tea" })] : [],
     );
     script = [says("Tea, then.")];
+    const chat = sessionOf();
 
-    const { events, stats } = await run(sessionOf(), "what should I drink?");
+    const { events, stats } = await run(chat, "what should I drink?");
 
     // A session's first turn is also its start.
     expect(mcp.runHooks.mock.calls.map(([event]) => event)).toEqual([
       "sessionStart",
-      "beforeTurn",
-      "afterTurn",
+      "beforeExchange",
+      "afterExchange",
     ]);
+    // `beforeExchange` is told where the question falls in the chat, for a `{{turn.index}}`.
     expect(mcp.runHooks.mock.calls[1][1]).toEqual({
       session: { id: "s1" },
       host: "min-agent",
@@ -1162,7 +1205,10 @@ describe("hooks", () => {
     });
 
     const context = '<context source="Memory">\nlikes tea\n</context>';
-    expect(stored[0]).toEqual({
+    // Stored bare as it is asked, and the context patched on beside it once the loop has it.
+    expect(stored[0]).toEqual({ role: "user", content: "what should I drink?" });
+    expect(patches[0]).toEqual({ row: "row-0", patch: { hook_context: context } });
+    expect(chat.messages[0]).toEqual({
       role: "user",
       content: "what should I drink?",
       hook_context: context,
@@ -1171,9 +1217,11 @@ describe("hooks", () => {
     expect(question.role).toBe("user");
     expect(question.content).toContain(context);
     expect(textOf(question).endsWith("\n\nwhat should I drink?")).toBe(true);
+    // And kept on it in the transcript the next turn goes on from, so its requests begin alike.
+    expect(chat.transcript?.[0]).toEqual(question);
 
     const note = {
-      event: "beforeTurn",
+      event: "beforeExchange",
       source: "Memory",
       hookId: "recall",
       tokens: expect.any(Number),
@@ -1184,10 +1232,10 @@ describe("hooks", () => {
     expect(stats?.hooks).toEqual([note]);
   });
 
-  it("waits for afterTurn, and stores its failure with the turn's stats", async () => {
+  it("waits for afterExchange, and stores its failure with the turn's stats", async () => {
     mcp.runHooks.mockImplementation(async (event: string) =>
-      event === "afterTurn"
-        ? [outcome({ event: "afterTurn", hookId: "remember", ok: false, error: "timed out" })]
+      event === "afterExchange"
+        ? [outcome({ event: "afterExchange", hookId: "remember", ok: false, error: "timed out" })]
         : [],
     );
     script = [says("Hello.")];
@@ -1198,8 +1246,11 @@ describe("hooks", () => {
 
     const { events } = await run(sessionOf({ messages: earlier }), "hi");
 
-    // Not a first turn, so no `sessionStart`; the reply and the turn's messages go to afterTurn.
-    expect(mcp.runHooks.mock.calls.map(([event]) => event)).toEqual(["beforeTurn", "afterTurn"]);
+    // Not a first turn, so no `sessionStart`; the reply and the turn's messages go to afterExchange.
+    expect(mcp.runHooks.mock.calls.map(([event]) => event)).toEqual([
+      "beforeExchange",
+      "afterExchange",
+    ]);
     expect(mcp.runHooks.mock.calls[1][1]).toEqual({
       session: { id: "s1" },
       host: "min-agent",
@@ -1214,7 +1265,12 @@ describe("hooks", () => {
       },
     });
 
-    const note = { event: "afterTurn", source: "Memory", hookId: "remember", error: "timed out" };
+    const note = {
+      event: "afterExchange",
+      source: "Memory",
+      hookId: "remember",
+      error: "timed out",
+    };
     // Said after `done`, once it is stored: the stats went out without it and were patched again.
     expect(events.map(({ type }) => type)).toEqual(["text_delta", "stats", "done", "hook"]);
     expect(events.at(-1)).toEqual({ type: "hook", hook: note });
@@ -1266,21 +1322,6 @@ describe("what the loop decides beyond the common path", () => {
     id,
     type: "function",
     function: { name, arguments: args },
-  });
-
-  /**
-   * @param prompt The prompt tokens the closing chunk reports.
-   * @param cached How many of them the server says it found cached.
-   * @returns The usage chunk, in the server's own spelling.
-   */
-  const usage = (prompt: number, cached: number) => ({
-    choices: [],
-    usage: {
-      prompt_tokens: prompt,
-      completion_tokens: 10,
-      total_tokens: prompt + 10,
-      prompt_tokens_details: { cached_tokens: cached },
-    },
   });
 
   /**
@@ -1416,7 +1457,7 @@ describe("what the loop decides beyond the common path", () => {
       {
         role: "tool",
         tool_call_id: "c3",
-        content: "read_resource needs a uri; pass the one list_resources gave.",
+        content: "Error: read_resource needs a uri; pass the one list_resources gave.",
       },
     ]);
     const results = events.flatMap((event) =>
@@ -1529,7 +1570,12 @@ describe("what the loop decides beyond the common path", () => {
     expect(mcp.call.mock.calls.map(([name]) => name)).toEqual(["clock__now", "clock__then"]);
     expect(events.filter((event) => event.type === "tool_result")).toEqual([
       { type: "tool_result", toolUseId: "c1", content: "12:00", isError: false },
-      { type: "tool_result", toolUseId: "c2", content: "no such tool: clock__then", isError: true },
+      {
+        type: "tool_result",
+        toolUseId: "c2",
+        content: "Error: no such tool: clock__then",
+        isError: true,
+      },
     ]);
     expect(chat.loadedTools).toEqual(["clock__now"]);
     // The last request's split, which counts the definition that call pulled in.
@@ -1601,9 +1647,12 @@ describe("what the loop decides beyond the common path", () => {
     expect(stored[2]).toEqual({ role: "tool", tool_call_id: "c1", content });
   });
 
-  it("answers an identical call from an earlier step of the turn without making it again", async () => {
+  // Answered from the first only within one reply: between steps another call may have changed
+  // what the first one read.
+  it("makes an identical call again on a later step of the turn", async () => {
     configure({ toolDiscovery: "eager" });
     offer(READ);
+    mcp.readsOnly.mockReturnValue(true);
     mcp.call.mockResolvedValue("contents of a");
     script = [
       asks(["c1", "fs__read", '{"path":"/a"}']),
@@ -1613,34 +1662,29 @@ describe("what the loop decides beyond the common path", () => {
 
     await run(sessionOf(), "read it twice");
 
-    expect(mcp.call).toHaveBeenCalledTimes(1);
+    expect(mcp.call).toHaveBeenCalledTimes(2);
     expect(stored[2]).toEqual({ role: "tool", tool_call_id: "c1", content: "contents of a" });
-    expect(stored[4]).toEqual({
-      role: "tool",
-      tool_call_id: "c2",
-      content:
-        "contents of a\n\n(Identical call already made this turn; the result is unchanged. " +
-        "Use it rather than calling again.)",
-    });
+    expect(stored[4]).toEqual({ role: "tool", tool_call_id: "c2", content: "contents of a" });
   });
 
-  /**
-   * agent-core's `parseToolArguments` would repair these and run the call. Today they are read
-   * with `JSON.parse` alone, so the model is told and has to write them again.
-   */
-  it("refuses arguments that are almost JSON, and stores them as the model wrote them", async () => {
+  // agent-core's `parseToolArguments` repairs what local models write where the meaning is
+  // plain — single quotes, a trailing comma — and the call runs on what it read.
+  it("runs a call whose arguments are almost JSON, and stores them as the model wrote them", async () => {
     configure({ toolDiscovery: "eager" });
     offer(READ);
-    script = [asks(["c1", "fs__read", "{'path': '/a',}"]), says("Sorry.")];
+    mcp.call.mockResolvedValue("contents of a");
+    script = [asks(["c1", "fs__read", "{'path': '/a',}"]), says("Read.")];
 
     const { events } = await run(sessionOf(), "read it");
 
-    expect(mcp.call).not.toHaveBeenCalled();
+    expect(mcp.call.mock.calls.map(([name, input]) => [name, input])).toEqual([
+      ["fs__read", { path: "/a" }],
+    ]);
     expect(events[1]).toEqual({
       type: "tool_result",
       toolUseId: "c1",
-      content: "model produced invalid tool arguments: {'path': '/a',}",
-      isError: true,
+      content: "contents of a",
+      isError: false,
     });
     expect(stored[1]).toMatchObject({ tool_calls: [call("c1", "fs__read", "{'path': '/a',}")] });
   });
@@ -1666,108 +1710,6 @@ describe("what the loop decides beyond the common path", () => {
       content: `model produced tool arguments that are not an object: ${written}`,
       isError: true,
     });
-  });
-
-  it("runs a call_tool on demand as well, without loading or carrying what it named", async () => {
-    offer(READ, LS);
-    mcp.call.mockResolvedValue("contents of a");
-    const proxied = '{"name":"fs__read","arguments":{"path":"/a"}}';
-    script = [asks(["c1", "call_tool", proxied]), says("Read.")];
-    const chat = sessionOf();
-
-    const { events } = await run(chat, "read /a");
-
-    expect(events.slice(0, 2)).toEqual([
-      { type: "tool_use", id: "c1", name: "fs__read", input: '{"path":"/a"}' },
-      { type: "tool_result", toolUseId: "c1", content: "contents of a", isError: false },
-    ]);
-    expect(mcp.call.mock.calls).toEqual([
-      ["fs__read", { path: "/a" }, undefined, expect.any(Function), expect.any(Function)],
-    ]);
-    expect(bodies().map(declaredTools)).toEqual([["load_tools"], ["load_tools"]]);
-    expect(chat.loadedTools).toEqual([]);
-  });
-
-  it("warns when a step finds much less cached than the request before it sent", async () => {
-    const warn = vi.mocked(console.warn);
-    const earlier: StoredMessage[] = [
-      { role: "user", content: "earlier" },
-      { role: "assistant", content: "before", stats: turnStats({ lastPromptTokens: 1000 }) },
-    ];
-    configure({ toolDiscovery: "eager" });
-    offer(LS);
-    mcp.call.mockResolvedValue("a.txt");
-    script = [
-      // Held to the turn before: 1000 tokens went out last, and 100 of this one were found.
-      {
-        chunks: [
-          chunk({ tool_calls: [{ index: 0, ...call("c1", "fs__ls", "{}") }] }),
-          chunk({}, "tool_calls"),
-          usage(1100, 100),
-        ],
-      },
-      // Held to the step before: 1100 went out and 1090 were found, which is no miss.
-      { chunks: [chunk({ content: "One file." }), chunk({}, "stop"), usage(1200, 1090)] },
-    ];
-
-    await run(sessionOf({ messages: earlier }), "what is here");
-
-    expect(warn.mock.calls.map(([line]) => line)).toEqual([
-      "[agent] prompt cache missed: 100 of 1100 cached, after a 1000-token request",
-    ]);
-  });
-
-  it("says what the loop makes of a miss between two steps of the turn", async () => {
-    configure({ toolDiscovery: "eager" });
-    offer(LS);
-    mcp.call.mockResolvedValue("a.txt");
-    script = [
-      {
-        chunks: [
-          chunk({ tool_calls: [{ index: 0, ...call("c1", "fs__ls", "{}") }] }),
-          chunk({}, "tool_calls"),
-          usage(1100, 0),
-        ],
-      },
-      // 1100 went out on the step before and 100 of them were found, with nothing changed.
-      { chunks: [chunk({ content: "One file." }), chunk({}, "stop"), usage(1200, 100)] },
-    ];
-
-    await run(sessionOf(), "what is here");
-
-    expect(vi.mocked(console.warn).mock.calls.map(([line]) => line)).toEqual([
-      "[agent] prompt cache missed: 100 of 1200 cached, after a 1100-token request (none-known)",
-    ]);
-  });
-
-  /** B1: the lookup stopped at the newest stats and read no count as a prompt of nothing. */
-  it("holds a step to the last turn that counted its prompt, past one that did not", async () => {
-    const earlier: StoredMessage[] = [
-      { role: "user", content: "earlier" },
-      { role: "assistant", content: "before", stats: turnStats({ lastPromptTokens: 1000 }) },
-      { role: "user", content: "later" },
-      // A turn whose server reported no usage: stats, and no prompt count among them.
-      { role: "assistant", content: "uncounted", stats: turnStats() },
-    ];
-    script = [{ chunks: [chunk({ content: "hello" }), chunk({}, "stop"), usage(1100, 100)] }];
-
-    await run(sessionOf({ messages: earlier }), "hi");
-
-    expect(vi.mocked(console.warn).mock.calls.map(([line]) => line)).toEqual([
-      "[agent] prompt cache missed: 100 of 1100 cached, after a 1000-token request",
-    ]);
-  });
-
-  it("says nothing about the cache where the server reports none", async () => {
-    const earlier: StoredMessage[] = [
-      { role: "user", content: "earlier" },
-      { role: "assistant", content: "before", stats: turnStats({ lastPromptTokens: 1000 }) },
-    ];
-    script = [says("hello")];
-
-    await run(sessionOf({ messages: earlier }), "hi");
-
-    expect(vi.mocked(console.warn)).not.toHaveBeenCalled();
   });
 
   it("answers an overflow once, in the server's words and with the window it was built to", async () => {
@@ -1810,7 +1752,7 @@ describe("what the loop decides beyond the common path", () => {
     expect(error?.message).toBe("400 This model's maximum context length is 32768 tokens.");
   });
 
-  it("stores a stopped tool call's answer before the stop ends the turn", async () => {
+  it("stores the loop's answer for a call the stop cut short, before the stop ends the turn", async () => {
     configure({ toolDiscovery: "eager" });
     offer(LS);
     const controller = new AbortController();
@@ -1834,15 +1776,16 @@ describe("what the loop decides beyond the common path", () => {
 
     expect(error).toBeInstanceOf(Error);
     expect(requests).toHaveLength(1);
-    expect(events).toEqual([
-      { type: "tool_use", id: "c1", name: "fs__ls", input: "{}" },
-      { type: "tool_result", toolUseId: "c1", content: "stopped by the reader", isError: true },
-    ]);
-    // The transcript stays one a server will take: the call the model made has its answer.
-    expect(stored).toEqual([
+    // A call stopped part-way has no result to tell the chat of.
+    expect(events).toEqual([{ type: "tool_use", id: "c1", name: "fs__ls", input: "{}" }]);
+    // The rows and the transcript stay ones a server will take: the call the model made has the
+    // loop's answer saying it was stopped.
+    const transcript = [
       { role: "user", content: "look around" },
       { role: "assistant", content: null, tool_calls: [call("c1", "fs__ls", "{}")] },
-      { role: "tool", tool_call_id: "c1", content: "stopped by the reader" },
-    ]);
+      { role: "tool", tool_call_id: "c1", content: "Stopped before this call finished." },
+    ];
+    expect(stored).toEqual(transcript);
+    expect(updates.at(-1)).toMatchObject({ transcript });
   });
 });

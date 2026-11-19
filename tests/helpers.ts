@@ -104,3 +104,36 @@ export function errorOf(thrown: unknown): Error {
   }
   throw new Error(`threw something that is not an Error: ${String(thrown)}`);
 }
+
+/**
+ * A chat completion streamed as server-sent events: `content` in one chunk, then the stop, then
+ * the usage. Side tasks are streamed since agent-core 6, as the chat model's turns always were.
+ *
+ * @param content The whole reply.
+ * @param usage What the server reports the request cost.
+ * @returns The response.
+ */
+export function streamed(
+  content: string,
+  usage = { prompt_tokens: 100, completion_tokens: 10, total_tokens: 110 },
+): Response {
+  const chunk = (delta: Record<string, unknown>, finish: string | null = null) => ({
+    id: "c",
+    object: "chat.completion.chunk",
+    created: 0,
+    model: "m",
+    choices: [{ index: 0, delta, finish_reason: finish }],
+  });
+  const events = [chunk({ role: "assistant", content }), chunk({}, "stop"), { choices: [], usage }];
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const each of events) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(each)}\n\n`));
+      }
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
+    },
+  });
+  return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+}

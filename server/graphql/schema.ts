@@ -283,7 +283,7 @@ export function createSchema({
     exclude: {
       // The key never needs to travel back to the browser; the UI only ever writes it. The
       // ledger is the runner's own reading of what a chat's messages cost, and no client's.
-      columns: { settings: ["apiKey"], sessions: ["ledger"] },
+      columns: { settings: ["apiKey"], sessions: ["ledger", "transcript"] },
     },
     mapColumnType: (column) => (column.columnType === "PgTimestamp" ? GraphQLDateTime : undefined),
     onWrite: {

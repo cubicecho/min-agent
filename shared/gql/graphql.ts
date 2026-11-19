@@ -77,13 +77,11 @@ export type BooleanFilter = {
 };
 
 export type CreateSessionInput = {
-  compaction?: InputMaybe<Scalars['JSON']['input']>;
   createdAt?: InputMaybe<Scalars['DateTime']['input']>;
   id?: InputMaybe<Scalars['String']['input']>;
   loadedTools?: InputMaybe<Scalars['JSON']['input']>;
   messageCount?: InputMaybe<Scalars['Int']['input']>;
   model?: InputMaybe<Scalars['String']['input']>;
-  pruning?: InputMaybe<Scalars['JSON']['input']>;
   title?: InputMaybe<Scalars['String']['input']>;
   updatedAt?: InputMaybe<Scalars['DateTime']['input']>;
   usage?: InputMaybe<Scalars['JSON']['input']>;
@@ -1311,7 +1309,6 @@ export type QuerySettingsGroupByArgs = {
 };
 
 export type Session = {
-  compaction?: Maybe<Scalars['JSON']['output']>;
   createdAt: Scalars['DateTime']['output'];
   /** Opaque cursor of this row's position in the query's ordering. Pass it as `after` to resume from here. Only set on rows returned by a list query. */
   cursor?: Maybe<Scalars['String']['output']>;
@@ -1321,7 +1318,6 @@ export type Session = {
   messages: Array<Message>;
   messagesAggregate: MessageAggregate;
   model: Scalars['String']['output'];
-  pruning?: Maybe<Scalars['JSON']['output']>;
   title: Scalars['String']['output'];
   updatedAt: Scalars['DateTime']['output'];
   usage?: Maybe<Scalars['JSON']['output']>;
@@ -1379,26 +1375,22 @@ export type SessionCountDistinctHaving = {
 };
 
 export type SessionCountNonNullAggregate = {
-  compaction: Scalars['Int']['output'];
   createdAt: Scalars['Int']['output'];
   id: Scalars['Int']['output'];
   loadedTools: Scalars['Int']['output'];
   messageCount: Scalars['Int']['output'];
   model: Scalars['Int']['output'];
-  pruning: Scalars['Int']['output'];
   title: Scalars['Int']['output'];
   updatedAt: Scalars['Int']['output'];
   usage: Scalars['Int']['output'];
 };
 
 export type SessionCountNonNullHaving = {
-  compaction?: InputMaybe<AggregateNumberFilter>;
   createdAt?: InputMaybe<AggregateNumberFilter>;
   id?: InputMaybe<AggregateNumberFilter>;
   loadedTools?: InputMaybe<AggregateNumberFilter>;
   messageCount?: InputMaybe<AggregateNumberFilter>;
   model?: InputMaybe<AggregateNumberFilter>;
-  pruning?: InputMaybe<AggregateNumberFilter>;
   title?: InputMaybe<AggregateNumberFilter>;
   updatedAt?: InputMaybe<AggregateNumberFilter>;
   usage?: InputMaybe<AggregateNumberFilter>;
@@ -1406,13 +1398,11 @@ export type SessionCountNonNullHaving = {
 
 /** Columns of Session that a query can be made distinct on */
 export enum SessionDistinctColumn {
-  Compaction = 'compaction',
   CreatedAt = 'createdAt',
   Id = 'id',
   LoadedTools = 'loadedTools',
   MessageCount = 'messageCount',
   Model = 'model',
-  Pruning = 'pruning',
   Title = 'title',
   UpdatedAt = 'updatedAt',
   Usage = 'usage'
@@ -1425,14 +1415,12 @@ export type SessionFilters = {
   NOT?: InputMaybe<SessionFilters>;
   /** At least one branch matches; ANDed with any sibling fields */
   OR?: InputMaybe<Array<SessionFilters>>;
-  compaction?: InputMaybe<JsonFilter>;
   createdAt?: InputMaybe<DateTimeFilter>;
   id?: InputMaybe<StringFilter>;
   loadedTools?: InputMaybe<JsonFilter>;
   messageCount?: InputMaybe<IntFilter>;
   messages?: InputMaybe<MessageListRelationFilter>;
   model?: InputMaybe<StringFilter>;
-  pruning?: InputMaybe<JsonFilter>;
   title?: InputMaybe<StringFilter>;
   updatedAt?: InputMaybe<DateTimeFilter>;
   usage?: InputMaybe<JsonFilter>;
@@ -1508,13 +1496,11 @@ export type SessionMinHaving = {
 };
 
 export type SessionOrderBy = {
-  compaction?: InputMaybe<InnerOrder>;
   createdAt?: InputMaybe<InnerOrder>;
   id?: InputMaybe<InnerOrder>;
   loadedTools?: InputMaybe<InnerOrder>;
   messageCount?: InputMaybe<InnerOrder>;
   model?: InputMaybe<InnerOrder>;
-  pruning?: InputMaybe<InnerOrder>;
   title?: InputMaybe<InnerOrder>;
   updatedAt?: InputMaybe<InnerOrder>;
   usage?: InputMaybe<InnerOrder>;
@@ -2061,13 +2047,11 @@ export type TurnEvent = {
 };
 
 export type UpdateSessionInput = {
-  compaction?: InputMaybe<Scalars['JSON']['input']>;
   createdAt?: InputMaybe<Scalars['DateTime']['input']>;
   id?: InputMaybe<Scalars['String']['input']>;
   loadedTools?: InputMaybe<Scalars['JSON']['input']>;
   messageCount?: InputMaybe<Scalars['Int']['input']>;
   model?: InputMaybe<Scalars['String']['input']>;
-  pruning?: InputMaybe<Scalars['JSON']['input']>;
   title?: InputMaybe<Scalars['String']['input']>;
   updatedAt?: InputMaybe<Scalars['DateTime']['input']>;
   usage?: InputMaybe<Scalars['JSON']['input']>;
@@ -2154,26 +2138,26 @@ export type McpPromptCompletionsQueryVariables = Exact<{
 
 export type McpPromptCompletionsQuery = { mcpPromptCompletions: Array<string> };
 
-export type SessionSummaryFragment = { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, compaction?: unknown | null, messageCount: number };
+export type SessionSummaryFragment = { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, messageCount: number };
 
 export type MessageRowFragment = { id: string, idx: number, role: MessagesRoleEnum, content?: unknown | null, reasoningContent?: string | null, toolCalls?: unknown | null, toolCallId?: string | null, stats?: unknown | null, followups?: unknown | null };
 
 export type SessionsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type SessionsQuery = { sessions: Array<{ id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, compaction?: unknown | null, messageCount: number }> };
+export type SessionsQuery = { sessions: Array<{ id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, messageCount: number }> };
 
 export type SessionDetailQueryVariables = Exact<{
   id: Scalars['String']['input'];
 }>;
 
 
-export type SessionDetailQuery = { session?: { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, compaction?: unknown | null, messageCount: number, messages: Array<{ id: string, idx: number, role: MessagesRoleEnum, content?: unknown | null, reasoningContent?: string | null, toolCalls?: unknown | null, toolCallId?: string | null, stats?: unknown | null, followups?: unknown | null }> } | null };
+export type SessionDetailQuery = { session?: { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, messageCount: number, messages: Array<{ id: string, idx: number, role: MessagesRoleEnum, content?: unknown | null, reasoningContent?: string | null, toolCalls?: unknown | null, toolCallId?: string | null, stats?: unknown | null, followups?: unknown | null }> } | null };
 
 export type CreateSessionMutationVariables = Exact<{ [key: string]: never; }>;
 
 
-export type CreateSessionMutation = { createSession: { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, compaction?: unknown | null, messageCount: number } };
+export type CreateSessionMutation = { createSession: { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, messageCount: number } };
 
 export type RenameSessionMutationVariables = Exact<{
   id: Scalars['String']['input'];
@@ -2181,7 +2165,7 @@ export type RenameSessionMutationVariables = Exact<{
 }>;
 
 
-export type RenameSessionMutation = { updateSessionSingle?: { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, compaction?: unknown | null, messageCount: number } | null };
+export type RenameSessionMutation = { updateSessionSingle?: { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, messageCount: number } | null };
 
 export type DeleteSessionMutationVariables = Exact<{
   id: Scalars['String']['input'];
@@ -2307,7 +2291,6 @@ export const SessionSummaryFragmentDoc = new TypedDocumentString(`
   model
   usage
   loadedTools
-  compaction
   messageCount
 }
     `, {"fragmentName":"SessionSummary"}) as unknown as TypedDocumentString<SessionSummaryFragment, unknown>;
@@ -2457,7 +2440,6 @@ export const SessionsDocument = new TypedDocumentString(`
   model
   usage
   loadedTools
-  compaction
   messageCount
 }`) as unknown as TypedDocumentString<SessionsQuery, SessionsQueryVariables>;
 export const SessionDetailDocument = new TypedDocumentString(`
@@ -2477,7 +2459,6 @@ export const SessionDetailDocument = new TypedDocumentString(`
   model
   usage
   loadedTools
-  compaction
   messageCount
 }
 fragment MessageRow on Message {
@@ -2505,7 +2486,6 @@ export const CreateSessionDocument = new TypedDocumentString(`
   model
   usage
   loadedTools
-  compaction
   messageCount
 }`) as unknown as TypedDocumentString<CreateSessionMutation, CreateSessionMutationVariables>;
 export const RenameSessionDocument = new TypedDocumentString(`
@@ -2522,7 +2502,6 @@ export const RenameSessionDocument = new TypedDocumentString(`
   model
   usage
   loadedTools
-  compaction
   messageCount
 }`) as unknown as TypedDocumentString<RenameSessionMutation, RenameSessionMutationVariables>;
 export const DeleteSessionDocument = new TypedDocumentString(`
