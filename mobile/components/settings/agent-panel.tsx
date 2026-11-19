@@ -139,6 +139,7 @@ export function AgentPanel() {
         toolDiscovery,
         reasoningEffort,
         reasoningReplay,
+        agentSampling,
         systemPrompt,
       }) => ({
         maxTokens,
@@ -148,6 +149,7 @@ export function AgentPanel() {
         toolDiscovery,
         reasoningEffort,
         reasoningReplay,
+        agentSampling,
         systemPrompt,
       })}
       content={({ form }) => (
@@ -228,6 +230,15 @@ export function AgentPanel() {
                       label="Send thinking back to the model"
                       description="Thinking models such as gpt-oss, DeepSeek, Qwen3 and GLM need their reasoning back between tool calls, and sending it as it was generated keeps the server's prompt cache valid; each model's template drops what it does not want. Only during tool calls sends it back until the answer is written. Never saves context on an endpoint that does not use it."
                       options={REPLAY_OPTIONS}
+                    />
+                  )}
+                </form.AppField>
+
+                <form.AppField name="agentSampling">
+                  {(field) => (
+                    <field.SwitchField
+                      label="Send these to ai-router agents"
+                      description="An ai-router agent samples as its own settings say, so the reply limit, temperature and reasoning effort are left off a turn on one. Turn this on for agents whose override policy lets a request set them: one that does not refuses the turn."
                     />
                   )}
                 </form.AppField>

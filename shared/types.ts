@@ -115,6 +115,13 @@ export const llmConfigSchema = z.object({
    */
   reasoningReplay: z.enum(REASONING_REPLAYS).default("all"),
   /**
+   * Whether a turn on an ai-router agent sends the temperature, the reply ceiling and the reasoning
+   * effort. Off by default: an agent samples as its own document says, and one whose override
+   * policy does not let a request set a field refuses the whole request. See
+   * `server/remote-agent.ts`.
+   */
+  agentSampling: z.boolean().default(false),
+  /**
    * Per-task model overrides, keyed by the entries in `MODEL_TASKS`. A missing or empty value
    * means the task is off (or falls back to `model`, per the task). Kept as an open record so
    * adding a task needs no config migration — unknown keys are simply ignored.

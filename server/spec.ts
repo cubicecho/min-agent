@@ -73,6 +73,7 @@ const COLUMNS = defineSpecColumns<LlmConfig>(
     ttsModel: { path: own("ttsModel") },
     ttsVoice: { path: own("ttsVoice") },
     speakReplies: { path: own("speakReplies") },
+    agentSampling: { path: own("agentSampling") },
   },
   { handled: ["tasks"] },
 );

@@ -21,6 +21,7 @@ const STORED = {
   ttsModel: "",
   ttsVoice: "",
   speakReplies: false,
+  agentSampling: false,
 };
 
 /** What the server answers each of the three settings operations with. */

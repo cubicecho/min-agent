@@ -88,6 +88,8 @@ export const settings = table("settings", {
    * way in and on the way out, as it is for every bound the column type cannot say.
    */
   reasoningReplay: text().notNull().default("all"),
+  /** Send the sampling settings to an ai-router agent too. See `LlmConfig.agentSampling`. */
+  agentSampling: boolean().notNull().default(false),
   /**
    * Per-task model overrides, keyed by the entries in `MODEL_TASKS`. Kept as an open JSON
    * object rather than a column each, so adding a task needs no migration.

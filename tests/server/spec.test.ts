@@ -131,6 +131,7 @@ describe("settingsSpec", () => {
           ttsModel: "",
           ttsVoice: "",
           speakReplies: false,
+          agentSampling: false,
         },
       },
     });

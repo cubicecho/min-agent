@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ADD COLUMN "agent_sampling" boolean DEFAULT false NOT NULL;

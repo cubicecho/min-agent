@@ -132,7 +132,8 @@ async function endpoint(url: RequestInfo | URL, init?: RequestInit): Promise<Res
   // to, and an overflow asks it and LM Studio's route for the window it serves. None here;
   // `run-turn.test.ts` is where the pinning and the served window are pinned.
   const { pathname } = new URL(String(url));
-  if (pathname.endsWith("/props") || pathname.endsWith("/api/v0/models")) {
+  // The listing min-agent reads for an agent's mark is none here either: every model is plain.
+  if (pathname.endsWith("/props") || pathname.endsWith("/models")) {
     return new Response("{}", { status: 404 });
   }
   requests.push(String(init?.body ?? url));

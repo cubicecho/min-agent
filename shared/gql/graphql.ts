@@ -1515,6 +1515,7 @@ export type SessionSumHaving = {
 };
 
 export type Setting = {
+  agentSampling: Scalars['Boolean']['output'];
   baseUrl: Scalars['String']['output'];
   contextLimit: Scalars['Int']['output'];
   /** Opaque cursor of this row's position in the query's ordering. Pass it as `after` to resume from here. Only set on rows returned by a list query. */
@@ -1598,6 +1599,7 @@ export type SettingCountDistinctHaving = {
 };
 
 export type SettingCountNonNullAggregate = {
+  agentSampling: Scalars['Int']['output'];
   baseUrl: Scalars['Int']['output'];
   contextLimit: Scalars['Int']['output'];
   id: Scalars['Int']['output'];
@@ -1619,6 +1621,7 @@ export type SettingCountNonNullAggregate = {
 };
 
 export type SettingCountNonNullHaving = {
+  agentSampling?: InputMaybe<AggregateNumberFilter>;
   baseUrl?: InputMaybe<AggregateNumberFilter>;
   contextLimit?: InputMaybe<AggregateNumberFilter>;
   id?: InputMaybe<AggregateNumberFilter>;
@@ -1641,6 +1644,7 @@ export type SettingCountNonNullHaving = {
 
 /** Columns of Setting that a query can be made distinct on */
 export enum SettingDistinctColumn {
+  AgentSampling = 'agentSampling',
   BaseUrl = 'baseUrl',
   ContextLimit = 'contextLimit',
   Id = 'id',
@@ -1668,6 +1672,7 @@ export type SettingFilters = {
   NOT?: InputMaybe<SettingFilters>;
   /** At least one branch matches; ANDed with any sibling fields */
   OR?: InputMaybe<Array<SettingFilters>>;
+  agentSampling?: InputMaybe<BooleanFilter>;
   baseUrl?: InputMaybe<StringFilter>;
   contextLimit?: InputMaybe<IntFilter>;
   id?: InputMaybe<StringFilter>;
@@ -1701,6 +1706,7 @@ export type SettingGroupBy = {
 
 /** Columns of Setting that a query can group by */
 export enum SettingGroupByColumn {
+  AgentSampling = 'agentSampling',
   BaseUrl = 'baseUrl',
   ContextLimit = 'contextLimit',
   Id = 'id',
@@ -1721,6 +1727,7 @@ export enum SettingGroupByColumn {
 
 /** The grouped column values of one Setting group. A column the query did not group by is null. */
 export type SettingGroupKeys = {
+  agentSampling?: Maybe<Scalars['Boolean']['output']>;
   baseUrl?: Maybe<Scalars['String']['output']>;
   contextLimit?: Maybe<Scalars['Int']['output']>;
   id?: Maybe<Scalars['String']['output']>;
@@ -1802,6 +1809,7 @@ export type SettingMinHaving = {
 };
 
 export type SettingOrderBy = {
+  agentSampling?: InputMaybe<InnerOrder>;
   baseUrl?: InputMaybe<InnerOrder>;
   contextLimit?: InputMaybe<InnerOrder>;
   id?: InputMaybe<InnerOrder>;
@@ -2065,6 +2073,7 @@ export type UpdateSessionManyInput = {
 };
 
 export type UpdateSettingInput = {
+  agentSampling?: InputMaybe<Scalars['Boolean']['input']>;
   baseUrl?: InputMaybe<Scalars['String']['input']>;
   contextLimit?: InputMaybe<Scalars['Int']['input']>;
   id?: InputMaybe<Scalars['String']['input']>;
@@ -2185,7 +2194,7 @@ export type TruncateSessionMutation = { truncateSession: number };
 export type ConfigQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type ConfigQuery = { hasApiKey: boolean, setting?: { baseUrl: string, model: string, maxTokens: number, temperature: number, maxToolIterations: number, systemPrompt: string, contextLimit: number, toolDiscovery: SettingsToolDiscoveryEnum, reasoningEffort: SettingsReasoningEffortEnum, reasoningReplay: string, taskModels: unknown, pricing: unknown, voiceBaseUrl: string, sttModel: string, ttsModel: string, ttsVoice: string, speakReplies: boolean } | null };
+export type ConfigQuery = { hasApiKey: boolean, setting?: { baseUrl: string, model: string, maxTokens: number, temperature: number, maxToolIterations: number, systemPrompt: string, contextLimit: number, toolDiscovery: SettingsToolDiscoveryEnum, reasoningEffort: SettingsReasoningEffortEnum, reasoningReplay: string, agentSampling: boolean, taskModels: unknown, pricing: unknown, voiceBaseUrl: string, sttModel: string, ttsModel: string, ttsVoice: string, speakReplies: boolean } | null };
 
 export type SaveConfigMutationVariables = Exact<{
   set: UpdateSettingInput;
@@ -2529,6 +2538,7 @@ export const ConfigDocument = new TypedDocumentString(`
     toolDiscovery
     reasoningEffort
     reasoningReplay
+    agentSampling
     taskModels
     pricing
     voiceBaseUrl
