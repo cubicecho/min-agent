@@ -793,6 +793,11 @@ export async function runTurn(
   };
   const announce = once(carded);
   const answer = once(answered);
+  // An agent's thinking, as its progress streams it: the reply it ends in carries none, since an
+  // agent says its scratchpad only as events. Kept for the reply's row, so the panel survives the
+  // turn — a stretch between two of its own calls a paragraph of its own.
+  let agentThinking = "";
+  let thoughtSinceCall = false;
 
   let result: AgentLoopResult;
   try {
@@ -927,6 +932,18 @@ export async function runTurn(
         // An agent's own calls, as its progress tells them: carded like the turn's, once each,
         // since the calls it hands back are told by the loop as well.
         const isAgents = "seq" in event && Boolean(id);
+        if ("seq" in event && kind === "thinking" && delta) {
+          const opens = agentThinking !== "" && thoughtSinceCall === false;
+          if (opens) {
+            agentThinking += "\n\n";
+            emit({ type: "reasoning_delta", text: "\n\n" });
+          }
+          agentThinking += delta;
+          thoughtSinceCall = true;
+        }
+        if (isAgents && (kind === "tool-call" || kind === "tool-result")) {
+          thoughtSinceCall = false;
+        }
         if (isAgents && kind === "tool-call") {
           announce(id as string, () =>
             emit({ type: "tool_use", id: id as string, ...shownCall(event.name ?? "", delta) }),
@@ -991,7 +1008,15 @@ export async function runTurn(
         const { wallMs = 0, firstTokenMs } = reply.usage;
         streamedMs += firstTokenMs === undefined ? 0 : Math.max(0, wallMs - firstTokenMs);
         storedCalls = new Set(reply.toolCalls.map((call) => call.id));
-        assistantRow = await append(deps, session, storedReply(written.raw, reply));
+        // An agent's reply carries its thinking only as the events above.
+        const thought = agentThinking && !reply.reasoning ? { reasoning: agentThinking } : {};
+        agentThinking = "";
+        thoughtSinceCall = false;
+        assistantRow = await append(
+          deps,
+          session,
+          storedReply(written.raw, { ...reply, ...thought }),
+        );
       },
     });
   } catch (error) {
@@ -1001,10 +1026,10 @@ export async function runTurn(
     // rows and in the transcript both, so what the next turn sends is what the chat shows.
     const partial = failure?.partial;
     const kept =
-      signal?.aborted && (partial?.content || partial?.reasoning)
+      signal?.aborted && (partial?.content || partial?.reasoning || agentThinking)
         ? storedReply(
-            { role: "assistant", content: partial.content },
-            { reasoning: partial.reasoning ?? "" },
+            { role: "assistant", content: partial?.content ?? "" },
+            { reasoning: partial?.reasoning || agentThinking },
           )
         : undefined;
     if (kept) {

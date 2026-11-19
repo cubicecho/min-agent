@@ -51,19 +51,14 @@ const LISTING = {
   ],
 };
 
-/** The agent's own call, as ai-router's progress tells it. */
-const agentsCall = stamp(
+/** The agent's own thinking and call, as ai-router's progress tells them. */
+const agentsProgress = [
+  { kind: RunEventKind.Thinking, text: "Look it " },
+  { kind: RunEventKind.Thinking, text: "up." },
   { kind: RunEventKind.ToolCall, id: "srv-1", name: "web__search", text: '{"q":"tea"}' },
-  "run-1",
-  1,
-  0,
-);
-const agentsResult = stamp(
   { kind: RunEventKind.ToolResult, id: "srv-1", name: "web__search", text: "green", ok: true },
-  "run-1",
-  2,
-  0,
-);
+  { kind: RunEventKind.Thinking, text: "Green, then." },
+].map((input, at) => stamp(input, "run-1", at + 1, 0));
 
 /** "Fine.", led by the agent's progress where the request asked for it. */
 function reply(body: Record<string, unknown>): Response {
@@ -74,7 +69,7 @@ function reply(body: Record<string, unknown>): Response {
   }
   const head = { id: "c", created: 0, model: String(body.model) };
   const encoder = new TextEncoder();
-  const progress = [agentsCall, agentsResult].map((event) =>
+  const progress = agentsProgress.map((event) =>
     encoder.encode(`data: ${JSON.stringify(progressChunk(event, head))}\n\n`),
   );
   const rest = answer.body;
@@ -115,10 +110,13 @@ const tool = (name: string): ToolDefinition => ({
   function: { name, description: name, parameters: { type: "object", properties: {} } },
 });
 
+let chat = sessionOf();
+
 const run = async (model: string) => {
   const events: StreamEvent[] = [];
+  chat = sessionOf();
   await runTurn(
-    { session: sessionOf(), prompt: "hi", model, onEvent: (event) => events.push(event) },
+    { session: chat, prompt: "hi", model, onEvent: (event) => events.push(event) },
     { mcp, store, settings: { current: () => settings } },
   );
   return events;
@@ -226,6 +224,18 @@ describe("a turn on an agent", () => {
       isError: false,
     });
     expect(events.filter((event) => event.type === "tool_use")).toHaveLength(1);
+  });
+
+  it("streams the agent's thinking, and keeps it on the reply, a paragraph either side of a call", async () => {
+    const events = await run("helper");
+
+    const streamedThought = events.flatMap((event) =>
+      event.type === "reasoning_delta" ? [event.text] : [],
+    );
+    expect(streamedThought.join("")).toBe("Look it up.\n\nGreen, then.");
+    const reply = chat.messages.at(-1);
+    expect(reply).toMatchObject({ role: "assistant", content: "Fine." });
+    expect(reply?.reasoning_content).toBe("Look it up.\n\nGreen, then.");
   });
 
   it("runs a plain model on the same server as it always has", async () => {
