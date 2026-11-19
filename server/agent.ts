@@ -41,6 +41,7 @@ import {
 import { messageOf } from "../shared/errors.ts";
 import { shownCall } from "../shared/tool-proxy.ts";
 import {
+  type AgentCall,
   type ContextBreakdown,
   emptyUsage,
   type LlmConfig,
@@ -198,6 +199,7 @@ export function forApi(
       stats,
       followups,
       hook_context,
+      agent_calls,
       ...sent
     } = message as StoredMessage;
     if (sent.role === "user") {
@@ -798,6 +800,9 @@ export async function runTurn(
   // turn — a stretch between two of its own calls a paragraph of its own.
   let agentThinking = "";
   let thoughtSinceCall = false;
+  // The agent's own calls, by id, the same way: its progress tells each one and its answer, and
+  // nothing the reply carries does. Kept for the reply's row, so their cards survive the turn.
+  let agentCalls = new Map<string, AgentCall>();
 
   let result: AgentLoopResult;
   try {
@@ -945,10 +950,20 @@ export async function runTurn(
           thoughtSinceCall = false;
         }
         if (isAgents && kind === "tool-call") {
+          agentCalls.set(id as string, {
+            id: id as string,
+            name: event.name ?? "",
+            arguments: delta,
+          });
           announce(id as string, () =>
             emit({ type: "tool_use", id: id as string, ...shownCall(event.name ?? "", delta) }),
           );
           return;
+        }
+        const called = isAgents ? agentCalls.get(id as string) : undefined;
+        if (called && kind === "tool-result") {
+          called.content = delta;
+          called.isError = event.ok === false;
         }
         if (isAgents && kind === "tool-result") {
           answer(id as string, () =>
@@ -1010,12 +1025,17 @@ export async function runTurn(
         storedCalls = new Set(reply.toolCalls.map((call) => call.id));
         // An agent's reply carries its thinking only as the events above.
         const thought = agentThinking && !reply.reasoning ? { reasoning: agentThinking } : {};
+        // A call the agent handed back is the reply's own, stored as its rows already.
+        const asked = new Set(reply.toolCalls.map((call) => call.id));
+        const ran = [...agentCalls.values()].filter((call) => asked.has(call.id) === false);
         agentThinking = "";
         thoughtSinceCall = false;
+        agentCalls = new Map();
+        const stored = storedReply(written.raw, { ...reply, ...thought });
         assistantRow = await append(
           deps,
           session,
-          storedReply(written.raw, { ...reply, ...thought }),
+          ran.length ? { ...stored, agent_calls: ran } : stored,
         );
       },
     });

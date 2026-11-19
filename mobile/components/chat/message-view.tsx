@@ -361,6 +361,19 @@ const StoredMessages = memo(function StoredMessages({
               <HookLine key={`${hook.event}-${hook.source}-${hook.hookId}`} hook={hook} />
             ))}
             {item.reasoning_content ? <Reasoning text={item.reasoning_content} /> : null}
+            {/* An ai-router agent's own calls, made on its side on the way to this reply. */}
+            {(item.agent_calls ?? []).map((call) => {
+              const shown = shownCall(call.name, call.arguments);
+              return (
+                <ToolCall
+                  key={call.id}
+                  name={shown.name}
+                  input={shown.input}
+                  result={call.content ?? ""}
+                  isError={call.isError}
+                />
+              );
+            })}
             {body ? <Bubble from="assistant" content={<MarkdownBody text={body} />} /> : null}
             {(item.tool_calls ?? []).map((call) => {
               if (call.type !== "function") {

@@ -1,4 +1,4 @@
-import type { StoredMessage, ToolCall, TurnStats } from "./types.ts";
+import type { AgentCall, StoredMessage, ToolCall, TurnStats } from "./types.ts";
 
 /**
  * A message as a row: one column per thing, rather than the chat-completions message shape.
@@ -20,6 +20,7 @@ export interface MessageShape {
   toolCallId?: string | null;
   stats?: TurnStats | null;
   followups?: string[] | null;
+  agentCalls?: AgentCall[] | null;
 }
 
 /** A row, as the model and the transcript view want it. */
@@ -35,6 +36,7 @@ export function toStored(row: MessageShape): StoredMessage {
     ...(row.hookContext ? { hook_context: row.hookContext } : {}),
     ...(row.stats ? { stats: row.stats } : {}),
     ...(row.followups?.length ? { followups: row.followups } : {}),
+    ...(row.agentCalls?.length ? { agent_calls: row.agentCalls } : {}),
   } as StoredMessage;
 }
 
@@ -56,5 +58,6 @@ export function fromStored(message: StoredMessage): MessageShape {
     toolCallId: record.tool_call_id ?? null,
     stats: message.stats ?? null,
     followups: message.followups ?? null,
+    agentCalls: message.agent_calls ?? null,
   };
 }

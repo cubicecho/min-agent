@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { MODEL_DEFAULTS } from "../../shared/defaults.ts";
 import type {
+  AgentCall,
   Session,
   StoredMessage,
   TokenUsage,
@@ -224,6 +225,8 @@ export const messages = table(
     stats: jsonb().$type<TurnStats>(),
     /** Questions worth asking next. Attached to the same message as `stats`. */
     followups: jsonb().$type<string[]>(),
+    /** An ai-router agent's own calls on the way to this reply, for the chat's cards alone. */
+    agentCalls: jsonb().$type<AgentCall[]>(),
     createdAt: now(),
   },
   (table) => [index("messages_session_idx").on(table.sessionId, table.idx)],

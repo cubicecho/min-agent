@@ -394,6 +394,21 @@ export interface ModelInfo {
 }
 
 /**
+ * A call an ai-router agent made with its own tools while it worked on a reply, as its progress
+ * told it. Shown as a card with the reply and never sent to a model: the agent ran it, and the
+ * transcript it keeps of its run is its own.
+ */
+export interface AgentCall {
+  id: string;
+  name: string;
+  /** The call's arguments as the agent's progress said them, which may be cut short. */
+  arguments: string;
+  /** What it answered, which may be cut short too. Absent where no answer was told. */
+  content?: string;
+  isError?: boolean;
+}
+
+/**
  * A stored turn. `reasoning_content` is what the model thought before it, whichever field it
  * streamed in: kept so the panel survives a reload, and sent back as `reasoningReplay` says,
  * under `reasoning_field`.
@@ -410,6 +425,8 @@ export type StoredMessage = OpenAI.ChatCompletionMessageParam & {
   stats?: TurnStats;
   /** Questions worth asking next. Attached to the same message as `stats`. */
   followups?: string[];
+  /** The calls an ai-router agent made with its own tools on the way to this reply. */
+  agent_calls?: AgentCall[];
 };
 
 export interface Session {

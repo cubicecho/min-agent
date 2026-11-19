@@ -101,6 +101,18 @@ describe("session store", () => {
     expect(cut?.messages).toHaveLength(3);
   });
 
+  it("reads an agent's own calls back with the reply they were stored on", async () => {
+    const session = await store.createSession();
+    const calls = [{ id: "srv-1", name: "web__search", arguments: "{}", content: "green" }];
+    await store.addMessage(session.id, 0, {
+      role: "assistant",
+      content: "Fine.",
+      agent_calls: calls,
+    });
+    const [reply] = (await store.getSession(session.id))?.messages ?? [];
+    expect(reply).toEqual({ role: "assistant", content: "Fine.", agent_calls: calls });
+  });
+
   it("stores the hooks' context on a question after the question", async () => {
     const session = await store.createSession();
     const id = await store.addMessage(session.id, 0, { role: "user", content: "hi" });
