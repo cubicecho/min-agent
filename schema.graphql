@@ -10,6 +10,7 @@ type Setting {
   toolDiscovery: SettingsToolDiscoveryEnum!
   reasoningEffort: SettingsReasoningEffortEnum!
   reasoningReplay: String!
+  promptLayout: String!
   agentSampling: Boolean!
   taskModels: JSON!
   pricing: JSON!
@@ -103,6 +104,7 @@ type SettingMinAggregate {
   toolDiscovery: SettingsToolDiscoveryEnum
   reasoningEffort: SettingsReasoningEffortEnum
   reasoningReplay: String
+  promptLayout: String
   voiceBaseUrl: String
   sttModel: String
   ttsModel: String
@@ -121,6 +123,7 @@ type SettingMaxAggregate {
   toolDiscovery: SettingsToolDiscoveryEnum
   reasoningEffort: SettingsReasoningEffortEnum
   reasoningReplay: String
+  promptLayout: String
   voiceBaseUrl: String
   sttModel: String
   ttsModel: String
@@ -139,6 +142,7 @@ type SettingCountNonNullAggregate {
   toolDiscovery: Int!
   reasoningEffort: Int!
   reasoningReplay: Int!
+  promptLayout: Int!
   agentSampling: Int!
   taskModels: Int!
   pricing: Int!
@@ -161,6 +165,7 @@ type SettingCountDistinctAggregate {
   toolDiscovery: Int!
   reasoningEffort: Int!
   reasoningReplay: Int!
+  promptLayout: Int!
   voiceBaseUrl: Int!
   sttModel: Int!
   ttsModel: Int!
@@ -193,6 +198,7 @@ type SettingGroupKeys {
   toolDiscovery: SettingsToolDiscoveryEnum
   reasoningEffort: SettingsReasoningEffortEnum
   reasoningReplay: String
+  promptLayout: String
   voiceBaseUrl: String
   sttModel: String
   ttsModel: String
@@ -607,6 +613,7 @@ input UpdateSettingInput {
   toolDiscovery: SettingsToolDiscoveryEnum
   reasoningEffort: SettingsReasoningEffortEnum
   reasoningReplay: String
+  promptLayout: String
   agentSampling: Boolean
   taskModels: JSON
   pricing: JSON
@@ -638,6 +645,7 @@ input SettingFilters {
   toolDiscovery: SettingsToolDiscoveryEnumFilter
   reasoningEffort: SettingsReasoningEffortEnumFilter
   reasoningReplay: StringFilter
+  promptLayout: StringFilter
   agentSampling: BooleanFilter
   taskModels: JSONFilter
   pricing: JSONFilter
@@ -1146,6 +1154,7 @@ input SettingOrderBy {
   toolDiscovery: InnerOrder
   reasoningEffort: InnerOrder
   reasoningReplay: InnerOrder
+  promptLayout: InnerOrder
   agentSampling: InnerOrder
   taskModels: InnerOrder
   pricing: InnerOrder
@@ -1255,6 +1264,7 @@ input SettingCountNonNullHaving {
   toolDiscovery: AggregateNumberFilter
   reasoningEffort: AggregateNumberFilter
   reasoningReplay: AggregateNumberFilter
+  promptLayout: AggregateNumberFilter
   agentSampling: AggregateNumberFilter
   taskModels: AggregateNumberFilter
   pricing: AggregateNumberFilter
@@ -1277,6 +1287,7 @@ input SettingCountDistinctHaving {
   toolDiscovery: AggregateNumberFilter
   reasoningEffort: AggregateNumberFilter
   reasoningReplay: AggregateNumberFilter
+  promptLayout: AggregateNumberFilter
   voiceBaseUrl: AggregateNumberFilter
   sttModel: AggregateNumberFilter
   ttsModel: AggregateNumberFilter
@@ -2078,6 +2089,7 @@ enum SettingDistinctColumn {
   toolDiscovery
   reasoningEffort
   reasoningReplay
+  promptLayout
   agentSampling
   taskModels
   pricing
@@ -2101,6 +2113,7 @@ enum SettingGroupByColumn {
   toolDiscovery
   reasoningEffort
   reasoningReplay
+  promptLayout
   agentSampling
   voiceBaseUrl
   sttModel

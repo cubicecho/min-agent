@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ADD COLUMN "prompt_layout" text DEFAULT 'plain' NOT NULL;

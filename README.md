@@ -274,6 +274,20 @@ fenced as that server's advice rather than the user's, and cut at about a thousa
 server that pasted its README cannot crowd out the rest. A server is a third party, and this is
 text it controls landing where a model is most inclined to take it literally.
 
+**Layout** (Settings → Agent, under the system prompt) is how those pieces are set apart for the
+model: your prompt, the servers' instructions and the tool catalogue. It is agent-core's
+`promptLayout`, and the agent spec carries it:
+
+- **Plain** (default) writes them as they are, a blank line apart.
+- **Markdown** puts each under a heading: `## Identity` for your prompt.
+- **XML** puts each in a tag: `<prompt_identity>…</prompt_identity>` for your prompt, then
+  `<server_instructions>` and `<tool_catalogue>`. Each text is fenced, so nothing in it can close
+  its tag.
+
+Changing it changes the head of every request, so the next turn in each chat misses the server's
+prompt cache once. A turn on an ai-router agent ignores it: the agent lays out its own prompt and
+gets yours as plain text.
+
 **Trust what its tools say they do** is on for a new server, and decides which calls a turn runs
 together — see [below](#what-a-turn-does-not-make-you-wait-for). A tool can declare itself
 read-only (`readOnlyHint`); the spec calls that a claim, not a guarantee. It is on by default
@@ -436,6 +450,8 @@ agent-core's `remoteAgent` mode:
   set, and one it does not allow refuses the whole request, so turn it on only for agents that
   take them.
 - No window, compaction, pruning or preselection: those are the agent's to do.
+- The system prompt goes as plain text whatever **Layout** says, and the agent takes it as the
+  app's system message (`app_system`).
 - The agent's own tool calls are carded in the chat from its progress, beside the ones it hands
   back.
 

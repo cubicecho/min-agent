@@ -23,7 +23,7 @@ export const SPEC_EXTENSION = "com.cubicecho.min-agent";
  * The one prompt part a settings row has. A row holds a single system prompt, so one name, which a
  * column writes as `{ role: "system", name, content }`.
  */
-const PROMPT_PART = "identity";
+export const PROMPT_PART = "identity";
 
 /**
  * Maps `taskModels` onto the spec's `tasks`.
@@ -64,6 +64,7 @@ const COLUMNS = defineSpecColumns<LlmConfig>(
     // Zero means "ask the server" on both sides, so it crosses as it is.
     contextLimit: { path: "model.contextLength" },
     systemPrompt: { path: `prompt.${PROMPT_PART}` },
+    promptLayout: { path: "promptLayout" },
     toolDiscovery: { path: "tools.discovery" },
     maxToolIterations: { path: "tools.maxIterations" },
     pricing: {

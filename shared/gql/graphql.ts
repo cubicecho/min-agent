@@ -1531,6 +1531,7 @@ export type Setting = {
   maxToolIterations: Scalars['Int']['output'];
   model: Scalars['String']['output'];
   pricing: Scalars['JSON']['output'];
+  promptLayout: Scalars['String']['output'];
   reasoningEffort: SettingsReasoningEffortEnum;
   reasoningReplay: Scalars['String']['output'];
   speakReplies: Scalars['Boolean']['output'];
@@ -1575,6 +1576,7 @@ export type SettingCountDistinctAggregate = {
   maxTokens: Scalars['Int']['output'];
   maxToolIterations: Scalars['Int']['output'];
   model: Scalars['Int']['output'];
+  promptLayout: Scalars['Int']['output'];
   reasoningEffort: Scalars['Int']['output'];
   reasoningReplay: Scalars['Int']['output'];
   sttModel: Scalars['Int']['output'];
@@ -1593,6 +1595,7 @@ export type SettingCountDistinctHaving = {
   maxTokens?: InputMaybe<AggregateNumberFilter>;
   maxToolIterations?: InputMaybe<AggregateNumberFilter>;
   model?: InputMaybe<AggregateNumberFilter>;
+  promptLayout?: InputMaybe<AggregateNumberFilter>;
   reasoningEffort?: InputMaybe<AggregateNumberFilter>;
   reasoningReplay?: InputMaybe<AggregateNumberFilter>;
   sttModel?: InputMaybe<AggregateNumberFilter>;
@@ -1613,6 +1616,7 @@ export type SettingCountNonNullAggregate = {
   maxToolIterations: Scalars['Int']['output'];
   model: Scalars['Int']['output'];
   pricing: Scalars['Int']['output'];
+  promptLayout: Scalars['Int']['output'];
   reasoningEffort: Scalars['Int']['output'];
   reasoningReplay: Scalars['Int']['output'];
   speakReplies: Scalars['Int']['output'];
@@ -1635,6 +1639,7 @@ export type SettingCountNonNullHaving = {
   maxToolIterations?: InputMaybe<AggregateNumberFilter>;
   model?: InputMaybe<AggregateNumberFilter>;
   pricing?: InputMaybe<AggregateNumberFilter>;
+  promptLayout?: InputMaybe<AggregateNumberFilter>;
   reasoningEffort?: InputMaybe<AggregateNumberFilter>;
   reasoningReplay?: InputMaybe<AggregateNumberFilter>;
   speakReplies?: InputMaybe<AggregateNumberFilter>;
@@ -1658,6 +1663,7 @@ export enum SettingDistinctColumn {
   MaxToolIterations = 'maxToolIterations',
   Model = 'model',
   Pricing = 'pricing',
+  PromptLayout = 'promptLayout',
   ReasoningEffort = 'reasoningEffort',
   ReasoningReplay = 'reasoningReplay',
   SpeakReplies = 'speakReplies',
@@ -1686,6 +1692,7 @@ export type SettingFilters = {
   maxToolIterations?: InputMaybe<IntFilter>;
   model?: InputMaybe<StringFilter>;
   pricing?: InputMaybe<JsonFilter>;
+  promptLayout?: InputMaybe<StringFilter>;
   reasoningEffort?: InputMaybe<SettingsReasoningEffortEnumFilter>;
   reasoningReplay?: InputMaybe<StringFilter>;
   speakReplies?: InputMaybe<BooleanFilter>;
@@ -1719,6 +1726,7 @@ export enum SettingGroupByColumn {
   MaxTokens = 'maxTokens',
   MaxToolIterations = 'maxToolIterations',
   Model = 'model',
+  PromptLayout = 'promptLayout',
   ReasoningEffort = 'reasoningEffort',
   ReasoningReplay = 'reasoningReplay',
   SpeakReplies = 'speakReplies',
@@ -1740,6 +1748,7 @@ export type SettingGroupKeys = {
   maxTokens?: Maybe<Scalars['Int']['output']>;
   maxToolIterations?: Maybe<Scalars['Int']['output']>;
   model?: Maybe<Scalars['String']['output']>;
+  promptLayout?: Maybe<Scalars['String']['output']>;
   reasoningEffort?: Maybe<SettingsReasoningEffortEnum>;
   reasoningReplay?: Maybe<Scalars['String']['output']>;
   speakReplies?: Maybe<Scalars['Boolean']['output']>;
@@ -1771,6 +1780,7 @@ export type SettingMaxAggregate = {
   maxTokens?: Maybe<Scalars['Int']['output']>;
   maxToolIterations?: Maybe<Scalars['Int']['output']>;
   model?: Maybe<Scalars['String']['output']>;
+  promptLayout?: Maybe<Scalars['String']['output']>;
   reasoningEffort?: Maybe<SettingsReasoningEffortEnum>;
   reasoningReplay?: Maybe<Scalars['String']['output']>;
   sttModel?: Maybe<Scalars['String']['output']>;
@@ -1796,6 +1806,7 @@ export type SettingMinAggregate = {
   maxTokens?: Maybe<Scalars['Int']['output']>;
   maxToolIterations?: Maybe<Scalars['Int']['output']>;
   model?: Maybe<Scalars['String']['output']>;
+  promptLayout?: Maybe<Scalars['String']['output']>;
   reasoningEffort?: Maybe<SettingsReasoningEffortEnum>;
   reasoningReplay?: Maybe<Scalars['String']['output']>;
   sttModel?: Maybe<Scalars['String']['output']>;
@@ -1823,6 +1834,7 @@ export type SettingOrderBy = {
   maxToolIterations?: InputMaybe<InnerOrder>;
   model?: InputMaybe<InnerOrder>;
   pricing?: InputMaybe<InnerOrder>;
+  promptLayout?: InputMaybe<InnerOrder>;
   reasoningEffort?: InputMaybe<InnerOrder>;
   reasoningReplay?: InputMaybe<InnerOrder>;
   speakReplies?: InputMaybe<InnerOrder>;
@@ -2087,6 +2099,7 @@ export type UpdateSettingInput = {
   maxToolIterations?: InputMaybe<Scalars['Int']['input']>;
   model?: InputMaybe<Scalars['String']['input']>;
   pricing?: InputMaybe<Scalars['JSON']['input']>;
+  promptLayout?: InputMaybe<Scalars['String']['input']>;
   reasoningEffort?: InputMaybe<SettingsReasoningEffortEnum>;
   reasoningReplay?: InputMaybe<Scalars['String']['input']>;
   speakReplies?: InputMaybe<Scalars['Boolean']['input']>;
@@ -2200,7 +2213,7 @@ export type TruncateSessionMutation = { truncateSession: number };
 export type ConfigQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type ConfigQuery = { hasApiKey: boolean, setting?: { baseUrl: string, model: string, maxTokens: number, temperature: number, maxToolIterations: number, systemPrompt: string, contextLimit: number, toolDiscovery: SettingsToolDiscoveryEnum, reasoningEffort: SettingsReasoningEffortEnum, reasoningReplay: string, agentSampling: boolean, taskModels: unknown, pricing: unknown, voiceBaseUrl: string, sttModel: string, ttsModel: string, ttsVoice: string, speakReplies: boolean } | null };
+export type ConfigQuery = { hasApiKey: boolean, setting?: { baseUrl: string, model: string, maxTokens: number, temperature: number, maxToolIterations: number, systemPrompt: string, contextLimit: number, toolDiscovery: SettingsToolDiscoveryEnum, reasoningEffort: SettingsReasoningEffortEnum, reasoningReplay: string, agentSampling: boolean, promptLayout: string, taskModels: unknown, pricing: unknown, voiceBaseUrl: string, sttModel: string, ttsModel: string, ttsVoice: string, speakReplies: boolean } | null };
 
 export type SaveConfigMutationVariables = Exact<{
   set: UpdateSettingInput;
@@ -2547,6 +2560,7 @@ export const ConfigDocument = new TypedDocumentString(`
     reasoningEffort
     reasoningReplay
     agentSampling
+    promptLayout
     taskModels
     pricing
     voiceBaseUrl

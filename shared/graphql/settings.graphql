@@ -13,6 +13,7 @@ query Config {
     reasoningEffort
     reasoningReplay
     agentSampling
+    promptLayout
     taskModels
     pricing
     voiceBaseUrl

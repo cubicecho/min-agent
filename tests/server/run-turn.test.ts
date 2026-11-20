@@ -538,6 +538,27 @@ describe("the request body", () => {
     expect(system.content).toContain("Read before writing.");
   });
 
+  it.each(["markdown", "xml"] as const)(
+    "writes the prompt and the servers' guidance in the %s layout",
+    async (promptLayout) => {
+      configure({ toolDiscovery: "eager", promptLayout });
+      offer(READ);
+      guidance = { fs: "Read before writing." };
+      script = [says("hello")];
+
+      await run(sessionOf(), "hi");
+
+      const [system] = bodies()[0].messages as { content: string }[];
+      const prompt =
+        promptLayout === "xml"
+          ? "<prompt_identity>\nBe brief.\n</prompt_identity>"
+          : "## Identity\n\nBe brief.";
+      expect(system.content).toBe(
+        `${prompt}\n\n${serverInstructionsPrompt(catalog(), { layout: promptLayout })}`,
+      );
+    },
+  );
+
   // Proxied is the loop's own mode, which writes the guidance where on demand does: between the
   // operator's prompt and the catalogue. min-agent ran the loop eager and wrote the proxy's
   // catalogue itself until agent-core 4.17 took host tools, so the guidance followed it then.

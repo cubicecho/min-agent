@@ -1,4 +1,6 @@
 import {
+  PROMPT_LAYOUTS,
+  type PromptLayoutName,
   REASONING_EFFORTS,
   REASONING_REPLAYS,
   type ReasoningEffort,
@@ -49,6 +51,18 @@ const REPLAY_LABEL: Record<ReasoningReplayPolicy, string> = {
 const REPLAY_OPTIONS = REASONING_REPLAYS.map((replay) => ({
   label: REPLAY_LABEL[replay],
   value: replay,
+}));
+
+/** The layout menu, in the order `PROMPT_LAYOUTS` gives it: the default first. */
+const LAYOUT_LABEL: Record<PromptLayoutName, string> = {
+  plain: "Plain — the prompt as written",
+  markdown: "Markdown — a heading for each section",
+  xml: "XML — a tag around each section",
+};
+
+const LAYOUT_OPTIONS = PROMPT_LAYOUTS.map((layout) => ({
+  label: LAYOUT_LABEL[layout],
+  value: layout,
 }));
 
 const DISCOVERY_OPTIONS = [
@@ -141,6 +155,7 @@ export function AgentPanel() {
         reasoningReplay,
         agentSampling,
         systemPrompt,
+        promptLayout,
       }) => ({
         maxTokens,
         temperature,
@@ -151,6 +166,7 @@ export function AgentPanel() {
         reasoningReplay,
         agentSampling,
         systemPrompt,
+        promptLayout,
       })}
       content={({ form }) => (
         <>
@@ -266,9 +282,21 @@ export function AgentPanel() {
             title="System prompt"
             description="Sent at the head of every turn, before the conversation."
             contentSlot={
-              <form.AppField name="systemPrompt">
-                {(field) => <field.TextAreaField label="Prompt" className="min-h-36" />}
-              </form.AppField>
+              <>
+                <form.AppField name="systemPrompt">
+                  {(field) => <field.TextAreaField label="Prompt" className="min-h-36" />}
+                </form.AppField>
+                <form.AppField name="promptLayout">
+                  {(field) => (
+                    <field.ComboboxField
+                      descriptionPlacement={placement}
+                      label="Layout"
+                      description="How the prompt, the MCP servers' instructions and the tool catalogue are set apart for the model. Markdown and XML mark where each one starts and ends, which some models follow more closely. Changing it changes the head of every request, so the next turn in each chat misses the server's prompt cache once. An ai-router agent lays out its own prompt, and is sent this one as plain text."
+                      options={LAYOUT_OPTIONS}
+                    />
+                  )}
+                </form.AppField>
+              </>
             }
           />
 

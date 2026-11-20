@@ -1,5 +1,10 @@
 import { messageOf } from "@shared/errors.ts";
-import type { LlmConfigView, ReasoningEffort, ReasoningReplayPolicy } from "@shared/types.ts";
+import type {
+  LlmConfigView,
+  PromptLayoutName,
+  ReasoningEffort,
+  ReasoningReplayPolicy,
+} from "@shared/types.ts";
 import { useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -42,6 +47,7 @@ export type Draft = {
   reasoningEffort: ReasoningEffort;
   reasoningReplay: ReasoningReplayPolicy;
   agentSampling: boolean;
+  promptLayout: PromptLayoutName;
   taskModels: Record<string, string>;
   voiceBaseUrl: string;
   sttModel: string;

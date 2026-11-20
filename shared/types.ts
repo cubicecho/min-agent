@@ -1,5 +1,10 @@
 // Types only, from here: agent-core is the server's, and nothing of it may reach the app's bundle.
-import type { ReasoningField, ReasoningReplay, TokenLedger } from "@cubicecho/agent-core";
+import type {
+  PromptLayout,
+  ReasoningField,
+  ReasoningReplay,
+  TokenLedger,
+} from "@cubicecho/agent-core";
 import type { HookEvent, McpStatus } from "@cubicecho/agent-mcp-pool";
 import { HOOK_EVENTS, INJECT_EVENTS } from "@cubicecho/agent-mcp-pool/hooks";
 import type OpenAI from "openai";
@@ -60,6 +65,21 @@ export const REASONING_REPLAYS = [
 
 export type ReasoningReplayPolicy = (typeof REASONING_REPLAYS)[number];
 
+/**
+ * How the system prompt is written for the model, as agent-core's `PromptLayout`: as the text it
+ * is (`plain`, agent-core's default and so this one), under a markdown heading per part, or in an
+ * XML tag per part, with the servers' guidance and the tool catalogue laid out to match.
+ *
+ * Written out for the same reason as `REASONING_REPLAYS`, and held to the type the same way.
+ */
+export const PROMPT_LAYOUTS = [
+  "plain",
+  "markdown",
+  "xml",
+] as const satisfies readonly PromptLayout[];
+
+export type PromptLayoutName = (typeof PROMPT_LAYOUTS)[number];
+
 export const llmConfigSchema = z.object({
   /** Any OpenAI-compatible endpoint: OpenAI, Ollama, LM Studio, vLLM, OpenRouter, ... */
   baseUrl: z.string().min(1).default("http://localhost:11434/v1"),
@@ -95,6 +115,11 @@ export const llmConfigSchema = z.object({
     .max(MODEL_CEILINGS.maxToolIterations)
     .default(MODEL_DEFAULTS.maxToolIterations),
   systemPrompt: z.string().default("You are min-agent, a concise and careful assistant."),
+  /**
+   * How the system prompt is laid out on min-agent's own loop. See `PROMPT_LAYOUTS`. A turn on an
+   * ai-router agent sends the prompt as plain text, since the agent lays out its own.
+   */
+  promptLayout: z.enum(PROMPT_LAYOUTS).default("plain"),
   /** Context window in tokens. 0 asks the server, which not every server answers. */
   contextLimit: z.number().int().min(0).default(0),
   /**

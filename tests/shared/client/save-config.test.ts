@@ -22,6 +22,7 @@ const STORED = {
   ttsVoice: "",
   speakReplies: false,
   agentSampling: false,
+  promptLayout: "plain",
 };
 
 /** What the server answers each of the three settings operations with. */
@@ -73,6 +74,7 @@ describe("saveConfig", () => {
       toolDiscovery: "ondemand",
       reasoningEffort: "off",
       reasoningReplay: "all",
+      promptLayout: "plain",
       hasApiKey: false,
     };
 

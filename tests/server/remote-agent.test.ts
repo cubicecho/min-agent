@@ -213,6 +213,15 @@ describe("a turn on an agent", () => {
     });
   });
 
+  it("sends the system prompt as plain text, whatever layout the settings pick", async () => {
+    settings = { ...settings, systemPrompt: "Be brief.", promptLayout: "xml" };
+    await run("helper");
+
+    const [system] = requests[0].messages as { role: string; content: string }[];
+    expect(system).toEqual({ role: "system", content: "Be brief." });
+    expect(requests[0]).not.toHaveProperty("promptLayout");
+  });
+
   it("cards the agent's own calls from its progress", async () => {
     const events = await run("helper");
 
