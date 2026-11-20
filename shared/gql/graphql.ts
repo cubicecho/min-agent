@@ -1178,7 +1178,7 @@ export type Query = {
   settings: Array<Setting>;
   settingsAggregate: SettingAggregate;
   settingsGroupBy: Array<SettingGroupBy>;
-  /** The saved settings as an agent spec: a `cubicecho.agent/1` document another host on `@cubicecho/agent-core` can read. The API key is never part of it. */
+  /** The saved settings as an agent spec: a `cubicecho.agent/2` document another host on `@cubicecho/agent-core` can read. The API key is never part of it. */
   spec: Scalars['JSON']['output'];
 };
 

@@ -1209,7 +1209,7 @@ describe("hooks", () => {
       turn: { index: 0 },
     });
 
-    const context = '<context source="Memory">\nlikes tea\n</context>';
+    const context = '<hook_context source="Memory">\nlikes tea\n</hook_context>';
     // Stored bare as it is asked, and the context patched on beside it once the loop has it.
     expect(stored[0]).toEqual({ role: "user", content: "what should I drink?" });
     expect(patches[0]).toEqual({ row: "row-0", patch: { hook_context: context } });

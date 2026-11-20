@@ -435,7 +435,7 @@ async function planTurn({ mcp, settings }: TurnDeps, session: Session, model: st
   // the same catalogue: built here as well only so the breakdown can say how much of the system
   // prompt it is, and so what is measured and what was sent are one text.
   const guidance = serverInstructionsPrompt(catalog);
-  // What the loop is handed as `system`. On demand and proxied it appends the guidance and then
+  // What the loop is handed as `systemPrompt`. On demand and proxied it appends the guidance and then
   // its catalogue, each in its own mode's wording, and both are the same text on every step and
   // every turn: the system prompt is the head of the request, so anything here that moves costs
   // the prompt cache for the whole transcript. What is loaded is said where it does not move the
@@ -841,7 +841,7 @@ export async function runTurn(
             tasks,
           },
       // On demand and proxied the loop appends the catalogue itself, after the guidance.
-      system: head,
+      systemPrompt: head,
       // Attributed per server and fenced as that server's advice, not the user's: an MCP server is
       // a third party, and this is text it controls landing where a model is most inclined to take
       // it literally.

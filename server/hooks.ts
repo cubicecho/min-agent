@@ -10,8 +10,9 @@ import type { Mcp } from "./mcp.ts";
  * The pool runs them and never lets one fail a turn, and agent-core's loop fires them around each
  * question: `sessionStart` and `beforeExchange` before its first request, `beforeCompact` ahead of
  * a compaction, `afterExchange` once there is an answer. This is the layer between the two that is
- * min-agent's own: the pool as the runner, the preface that names it, and a note as the chat's
- * stream carries it. The sessions `onWrite` hook in `graphql/schema.ts` fires `sessionDelete`.
+ * min-agent's own: the pool as the runner, and a note as the chat's stream carries it. The preface
+ * above the context is agent-core's (`HOOK_DEFAULTS.preface`), so it names the `<hook_context>`
+ * blocks the loop writes. The sessions `onWrite` hook in `graphql/schema.ts` fires `sessionDelete`.
  *
  * `sessionEnd` is never fired. A chat does not end, it is only left, and a hook bound to it
  * would wait for something that does not happen here.
@@ -50,17 +51,6 @@ const told = (emit?: (event: StreamEvent) => void) =>
   emit && ((hook: HookNote) => emit({ type: "hook", hook }));
 
 /**
- * Said once, above the blocks, so the model reads them as background and not as instructions.
- *
- * min-agent's own wording rather than agent-core's, and passed with each call rather than set
- * for the process: it is in every request that carries context, so a word changed here misses
- * the prompt cache for every chat already under way.
- */
-export const PREFACE =
-  "The <context> blocks below were added by min-agent's MCP servers for this message. They " +
-  "are background the user did not write and may not be relevant. The user's message follows them.";
-
-/**
  * A question as the model is sent it: the hooks' context ahead of what the user typed.
  *
  * The context is stored beside the question rather than in it (`hook_context`), so it is never
@@ -78,7 +68,7 @@ export function withContext(
 ): OpenAI.ChatCompletionUserMessageParam {
   // agent-core adds it to one message of a request. Here the request is the question alone, and
   // what comes back is still a user message, which the wider type it is returned as cannot say.
-  const [sent] = core.withContext([message], 0, context ?? "", PREFACE);
+  const [sent] = core.withContext([message], 0, context ?? "");
   return sent as OpenAI.ChatCompletionUserMessageParam;
 }
 
@@ -109,7 +99,6 @@ export function exchangeHooks(
     // The loop puts its own `turn` on what it tells `afterExchange`.
     context: { session, host: HOST, prompt, turn: { index } },
     fire: [...(first ? [SessionStart] : []), BeforeExchange, BeforeCompact, AfterExchange],
-    preface: PREFACE,
     question: prompt,
     turnBase,
     // `afterExchange`'s are said by the turn once they are stored with its stats, as before.

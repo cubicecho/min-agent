@@ -211,7 +211,7 @@ not tables:
 query    health          is the server up, and what is it pointed at
 query    models          asks the configured provider to list its models
 query    hasApiKey       whether a key is set, without returning it
-query    spec            the saved settings as a cubicecho.agent/1 document, without the key
+query    spec            the saved settings as a cubicecho.agent/2 document, without the key
 query    mcpStatus       each configured server with its live connection state and tools
 query    mcpPrompts      the prompts the connected servers offer, for the composer's picker
 query    mcpPrompt       one of them expanded with its arguments, as text for a draft
@@ -379,7 +379,8 @@ Every event also has `session.id`, `host` (`min-agent`) and `now`.
 it's only left.
 
 A hook with `inject` set adds what the tool returns to the request, as a
-`<context source="…">` block ahead of that turn's question. The limits:
+`<hook_context source="…">` block ahead of that turn's question, under agent-core's preface
+(`HOOK_DEFAULTS.preface`). The limits:
 - Each block is capped at the hook's `maxTokens` (default 1000), and all of them together at
   2000.
 - Each hook on an injecting event gets 3 seconds.
@@ -425,7 +426,7 @@ What `turn.messages` and `compacting` contain:
 
 An ai-router agent is a model that runs a whole agent loop of its own: its own MCP servers, its own
 compaction, and the app's tools handed back for the app to run. ai-router marks one on its model
-listing (`"ai_router": { "kind": "agent" }`), and a turn on one runs as a thin client of it —
+listing (`"agent_core": { "kind": "agent" }`), and a turn on one runs as a thin client of it —
 agent-core's `remoteAgent` mode:
 
 - Every MCP tool and resource tool goes out as one of the app's own, whatever **Tool loading**

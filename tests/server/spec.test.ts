@@ -101,9 +101,9 @@ afterEach(() => {
 
 describe("settingsSpec", () => {
   /** The whole document for a fresh install, so a change to what is exported is a visible diff. */
-  it("writes the default row as a cubicecho.agent/1 document", () => {
+  it("writes the default row as a cubicecho.agent/2 document", () => {
     expect(settingsSpec(llmConfigSchema.parse({}))).toEqual({
-      spec: "cubicecho.agent/1",
+      spec: "cubicecho.agent/2",
       id: "default",
       name: "min-agent",
       endpoint: { baseUrl: "http://localhost:11434/v1" },
@@ -115,7 +115,13 @@ describe("settingsSpec", () => {
         reasoningReplay: "all",
         contextLength: 0,
       },
-      prompt: [{ id: "identity", text: "You are min-agent, a concise and careful assistant." }],
+      prompt: [
+        {
+          role: "system",
+          name: "identity",
+          content: "You are min-agent, a concise and careful assistant.",
+        },
+      ],
       tools: { discovery: "ondemand", maxIterations: 20 },
       tasks: {
         compaction: { model: "" },
@@ -221,7 +227,7 @@ describe("a settings row, out to a spec and back", () => {
     const stored = row();
 
     const base = parsed(settingsSpec(stored));
-    const layer = parsed({ spec: "cubicecho.agent/1", model: { extraBody } });
+    const layer = parsed({ spec: "cubicecho.agent/2", model: { extraBody } });
     expect([...base.warnings, ...layer.warnings]).toEqual([]);
 
     const resolved = resolveAgentSpec([base.spec, layer.spec]);
