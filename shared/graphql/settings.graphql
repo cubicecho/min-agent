@@ -13,6 +13,7 @@ query Config {
     reasoningEffort
     reasoningReplay
     agentSampling
+    promptLayout
     taskModels
     pricing
     voiceBaseUrl
@@ -41,7 +42,7 @@ query Models {
   }
 }
 
-# The saved row as a `cubicecho.agent/1` document. JSON on the wire and to the app, which copies
+# The saved row as a `cubicecho.agent/2` document. JSON on the wire and to the app, which copies
 # it out and never reads it; the API key is not in it.
 query Spec {
   spec

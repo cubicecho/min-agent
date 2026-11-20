@@ -19,8 +19,11 @@ import type { LlmConfig } from "../shared/types.ts";
 /** The key min-agent's own fields travel under: the ones the format has no name for. */
 export const SPEC_EXTENSION = "com.cubicecho.min-agent";
 
-/** The one prompt part a settings row has. A row holds a single system prompt, so one id. */
-const PROMPT_PART = "identity";
+/**
+ * The one prompt part a settings row has. A row holds a single system prompt, so one name, which a
+ * column writes as `{ role: "system", name, content }`.
+ */
+export const PROMPT_PART = "identity";
 
 /**
  * Maps `taskModels` onto the spec's `tasks`.
@@ -61,6 +64,7 @@ const COLUMNS = defineSpecColumns<LlmConfig>(
     // Zero means "ask the server" on both sides, so it crosses as it is.
     contextLimit: { path: "model.contextLength" },
     systemPrompt: { path: `prompt.${PROMPT_PART}` },
+    promptLayout: { path: "promptLayout" },
     toolDiscovery: { path: "tools.discovery" },
     maxToolIterations: { path: "tools.maxIterations" },
     pricing: {
@@ -82,7 +86,7 @@ const COLUMNS = defineSpecColumns<LlmConfig>(
  * Builds the agent spec for a settings row.
  * @param config The row. Only the columns `COLUMNS` names are read, so `apiKey` has no way into
  * the document.
- * @returns A `cubicecho.agent/1` document with no `tools.servers` key, which means every server.
+ * @returns A `cubicecho.agent/2` document with no `tools.servers` key, which means every server.
  */
 export function settingsSpec(config: LlmConfig): AgentSpec {
   return {

@@ -89,6 +89,11 @@ export const settings = table("settings", {
    * way in and on the way out, as it is for every bound the column type cannot say.
    */
   reasoningReplay: text().notNull().default("all"),
+  /**
+   * How the system prompt is laid out: `plain`, `markdown` or `xml`. See `LlmConfig.promptLayout`.
+   * Plain text for the same reason as `reasoningReplay`, with `PROMPT_LAYOUTS` the check.
+   */
+  promptLayout: text().notNull().default("plain"),
   /** Send the sampling settings to an ai-router agent too. See `LlmConfig.agentSampling`. */
   agentSampling: boolean().notNull().default(false),
   /**

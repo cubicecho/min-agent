@@ -13,10 +13,12 @@ import {
   listModels as listEndpointModels,
   listLines,
   PROXY_TOOLS,
+  type PromptLayout,
   REASONING_CONTENT,
   ReasoningReplay,
   runAgentLoop,
   type SideTask,
+  type StackedPart,
   SUMMARY_LEAD,
   sanitizeTools,
   servedWindow,
@@ -28,6 +30,7 @@ import {
   tryAsk,
   withContext as withContextAt,
 } from "@cubicecho/agent-core";
+import { writeParts } from "@cubicecho/agent-core/spec";
 import type { ElicitHandler, ToolDefinition } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { measureRequest, splitContext } from "../shared/client/usage.ts";
@@ -67,6 +70,7 @@ import {
   read as readResource,
 } from "./mcp-resources.ts";
 import { isRemoteAgent } from "./remote-agent.ts";
+import { PROMPT_PART } from "./spec.ts";
 import type { SessionPatch, Store } from "./store.ts";
 
 /**
@@ -431,16 +435,26 @@ async function planTurn({ mcp, settings }: TurnDeps, session: Session, model: st
   // Nothing is carried when proxied: a definition loaded last turn is already in the transcript,
   // and one a compaction took out has to be loadable again rather than answered "already loaded".
   const carried = proxied ? [] : (session.loadedTools ?? []);
+  // How the system prompt is written: the setting, on min-agent's own loop. An agent lays out its
+  // own prompt, and what it is sent is the app's system message, so it is sent as plain text.
+  const layout: PromptLayout = remote ? "plain" : config.promptLayout;
   // The servers' own guidance, as the loop writes it into the request (`serverInstructions`) from
-  // the same catalogue: built here as well only so the breakdown can say how much of the system
-  // prompt it is, and so what is measured and what was sent are one text.
-  const guidance = serverInstructionsPrompt(catalog);
-  // What the loop is handed as `system`. On demand and proxied it appends the guidance and then
-  // its catalogue, each in its own mode's wording, and both are the same text on every step and
-  // every turn: the system prompt is the head of the request, so anything here that moves costs
-  // the prompt cache for the whole transcript. What is loaded is said where it does not move the
-  // prefix instead — the tool array, and the `load_tools` result.
+  // the same catalogue and in the same layout: built here as well only so the breakdown can say
+  // how much of the system prompt it is, and so what is measured and what was sent are one text.
+  const guidance = serverInstructionsPrompt(catalog, { layout });
+  // What the loop is handed as `systemPrompt`. On demand and proxied it appends the guidance and
+  // then its catalogue, each in its own mode's wording, and both are the same text on every step
+  // and every turn: the system prompt is the head of the request, so anything here that moves
+  // costs the prompt cache for the whole transcript. What is loaded is said where it does not move
+  // the prefix instead — the tool array, and the `load_tools` result.
   const head = config.systemPrompt.trim();
+  // The row's one prompt part, so the loop writes it in `layout`. Plain writes it as the text it
+  // is, so a row left at plain sends what the string did. None when the prompt is blank.
+  const parts: StackedPart[] = head
+    ? [{ role: "system", name: PROMPT_PART, content: head, owner: "agent" }]
+    : [];
+  // The prompt as the model reads it, for the breakdown: the part in its tag or under its heading.
+  const written = layout === "plain" || parts.length === 0 ? head : writeParts(parts, layout).text;
   return {
     config,
     model: chosenModel,
@@ -456,6 +470,9 @@ async function planTurn({ mcp, settings }: TurnDeps, session: Session, model: st
     carried,
     guidance,
     head,
+    layout,
+    parts,
+    written,
   };
 }
 
@@ -730,8 +747,20 @@ export async function runTurn(
   deps: TurnDeps,
 ) {
   const plan = await planTurn(deps, session, model);
-  const { config, contextLimit, catalog, discovery, onDemand, native, carried, guidance, head } =
-    plan;
+  const {
+    config,
+    contextLimit,
+    catalog,
+    discovery,
+    onDemand,
+    native,
+    carried,
+    guidance,
+    head,
+    layout,
+    parts,
+    written,
+  } = plan;
   const chosenModel = plan.model;
   const emit = onEvent ?? (() => {});
 
@@ -839,9 +868,11 @@ export async function runTurn(
             // before it is sent. None set is none of the three.
             ...(contextLimit > 0 ? { contextLength: contextLimit } : {}),
             tasks,
+            promptLayout: layout,
           },
       // On demand and proxied the loop appends the catalogue itself, after the guidance.
-      system: head,
+      // To an agent, the app's system message, as text; to the loop's own model, the row's part.
+      systemPrompt: plan.remote ? head : parts,
       // Attributed per server and fenced as that server's advice, not the user's: an MCP server is
       // a third party, and this is text it controls landing where a model is most inclined to take
       // it literally.
@@ -916,7 +947,7 @@ export async function runTurn(
         const question = questionAt(sent, steers);
         lastRequest = measureRequest({
           system: hasSystem && typeof opening.content === "string" ? opening.content : "",
-          systemPrompt: config.systemPrompt,
+          systemPrompt: written,
           guidance,
           tools: sanitizeTools(
             request.tools.flatMap((tool) =>

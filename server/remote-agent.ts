@@ -7,11 +7,11 @@ import { type Endpoint, NO_KEY, normalizeBaseUrl } from "@cubicecho/agent-core";
  * tools a loop keeps for itself (`load_tools`, `call_tool`) are names such a server refuses to
  * take as the app's, and its compaction, pruning and tool loading are the server's to do.
  *
- * ai-router says so on its model listing, `"ai_router": { "kind": "agent" }` on the entry, and
+ * ai-router says so on its model listing, `"agent_core": { "kind": "agent" }` on the entry, and
  * agent-core's `listModels` keeps only an entry's id and window, so the listing is read here.
  */
 
-/** What an ai-router model entry carries to say it is an agent. */
+/** What an ai-router model entry carries under `agent_core` to say it is an agent. */
 const AGENT_KIND = "agent";
 
 /**
@@ -44,14 +44,14 @@ export async function isRemoteAgent(server: Endpoint, model: string): Promise<bo
     return false;
   }
   const entry = listed.find((each) => each.id === model);
-  const isAgent = entry?.ai_router?.kind === AGENT_KIND;
+  const isAgent = entry?.agent_core?.kind === AGENT_KIND;
   known.set(key, isAgent);
   return isAgent;
 }
 
 interface ListedModel {
   id?: unknown;
-  ai_router?: { kind?: unknown };
+  agent_core?: { kind?: unknown };
 }
 
 /**

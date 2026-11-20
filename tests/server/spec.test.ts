@@ -71,6 +71,7 @@ const settingsOf = (agent: ResolvedAgent): Record<string, unknown> => ({
   temperature: agent.temperature,
   maxToolIterations: agent.maxToolIterations,
   systemPrompt: agent.systemPrompt,
+  promptLayout: agent.promptLayout,
   contextLimit: agent.contextLength,
   toolDiscovery: agent.toolDiscovery,
   reasoningEffort: agent.reasoningEffort,
@@ -101,9 +102,9 @@ afterEach(() => {
 
 describe("settingsSpec", () => {
   /** The whole document for a fresh install, so a change to what is exported is a visible diff. */
-  it("writes the default row as a cubicecho.agent/1 document", () => {
+  it("writes the default row as a cubicecho.agent/2 document", () => {
     expect(settingsSpec(llmConfigSchema.parse({}))).toEqual({
-      spec: "cubicecho.agent/1",
+      spec: "cubicecho.agent/2",
       id: "default",
       name: "min-agent",
       endpoint: { baseUrl: "http://localhost:11434/v1" },
@@ -115,7 +116,14 @@ describe("settingsSpec", () => {
         reasoningReplay: "all",
         contextLength: 0,
       },
-      prompt: [{ id: "identity", text: "You are min-agent, a concise and careful assistant." }],
+      prompt: [
+        {
+          role: "system",
+          name: "identity",
+          content: "You are min-agent, a concise and careful assistant.",
+        },
+      ],
+      promptLayout: "plain",
       tools: { discovery: "ondemand", maxIterations: 20 },
       tasks: {
         compaction: { model: "" },
@@ -189,6 +197,17 @@ describe("a settings row, out to a spec and back", () => {
    * prompt part before joining them, so the surrounding whitespace is the one thing in a row
    * that does not come back, and the expectation says so rather than avoiding it.
    */
+  it("round-trips the prompt layout", () => {
+    const stored = row({ promptLayout: "xml" });
+    const { spec } = parsed(JSON.parse(JSON.stringify(settingsSpec(stored))));
+
+    expect(spec.promptLayout).toBe("xml");
+    expect(coerceLlmConfig(settingsOf(resolveAgentSpec([spec])))).toEqual({
+      ...stored,
+      apiKey: "",
+    });
+  });
+
   it.each(["eager", "ondemand", "proxy"] as const)(
     "round-trips a %s row without a warning",
     (toolDiscovery) => {
@@ -221,7 +240,7 @@ describe("a settings row, out to a spec and back", () => {
     const stored = row();
 
     const base = parsed(settingsSpec(stored));
-    const layer = parsed({ spec: "cubicecho.agent/1", model: { extraBody } });
+    const layer = parsed({ spec: "cubicecho.agent/2", model: { extraBody } });
     expect([...base.warnings, ...layer.warnings]).toEqual([]);
 
     const resolved = resolveAgentSpec([base.spec, layer.spec]);

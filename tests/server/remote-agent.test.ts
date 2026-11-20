@@ -46,7 +46,7 @@ let listings = 0;
 const LISTING = {
   object: "list",
   data: [
-    { id: "helper", object: "model", owned_by: "ai-router", ai_router: { kind: "agent" } },
+    { id: "helper", object: "model", owned_by: "ai-router", agent_core: { kind: "agent" } },
     { id: "plain", object: "model", owned_by: "ai-router" },
   ],
 };
@@ -63,7 +63,7 @@ const agentsProgress = [
 /** "Fine.", led by the agent's progress where the request asked for it. */
 function reply(body: Record<string, unknown>): Response {
   const answer = streamed("Fine.");
-  const asked = (body.ai_router as { progress?: boolean } | undefined)?.progress === true;
+  const asked = (body.agent_core as { progress?: boolean } | undefined)?.progress === true;
   if (!asked || !answer.body) {
     return answer;
   }
@@ -184,7 +184,7 @@ describe("a turn on an agent", () => {
 
     const [body] = requests;
     expect(declaredTools(body).sort()).toEqual(["fs__read", "list_resources", "read_resource"]);
-    expect(body.ai_router).toMatchObject({ progress: true });
+    expect(body.agent_core).toMatchObject({ progress: true });
   });
 
   it("leaves the sampling, the window and the side tasks to the agent", async () => {
@@ -211,6 +211,15 @@ describe("a turn on an agent", () => {
       max_tokens: 2048,
       reasoning_effort: "high",
     });
+  });
+
+  it("sends the system prompt as plain text, whatever layout the settings pick", async () => {
+    settings = { ...settings, systemPrompt: "Be brief.", promptLayout: "xml" };
+    await run("helper");
+
+    const [system] = requests[0].messages as { role: string; content: string }[];
+    expect(system).toEqual({ role: "system", content: "Be brief." });
+    expect(requests[0]).not.toHaveProperty("promptLayout");
   });
 
   it("cards the agent's own calls from its progress", async () => {

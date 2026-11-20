@@ -1,3 +1,4 @@
+import { HOOK_DEFAULTS } from "@cubicecho/agent-core";
 import type { HookOutcome } from "@cubicecho/agent-mcp-pool";
 import type OpenAI from "openai";
 import { assertMcpServers } from "../../server/config.ts";
@@ -36,10 +37,8 @@ const outcome = (patch: Partial<HookOutcome>): HookOutcome => ({
   ...patch,
 });
 
-/** What min-agent says above the hooks' context. Its own wording, not agent-core's. */
-const PREFACE =
-  "The <context> blocks below were added by min-agent's MCP servers for this message. They " +
-  "are background the user did not write and may not be relevant. The user's message follows them.";
+/** What is said above the hooks' context: agent-core's own preface, which min-agent leaves as it is. */
+const PREFACE = HOOK_DEFAULTS.preface;
 
 // In a block, so the mock is not what the hook returns: Vitest calls a function a `beforeEach`
 // returns as that test's cleanup, which would call the mock once more after every test.
@@ -75,7 +74,7 @@ describe("withContext", () => {
 
   // The preface is part of every request that carries context, so a word changed here changes
   // what the model reads and misses the prompt cache for every chat already under way.
-  it("says min-agent's own preface above the context, to the character", () => {
+  it("says agent-core's preface above the context, to the character", () => {
     expect(withContext(question, "CTX")).toEqual({
       role: "user",
       content: `${PREFACE}\n\nCTX\n\nnow`,
@@ -129,7 +128,8 @@ describe("exchangeHooks", () => {
     });
     expect(hooks.question).toBe("what is in /tmp?");
     expect(hooks.turnBase).toBe(4);
-    expect(hooks.preface).toBe(PREFACE);
+    // Left to agent-core, which says its own `HOOK_DEFAULTS.preface`.
+    expect(hooks.preface).toBeUndefined();
   });
 
   it("tells the chat each note as it lands, but afterExchange's, which the turn says once stored", () => {

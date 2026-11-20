@@ -211,7 +211,7 @@ not tables:
 query    health          is the server up, and what is it pointed at
 query    models          asks the configured provider to list its models
 query    hasApiKey       whether a key is set, without returning it
-query    spec            the saved settings as a cubicecho.agent/1 document, without the key
+query    spec            the saved settings as a cubicecho.agent/2 document, without the key
 query    mcpStatus       each configured server with its live connection state and tools
 query    mcpPrompts      the prompts the connected servers offer, for the composer's picker
 query    mcpPrompt       one of them expanded with its arguments, as text for a draft
@@ -273,6 +273,20 @@ goes into the system prompt, after yours, under *MCP server instructions*. It is
 fenced as that server's advice rather than the user's, and cut at about a thousand tokens so a
 server that pasted its README cannot crowd out the rest. A server is a third party, and this is
 text it controls landing where a model is most inclined to take it literally.
+
+**Layout** (Settings → Agent, under the system prompt) is how those pieces are set apart for the
+model: your prompt, the servers' instructions and the tool catalogue. It is agent-core's
+`promptLayout`, and the agent spec carries it:
+
+- **Plain** (default) writes them as they are, a blank line apart.
+- **Markdown** puts each under a heading: `## Identity` for your prompt.
+- **XML** puts each in a tag: `<prompt_identity>…</prompt_identity>` for your prompt, then
+  `<server_instructions>` and `<tool_catalogue>`. Each text is fenced, so nothing in it can close
+  its tag.
+
+Changing it changes the head of every request, so the next turn in each chat misses the server's
+prompt cache once. A turn on an ai-router agent ignores it: the agent lays out its own prompt and
+gets yours as plain text.
 
 **Trust what its tools say they do** is on for a new server, and decides which calls a turn runs
 together — see [below](#what-a-turn-does-not-make-you-wait-for). A tool can declare itself
@@ -379,7 +393,8 @@ Every event also has `session.id`, `host` (`min-agent`) and `now`.
 it's only left.
 
 A hook with `inject` set adds what the tool returns to the request, as a
-`<context source="…">` block ahead of that turn's question. The limits:
+`<hook_context source="…">` block ahead of that turn's question, under agent-core's preface
+(`HOOK_DEFAULTS.preface`). The limits:
 - Each block is capped at the hook's `maxTokens` (default 1000), and all of them together at
   2000.
 - Each hook on an injecting event gets 3 seconds.
@@ -425,7 +440,7 @@ What `turn.messages` and `compacting` contain:
 
 An ai-router agent is a model that runs a whole agent loop of its own: its own MCP servers, its own
 compaction, and the app's tools handed back for the app to run. ai-router marks one on its model
-listing (`"ai_router": { "kind": "agent" }`), and a turn on one runs as a thin client of it —
+listing (`"agent_core": { "kind": "agent" }`), and a turn on one runs as a thin client of it —
 agent-core's `remoteAgent` mode:
 
 - Every MCP tool and resource tool goes out as one of the app's own, whatever **Tool loading**
@@ -435,6 +450,8 @@ agent-core's `remoteAgent` mode:
   set, and one it does not allow refuses the whole request, so turn it on only for agents that
   take them.
 - No window, compaction, pruning or preselection: those are the agent's to do.
+- The system prompt goes as plain text whatever **Layout** says, and the agent takes it as the
+  app's system message (`app_system`).
 - The agent's own tool calls are carded in the chat from its progress, beside the ones it hands
   back.
 

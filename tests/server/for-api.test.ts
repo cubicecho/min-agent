@@ -1,3 +1,4 @@
+import { HOOK_DEFAULTS } from "@cubicecho/agent-core";
 import { forApi } from "../../server/agent.ts";
 import type { StoredMessage } from "../../shared/types.ts";
 import { textOf, turnStats } from "../helpers.ts";
@@ -23,13 +24,10 @@ describe("forApi", () => {
     expect(textOf(later).endsWith("first")).toBe(true);
   });
 
-  it("sends the context under min-agent's preface, ahead of what the user typed", () => {
+  it("sends the context under agent-core's preface, ahead of what the user typed", () => {
     expect(forApi(transcript)[0]).toEqual({
       role: "user",
-      content:
-        "The <context> blocks below were added by min-agent's MCP servers for this message. " +
-        "They are background the user did not write and may not be relevant. The user's message " +
-        "follows them.\n\n<context>tea</context>\n\nfirst",
+      content: `${HOOK_DEFAULTS.preface}\n\n<context>tea</context>\n\nfirst`,
     });
   });
 

@@ -411,7 +411,7 @@ export function createSchema({
         spec: {
           type: new GraphQLNonNull(GraphQLJSON),
           description:
-            "The saved settings as an agent spec: a `cubicecho.agent/1` document another host on " +
+            "The saved settings as an agent spec: a `cubicecho.agent/2` document another host on " +
             "`@cubicecho/agent-core` can read. The API key is never part of it.",
           resolve: () => settingsSpec(config.current()),
         },
