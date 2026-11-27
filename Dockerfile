@@ -28,6 +28,7 @@ RUN npm run build
 # spawned as child processes, and an stdio server is almost always `npx something`, so
 # npm has to exist in here and has to be able to reach the network.
 FROM node:26-slim
+LABEL org.opencontainers.image.source=https://github.com/cubicecho/min-agent
 
 WORKDIR /app
 
