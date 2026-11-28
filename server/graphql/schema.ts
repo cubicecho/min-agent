@@ -22,6 +22,7 @@ import { listModels } from "../agent.ts";
 import { assertLlmConfigPatch, hasApiKey, type Settings } from "../config.ts";
 import type { Db } from "../db/client.ts";
 import { settings } from "../db/schema.ts";
+import { createDiscovery, type Discovery } from "../discovery.ts";
 import { surfaced, UserError } from "../errors.ts";
 import { sessionDeleted } from "../hooks.ts";
 import { createInbox, type Inbox } from "../inbox.ts";
@@ -103,6 +104,31 @@ const McpServerStateType = new GraphQLObjectType({
     },
     error: { type: GraphQLString },
     tools: { type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(McpToolType))) },
+  },
+});
+
+const DiscoveredMcpServerType = new GraphQLObjectType({
+  name: "DiscoveredMcpServer",
+  description:
+    "An MCP server another machine on the LAN announces over mDNS, read from its Server Card. " +
+    "A suggestion only: nothing connects to it until it is saved with `saveMcpServers`.",
+  fields: {
+    key: {
+      type: new GraphQLNonNull(GraphQLString),
+      description: "Unique on the network: `<mDNS instance>/<card name>`.",
+    },
+    name: { type: new GraphQLNonNull(GraphQLString), description: "The card's name." },
+    title: { type: GraphQLString, description: "The card's display title, when it has one." },
+    description: { type: new GraphQLNonNull(GraphQLString) },
+    host: {
+      type: new GraphQLNonNull(GraphQLString),
+      description: "The mDNS instance that announced it.",
+    },
+    url: { type: new GraphQLNonNull(GraphQLString), description: "Its streamable-HTTP endpoint." },
+    requiredHeaders: {
+      type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(GraphQLString))),
+      description: "Headers the card requires and gives no value for, e.g. `Authorization`.",
+    },
   },
 });
 
@@ -228,7 +254,18 @@ export interface SchemaDeps {
    * the turns share one, so absent is a new one of the schema's own.
    */
   inbox?: Inbox;
+  /** The MCP servers found on the LAN. Absent is one that never watches. */
+  discovery?: Discovery;
 }
+
+/** Discovery that is switched off, for a schema built without one (codegen, tests). */
+const idleDiscovery = (): Discovery =>
+  createDiscovery({
+    enabled: false,
+    configured: () => [],
+    watch: async () => ({ stop: async () => undefined }),
+    log: () => undefined,
+  });
 
 /**
  * Builds the API: the generated CRUD over the tables, and the fields written by hand.
@@ -242,6 +279,7 @@ export function createSchema({
   store,
   settings: config,
   inbox = createInbox(),
+  discovery = idleDiscovery(),
 }: SchemaDeps): GraphQLSchema {
   /**
    * The CRUD half of the API is generated from the Drizzle schema — sessions, messages and the
@@ -334,6 +372,13 @@ export function createSchema({
           type: mcpList,
           description: "Every configured MCP server, with its live connection state and tools.",
           resolve: () => mcp.state(),
+        },
+        discoveredMcpServers: {
+          type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(DiscoveredMcpServerType))),
+          description:
+            "MCP servers announced on the LAN that no configured http server points at yet, by " +
+            "title. Empty when discovery is off (`MCP_DISCOVERY=false`) or nothing was found.",
+          resolve: () => discovery.list(),
         },
         mcpPrompts: {
           type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(McpPromptType))),

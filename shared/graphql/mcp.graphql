@@ -74,3 +74,17 @@ query McpPromptCompletions(
     args: $args
   )
 }
+
+# Servers other machines announce on the LAN, offered on the MCP tab to add. Already-configured
+# URLs are left out by the server.
+query DiscoveredMcpServers {
+  discoveredMcpServers {
+    key
+    name
+    title
+    description
+    host
+    url
+    requiredHeaders
+  }
+}

@@ -2028,6 +2028,11 @@ type Query {
   mcpStatus: [McpServerState!]!
 
   """
+  MCP servers announced on the LAN that no configured http server points at yet, by title. Empty when discovery is off (`MCP_DISCOVERY=false`) or nothing was found.
+  """
+  discoveredMcpServers: [DiscoveredMcpServer!]!
+
+  """
   The prompts the connected servers offer, for a picker. Empty when none of them does; a server that cannot be listed is omitted rather than failing the query.
   """
   mcpPrompts: [McpPrompt!]!
@@ -2244,6 +2249,32 @@ type McpTool {
   In the row's `hiddenTools`: callable by its hooks, never offered to the model.
   """
   hidden: Boolean!
+}
+
+"""
+An MCP server another machine on the LAN announces over mDNS, read from its Server Card. A suggestion only: nothing connects to it until it is saved with `saveMcpServers`.
+"""
+type DiscoveredMcpServer {
+  """Unique on the network: `<mDNS instance>/<card name>`."""
+  key: String!
+
+  """The card's name."""
+  name: String!
+
+  """The card's display title, when it has one."""
+  title: String
+  description: String!
+
+  """The mDNS instance that announced it."""
+  host: String!
+
+  """Its streamable-HTTP endpoint."""
+  url: String!
+
+  """
+  Headers the card requires and gives no value for, e.g. `Authorization`.
+  """
+  requiredHeaders: [String!]!
 }
 
 """

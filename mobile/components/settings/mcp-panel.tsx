@@ -1,7 +1,14 @@
+import {
+  fromDiscovered,
+  fromHeaderDrafts,
+  type HeaderDraft,
+  toHeaderDrafts,
+} from "@shared/client/mcp-draft.ts";
 import { MS_PER_SECOND } from "@shared/consts.ts";
 import { FRESHNESS_DEFAULTS } from "@shared/defaults.ts";
 import { messageOf } from "@shared/errors.ts";
 import {
+  type DiscoveredMcpServer,
   HOOK_EVENTS_FIRED,
   INJECT_EVENTS,
   type McpServerConfig,
@@ -115,12 +122,17 @@ type HookDraft = {
   timeoutMs: number | undefined;
 };
 
-/** A server as the form holds it: the args as one line, the hooks as drafts. */
-type ServerDraft = Omit<McpServerConfig, "args" | "hooks"> & { args: string; hooks: HookDraft[] };
+/** A server as the form holds it: the args as one line, the hooks and headers as drafts. */
+type ServerDraft = Omit<McpServerConfig, "args" | "hooks" | "headers"> & {
+  args: string;
+  hooks: HookDraft[];
+  headers: HeaderDraft[];
+};
 
 const toDraft = (server: McpServerConfig): ServerDraft => ({
   ...server,
   args: server.args.join(" "),
+  headers: toHeaderDrafts(server.headers),
   hooks: server.hooks.map((hook) => ({
     id: hook.id,
     enabled: hook.enabled !== false,
@@ -138,6 +150,7 @@ const toDraft = (server: McpServerConfig): ServerDraft => ({
 const fromDraft = (draft: ServerDraft): McpServerConfig => ({
   ...draft,
   args: draft.args.split(" ").filter(Boolean),
+  headers: fromHeaderDrafts(draft.headers),
   hooks: draft.hooks.map((hook) => {
     // Context can only be added ahead of a request, so it goes when the hook moves off one.
     const injects = INJECT_EVENTS.has(hook.on) && hook.inject;
@@ -224,6 +237,33 @@ function Row({ state, onOpen }: { state: McpServerState; onOpen: () => void }) {
   );
 }
 
+/** A server found on the network: what it says it is, where, and whether it needs a secret. */
+function FoundRow({ server, onAdd }: { server: DiscoveredMcpServer; onAdd: () => void }) {
+  const name = server.title ?? server.name;
+  return (
+    <ListItem
+      leadingSlot={<Globe className="size-4 text-foreground" />}
+      title={name}
+      description={[server.description, server.url].filter(Boolean).join(" · ")}
+      meta={
+        server.requiredHeaders.length ? (
+          <Badge variant="secondary">Needs {server.requiredHeaders.join(", ")}</Badge>
+        ) : undefined
+      }
+      actionSlot={
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label={`Add ${name}`}
+          onPress={onAdd}
+          iconSlot={<Plus className="size-4" />}
+          content="Add"
+        />
+      }
+    />
+  );
+}
+
 /**
  * The create/edit form. It owns its own draft so typing does not re-render the list behind it,
  * and it is seeded afresh every time the dialog opens — `key` on the caller — rather than
@@ -264,6 +304,10 @@ function Editor({
   const toolNames = state?.tools.map((tool) => tool.name) ?? [];
   const toolOptions = toolNames.map((tool) => ({ label: tool, value: tool }));
   const name = title(initial);
+  // The headers a row was opened with, which for a server found on the network are the ones its
+  // card says it expects. A field each, by place in the list, so any name works; adding or
+  // renaming one is not something this form does.
+  const headerNames = Object.keys(initial.headers);
 
   // Memoised: the list behind this is polled, and defaults that change identity on every
   // render would be re-applied over what is being typed.
@@ -424,15 +468,28 @@ function Editor({
                     </form.AppField>
                   </>
                 ) : (
-                  <form.AppField name="url">
-                    {(field) => (
-                      <field.InputField
-                        label="URL"
-                        inputMode="url"
-                        placeholder="https://example.com/mcp"
-                      />
-                    )}
-                  </form.AppField>
+                  <>
+                    <form.AppField name="url">
+                      {(field) => (
+                        <field.InputField
+                          label="URL"
+                          inputMode="url"
+                          placeholder="https://example.com/mcp"
+                        />
+                      )}
+                    </form.AppField>
+                    {headerNames.map((header, index) => (
+                      <form.AppField key={header} name={`headers[${index}].value`}>
+                        {(field) => (
+                          <field.PasswordField
+                            descriptionPlacement={placement}
+                            label={header}
+                            description="Sent with every request to this server, which expects it. For Authorization, usually Bearer and a token."
+                          />
+                        )}
+                      </form.AppField>
+                    ))}
+                  </>
                 )
               }
             </form.Subscribe>
@@ -594,6 +651,13 @@ export function McpPanel({ active = true }: { active?: boolean }) {
     queryFn: api.mcp,
     refetchInterval: active ? POLL : false,
   });
+  // Servers other machines announce, offered below the list. The server leaves out the URLs a
+  // row already points at, so this is only ever what is left to add.
+  const discovered = useQuery({
+    queryKey: queryKeys.discoveredMcp,
+    queryFn: api.discoveredMcp,
+    refetchInterval: active ? POLL : false,
+  });
   const [editing, setEditing] = useState<Editing | null>(null);
 
   const save = useMutation({
@@ -602,6 +666,8 @@ export function McpPanel({ active = true }: { active?: boolean }) {
     // with it, so a refetch would only ask again for what is already in hand.
     onSuccess: (fresh) => {
       queryClient.setQueryData(queryKeys.mcp, fresh);
+      // A server just added from the network is no longer one to suggest.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.discoveredMcp });
       setEditing(null);
     },
   });
@@ -615,6 +681,7 @@ export function McpPanel({ active = true }: { active?: boolean }) {
 
   const list = servers.data ?? [];
   const configs = list.map((state) => state.config);
+  const found = discovered.data ?? [];
 
   // Every write is the whole list, so each of these is "the list, with one row changed".
   const commit = (value: McpServerConfig) =>
@@ -678,6 +745,34 @@ export function McpPanel({ active = true }: { active?: boolean }) {
               </>
             }
           />
+
+          {/*
+            Drawn only once something is found: the list is empty when discovery is switched off
+            as well, and a card saying "nothing here" would be wrong about why.
+          */}
+          {servers.isSuccess && found.length ? (
+            <SettingsCard
+              title="Found on your network"
+              description="MCP servers other machines on your network announce. Adding one fills in a new server for you to check and save; nothing connects until you do."
+              contentSlot={
+                <RowList
+                  label="MCP servers found on your network"
+                  contentSlot={found.map((server) => (
+                    <FoundRow
+                      key={server.key}
+                      server={server}
+                      onAdd={() =>
+                        setEditing({
+                          index: null,
+                          value: fromDiscovered(server, blank(configs), configs),
+                        })
+                      }
+                    />
+                  ))}
+                />
+              }
+            />
+          ) : null}
 
           {editing ? (
             <Editor

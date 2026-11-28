@@ -504,6 +504,26 @@ export interface McpServerState {
   tools: { name: string; description: string; hidden: boolean }[];
 }
 
+/**
+ * An MCP server another machine on the LAN announces, read from its Server Card, and offered on
+ * the MCP tab as one to add. Never connected to until the person saves it.
+ */
+export interface DiscoveredMcpServer {
+  /** Unique on the network: the announcing host's mDNS instance name and the card's name. */
+  key: string;
+  /** The card's name, e.g. `io.github.cubicecho.mcp-skills.nas/skills`. */
+  name: string;
+  /** The card's display title, when it has one. */
+  title: string | null;
+  description: string;
+  /** The mDNS instance that announced it. */
+  host: string;
+  /** Its streamable-HTTP endpoint. */
+  url: string;
+  /** Headers the card requires and gives no value for, e.g. `Authorization`: the person supplies them. */
+  requiredHeaders: string[];
+}
+
 /** One blank in a prompt template, as the server declared it. */
 export interface McpPromptArgument {
   name: string;

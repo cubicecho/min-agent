@@ -134,6 +134,23 @@ export type DateTimeFilter = {
   startsWith?: InputMaybe<Scalars['String']['input']>;
 };
 
+/** An MCP server another machine on the LAN announces over mDNS, read from its Server Card. A suggestion only: nothing connects to it until it is saved with `saveMcpServers`. */
+export type DiscoveredMcpServer = {
+  description: Scalars['String']['output'];
+  /** The mDNS instance that announced it. */
+  host: Scalars['String']['output'];
+  /** Unique on the network: `<mDNS instance>/<card name>`. */
+  key: Scalars['String']['output'];
+  /** The card's name. */
+  name: Scalars['String']['output'];
+  /** Headers the card requires and gives no value for, e.g. `Authorization`. */
+  requiredHeaders: Array<Scalars['String']['output']>;
+  /** The card's display title, when it has one. */
+  title?: Maybe<Scalars['String']['output']>;
+  /** Its streamable-HTTP endpoint. */
+  url: Scalars['String']['output'];
+};
+
 /** An answer to a server's question: give it the content, refuse, or put the question away. */
 export enum ElicitationAction {
   Accept = 'accept',
@@ -1148,6 +1165,8 @@ export enum OrderNulls {
 }
 
 export type Query = {
+  /** MCP servers announced on the LAN that no configured http server points at yet, by title. Empty when discovery is off (`MCP_DISCOVERY=false`) or nothing was found. */
+  discoveredMcpServers: Array<DiscoveredMcpServer>;
   /** Whether a key is set, without saying what it is. The Config tab shows a filled placeholder rather than an empty box; the key itself is excluded from `Setting`. */
   hasApiKey: Scalars['Boolean']['output'];
   /** Answers only once the settings are loaded and the schema is up. */
@@ -2166,6 +2185,11 @@ export type McpPromptCompletionsQueryVariables = Exact<{
 
 export type McpPromptCompletionsQuery = { mcpPromptCompletions: Array<string> };
 
+export type DiscoveredMcpServersQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type DiscoveredMcpServersQuery = { discoveredMcpServers: Array<{ key: string, name: string, title?: string | null, description: string, host: string, url: string, requiredHeaders: Array<string> }> };
+
 export type SessionSummaryFragment = { id: string, title: string, createdAt: string, updatedAt: string, model: string, usage?: unknown | null, loadedTools: unknown, messageCount: number };
 
 export type MessageRowFragment = { id: string, idx: number, role: MessagesRoleEnum, content?: unknown | null, reasoningContent?: string | null, toolCalls?: unknown | null, toolCallId?: string | null, stats?: unknown | null, followups?: unknown | null, agentCalls?: unknown | null };
@@ -2455,6 +2479,19 @@ export const McpPromptCompletionsDocument = new TypedDocumentString(`
   )
 }
     `) as unknown as TypedDocumentString<McpPromptCompletionsQuery, McpPromptCompletionsQueryVariables>;
+export const DiscoveredMcpServersDocument = new TypedDocumentString(`
+    query DiscoveredMcpServers {
+  discoveredMcpServers {
+    key
+    name
+    title
+    description
+    host
+    url
+    requiredHeaders
+  }
+}
+    `) as unknown as TypedDocumentString<DiscoveredMcpServersQuery, DiscoveredMcpServersQueryVariables>;
 export const SessionsDocument = new TypedDocumentString(`
     query Sessions {
   sessions {

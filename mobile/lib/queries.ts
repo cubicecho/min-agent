@@ -8,6 +8,7 @@ export const queryKeys = {
   config: ["config"],
   models: ["models"],
   mcp: ["mcp"],
+  discoveredMcp: ["discovered-mcp"],
   mcpPrompts: ["mcp-prompts"],
   sessions: ["sessions"],
   /** One chat's transcript. Null while the empty pane has no chat yet. */
