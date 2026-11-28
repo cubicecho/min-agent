@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button.tsx";
 import { Form } from "@/components/ui/form.tsx";
 import { CircleCheck, Download, RefreshCw } from "@/components/ui/icons";
 import { setDisplaySettings, useDisplaySettings } from "@/lib/display-settings.ts";
+import { formatDateTime } from "@/lib/format";
 import { UPDATABLE } from "@/lib/updates.ts";
 import { setVoiceSettings, useVoiceSettings } from "@/lib/voice-settings.ts";
 import { useReportDirty } from "./dirty.tsx";
@@ -57,7 +58,7 @@ function Running() {
             label="Update"
             value={id ? id.slice(0, SHORT_ID_CHARS) : "The JavaScript this app was built with"}
           />
-          {built ? <PropertyRow label="Published" value={built.toLocaleString()} /> : null}
+          {built ? <PropertyRow label="Published" value={formatDateTime(built)} /> : null}
         </>
       }
     />

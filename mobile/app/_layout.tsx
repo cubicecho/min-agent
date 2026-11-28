@@ -22,10 +22,10 @@ import { ErrorPage } from "@/components/error-page.tsx";
 import { AppBarItem, SidebarItem } from "@/components/sidebar.tsx";
 import { SidebarLayout } from "@/components/split-layout.tsx";
 import { Button } from "@/components/ui/button.tsx";
+import { useHotkey } from "@/components/ui/hotkey";
 import { Plus, Settings } from "@/components/ui/icons";
 import { OverlayHost } from "@/components/ui/overlay.tsx";
 import { loadDisplaySettings } from "@/lib/display-settings.ts";
-import { useShortcut } from "@/lib/keys.ts";
 import { useBottomInset, useWide } from "@/lib/layout.ts";
 import { queryKeys } from "@/lib/queries.ts";
 import { loadServerUrl } from "@/lib/server-url.ts";
@@ -84,12 +84,13 @@ function Shell() {
   /*
     The shortcuts that are about the app rather than about a screen live here, because
     the frame is the one thing mounted on every route — bound in the session list they would
-    stop working the moment you opened Settings. They are web-only, like everything in
-    `lib/keys.ts`; a phone has no keyboard to press them with.
+    stop working the moment you opened Settings. They are web-only, as `useHotkey` is;
+    a phone has no keyboard to press them with. Bound `whileTyping`, since a chord means the
+    same thing wherever the caret is.
   */
   const newChat = useNewChat((id) => router.navigate(`/chat/${id}`));
-  useShortcut("mod+n", () => newChat.mutate());
-  useShortcut("mod+,", () => router.navigate("/settings"));
+  useHotkey("mod+n", () => newChat.mutate(), { whileTyping: true });
+  useHotkey("mod+,", () => router.navigate("/settings"), { whileTyping: true });
 
   const wide = useWide();
   const onChats = pathname === "/" || pathname.startsWith("/chat/");

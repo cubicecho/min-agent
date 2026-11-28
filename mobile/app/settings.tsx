@@ -15,6 +15,7 @@ import { ModelPanel } from "@/components/settings/model-panel.tsx";
 import { ServerPanel } from "@/components/settings/server-panel.tsx";
 import { SETTINGS_TABS, type SettingsTab } from "@/components/settings/tabs.ts";
 import { VoicePanel } from "@/components/settings/voice-panel.tsx";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/client.ts";
 import { queryKeys } from "@/lib/queries.ts";
@@ -56,11 +57,13 @@ export type PanelProps = { active: boolean };
  */
 type TabMark = "attention" | "unsaved";
 
-const MARK_STYLE: Record<TabMark, string> = {
-  attention: "bg-destructive",
-  unsaved: "bg-muted-foreground",
+/** A status dot's colour: broken is the failing red, unsaved the quiet grey. */
+const MARK_VARIANT: Record<TabMark, "destructive" | "secondary"> = {
+  attention: "destructive",
+  unsaved: "secondary",
 };
 
+/** Read as part of the tab's name — "MCP, needs attention". */
 const MARK_LABEL: Record<TabMark, string> = {
   attention: "needs attention",
   unsaved: "unsaved changes",
@@ -157,16 +160,17 @@ export default function SettingsScreen() {
                   {SETTINGS_TABS.map(({ key, label, icon: Icon }) => {
                     const mark = marks[key];
                     return (
-                      <TabsTrigger key={key} value={key}>
+                      <TabsTrigger
+                        key={key}
+                        value={key}
+                        trailingSlot={
+                          mark ? (
+                            <Badge variant={MARK_VARIANT[mark]} label={MARK_LABEL[mark]} />
+                          ) : null
+                        }
+                      >
                         <Icon />
                         {label}
-                        {mark ? (
-                          <View
-                            role="img"
-                            aria-label={MARK_LABEL[mark]}
-                            className={cn("size-1.5 rounded-full", MARK_STYLE[mark])}
-                          />
-                        ) : null}
                       </TabsTrigger>
                     );
                   })}

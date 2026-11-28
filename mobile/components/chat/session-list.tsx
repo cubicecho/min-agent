@@ -19,12 +19,12 @@ import { Alert } from "@/components/ui/alert.tsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button.tsx";
 import { Form } from "@/components/ui/form.tsx";
+import { useHotkey } from "@/components/ui/hotkey";
 import { Pencil, Plus, Trash2 } from "@/components/ui/icons";
 import type { InputHandle } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/client.ts";
-import { useShortcut } from "@/lib/keys.ts";
 import { invalidateSession, queryKeys } from "@/lib/queries.ts";
 import { useTurnActivity } from "@/lib/turns.ts";
 import type { SlotNode } from "@/lib/utils.ts";
@@ -204,7 +204,10 @@ function Search({ list }: { list: List }) {
   const box = useRef<InputHandle>(null);
   // Bound only while the box is on screen: a key that does nothing is worse than one that
   // was never taken, because the browser's own ⌘K would have done something.
-  useShortcut("mod+k", searchable(list) ? () => box.current?.focus() : undefined);
+  useHotkey("mod+k", () => box.current?.focus(), {
+    enabled: searchable(list),
+    whileTyping: true,
+  });
 
   const isShortList = searchable(list) === false;
   if (isShortList) {

@@ -1079,19 +1079,13 @@ rather than failing quietly.
 | `Esc` | Close a dialog or a select sheet; give up a rename |
 
 Browser and desktop only. The Electron build is the web build, and a phone has no keyboard to
-press them with, so on native `useShortcut` registers nothing.
+press them with, so on native `useHotkey` listens for nothing.
 
-`mobile/lib/keys.ts` is one `keydown` listener for the whole app rather than one per screen: a
-shortcut belongs to the window, and screens come and go under it. Components say what they
-answer to with `useShortcut(combo, handler)`, and passing `undefined` for the handler declines
-the key rather than binding it to nothing — the search box takes `⌘K` only while it is on
-screen, because a shortcut that silently does nothing is worse than one the browser still owns.
-
-Bindings are a stack per combo and only the last one runs, which is what Escape needs: a dialog
-opened over a screen that already answers to Escape should be the thing that closes, and it
-should hand the key back when it goes. Chords fire wherever the caret is — `⌘K` while writing a
-message is exactly when you want it — and so does Escape; a bare key would not, and is ignored
-while a text box has focus.
+They are cubeui's `useHotkey` (`mobile/components/ui/hotkey.tsx`), one call per shortcut with
+`enabled` saying when it is available: the search box takes `⌘K` only while it is on screen,
+because a shortcut that silently does nothing is worse than one the browser still owns. They are
+bound `whileTyping` — `⌘K` while writing a message is exactly when you want it — and stay quiet
+while a dialog or a menu has focus, which owns the keyboard while it is open.
 
 New chat and Settings are bound in the shell rather than in the list, because
 the shell is the one thing mounted on every route and they would otherwise stop working the moment
