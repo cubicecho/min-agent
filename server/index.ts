@@ -1,16 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
+import { watchServers } from "@cubicecho/mcp-discovery/mdns";
 import compression from "compression";
 import express from "express";
 import { createYoga, maskError } from "graphql-yoga";
 import { createSettings } from "./config.ts";
 import { createDb, waitForDatabase } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
+import { createDiscovery } from "./discovery.ts";
 import { surfaced } from "./errors.ts";
 import { createSchema } from "./graphql/schema.ts";
 import { HttpStatus } from "./http-status.ts";
 import { createMcp } from "./mcp.ts";
-import { DATABASE_URL, displayHost, HOST, PORT, ROOT } from "./paths.ts";
+import { DATABASE_URL, displayHost, HOST, MCP_DISCOVERY, PORT, ROOT } from "./paths.ts";
 import { createStore } from "./store.ts";
 import { createVoiceRouter } from "./voice.ts";
 
@@ -25,7 +27,15 @@ await settings.refresh();
 
 // The one pool of MCP connections the process runs on, handed to everything that talks to a server.
 const mcp = createMcp();
-const schema = createSchema({ db, mcp, store: createStore(db), settings });
+// MCP servers other machines announce on the LAN, suggested on the MCP tab and never connected
+// to on their own. See `discovery.ts`.
+const discovery = createDiscovery({
+  enabled: MCP_DISCOVERY,
+  configured: () => mcp.state().map((server) => server.config),
+  watch: (handlers) => watchServers(handlers),
+  log: (message) => console.log(message),
+});
+const schema = createSchema({ db, mcp, store: createStore(db), settings, discovery });
 
 const app = express();
 
@@ -132,9 +142,11 @@ app.listen(PORT, HOST, () => {
   console.log(`[min-agent] http://${displayHost()}:${PORT}`);
 });
 
+await discovery.start();
 await mcp.sync(await settings.loadMcpServers());
 
 const shutdown = async () => {
+  await discovery.stop();
   await mcp.shutdown();
   process.exit(0);
 };

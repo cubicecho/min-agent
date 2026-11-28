@@ -2,6 +2,7 @@ import { MS_PER_SECOND } from "@shared/consts.ts";
 import { FRESHNESS_DEFAULTS } from "@shared/defaults.ts";
 import { messageOf } from "@shared/errors.ts";
 import {
+  type DiscoveredMcpServer,
   HOOK_EVENTS_FIRED,
   INJECT_EVENTS,
   type McpServerConfig,
@@ -90,6 +91,45 @@ const blank = (taken: McpServerConfig[]): McpServerConfig => {
     hooks: [],
   };
 };
+
+/** What a server id may be, as `mcpServerSchema` checks it: up to 32, starting on a letter or digit. */
+const ID_MAX_CHARS = 32;
+
+/**
+ * An id for a server found on the network that no row uses yet: the last part of its card's
+ * name, `io.github.cubicecho.mcp-skills.nas/skills` → `skills`, then `skills-2` if that is taken.
+ */
+const freeId = (cardName: string, taken: McpServerConfig[]) => {
+  const tail = cardName.split("/").at(-1) ?? "";
+  const cleaned = tail
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^[^a-zA-Z0-9]+/, "")
+    .slice(0, ID_MAX_CHARS - 3);
+  const base = cleaned || "server";
+  let candidate = base;
+  for (let n = 2; taken.some((server) => server.id === candidate); n += 1) {
+    candidate = `${base}-${n}`;
+  }
+  return candidate;
+};
+
+/**
+ * A new row filled in from a server found on the network. The headers its card requires are
+ * there with no value: they are secrets only the person has, and the dialog asks for them.
+ */
+const fromDiscovered = (found: DiscoveredMcpServer, taken: McpServerConfig[]): McpServerConfig => ({
+  ...blank(taken),
+  id: freeId(found.name, taken),
+  label: found.title ?? found.name,
+  transport: "http",
+  command: "",
+  url: found.url,
+  headers: Object.fromEntries(found.requiredHeaders.map((header) => [header, ""])),
+});
+
+/** A header the dialog shows has to have a value: an empty one is a request the server refuses. */
+const headerProblem = ({ value }: { value: string }) =>
+  value.trim() ? undefined : "The server needs this header.";
 
 const EVENT_OPTIONS = HOOK_EVENTS_FIRED.map((event) => ({ label: event, value: event }));
 
@@ -224,6 +264,33 @@ function Row({ state, onOpen }: { state: McpServerState; onOpen: () => void }) {
   );
 }
 
+/** A server found on the network: what it says it is, where, and whether it needs a secret. */
+function FoundRow({ server, onAdd }: { server: DiscoveredMcpServer; onAdd: () => void }) {
+  const name = server.title ?? server.name;
+  return (
+    <ListItem
+      leadingSlot={<Globe className="size-4 text-foreground" />}
+      title={name}
+      description={[server.description, server.url].filter(Boolean).join(" · ")}
+      meta={
+        server.requiredHeaders.length ? (
+          <Badge variant="secondary">Needs {server.requiredHeaders.join(", ")}</Badge>
+        ) : undefined
+      }
+      actionSlot={
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label={`Add ${name}`}
+          onPress={onAdd}
+          iconSlot={<Plus className="size-4" />}
+          content="Add"
+        />
+      }
+    />
+  );
+}
+
 /**
  * The create/edit form. It owns its own draft so typing does not re-render the list behind it,
  * and it is seeded afresh every time the dialog opens — `key` on the caller — rather than
@@ -264,6 +331,9 @@ function Editor({
   const toolNames = state?.tools.map((tool) => tool.name) ?? [];
   const toolOptions = toolNames.map((tool) => ({ label: tool, value: tool }));
   const name = title(initial);
+  // The headers a row was opened with, which for a server found on the network are the ones its
+  // card says it needs. A field each; adding or renaming one is not something this form does.
+  const headerNames = Object.keys(initial.headers);
 
   // Memoised: the list behind this is polled, and defaults that change identity on every
   // render would be re-applied over what is being typed.
@@ -424,15 +494,33 @@ function Editor({
                     </form.AppField>
                   </>
                 ) : (
-                  <form.AppField name="url">
-                    {(field) => (
-                      <field.InputField
-                        label="URL"
-                        inputMode="url"
-                        placeholder="https://example.com/mcp"
-                      />
-                    )}
-                  </form.AppField>
+                  <>
+                    <form.AppField name="url">
+                      {(field) => (
+                        <field.InputField
+                          label="URL"
+                          inputMode="url"
+                          placeholder="https://example.com/mcp"
+                        />
+                      )}
+                    </form.AppField>
+                    {headerNames.map((header) => (
+                      <form.AppField
+                        key={header}
+                        name={`headers.${header}`}
+                        validators={{ onChange: headerProblem, onSubmit: headerProblem }}
+                      >
+                        {(field) => (
+                          <field.PasswordField
+                            descriptionPlacement={placement}
+                            label={header}
+                            description="Sent with every request to this server. For Authorization, usually Bearer and a token."
+                            required
+                          />
+                        )}
+                      </form.AppField>
+                    ))}
+                  </>
                 )
               }
             </form.Subscribe>
@@ -594,6 +682,13 @@ export function McpPanel({ active = true }: { active?: boolean }) {
     queryFn: api.mcp,
     refetchInterval: active ? POLL : false,
   });
+  // Servers other machines announce, offered below the list. The server leaves out the URLs a
+  // row already points at, so this is only ever what is left to add.
+  const discovered = useQuery({
+    queryKey: queryKeys.discoveredMcp,
+    queryFn: api.discoveredMcp,
+    refetchInterval: active ? POLL : false,
+  });
   const [editing, setEditing] = useState<Editing | null>(null);
 
   const save = useMutation({
@@ -602,6 +697,8 @@ export function McpPanel({ active = true }: { active?: boolean }) {
     // with it, so a refetch would only ask again for what is already in hand.
     onSuccess: (fresh) => {
       queryClient.setQueryData(queryKeys.mcp, fresh);
+      // A server just added from the network is no longer one to suggest.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.discoveredMcp });
       setEditing(null);
     },
   });
@@ -615,6 +712,7 @@ export function McpPanel({ active = true }: { active?: boolean }) {
 
   const list = servers.data ?? [];
   const configs = list.map((state) => state.config);
+  const found = discovered.data ?? [];
 
   // Every write is the whole list, so each of these is "the list, with one row changed".
   const commit = (value: McpServerConfig) =>
@@ -678,6 +776,31 @@ export function McpPanel({ active = true }: { active?: boolean }) {
               </>
             }
           />
+
+          {/*
+            Drawn only once something is found: the list is empty when discovery is switched off
+            as well, and a card saying "nothing here" would be wrong about why.
+          */}
+          {servers.isSuccess && found.length ? (
+            <SettingsCard
+              title="Found on your network"
+              description="MCP servers other machines on your network announce. Adding one fills in a new server for you to check and save; nothing connects until you do."
+              contentSlot={
+                <RowList
+                  label="MCP servers found on your network"
+                  contentSlot={found.map((server) => (
+                    <FoundRow
+                      key={server.key}
+                      server={server}
+                      onAdd={() =>
+                        setEditing({ index: null, value: fromDiscovered(server, configs) })
+                      }
+                    />
+                  ))}
+                />
+              }
+            />
+          ) : null}
 
           {editing ? (
             <Editor

@@ -122,6 +122,19 @@ export const SERVER_DEFAULTS: Readonly<ServerSettings> = Object.freeze({
   port: 8787,
 });
 
+export interface DiscoverySettings {
+  /**
+   * Whether the server watches the LAN for MCP servers announced over mDNS, to suggest on the MCP
+   * tab. `MCP_DISCOVERY=false` turns it off. On, because a suggestion is never connected to until
+   * it is saved; it needs multicast, which a container only has with `network_mode: host`.
+   */
+  enabled: boolean;
+}
+
+export const DISCOVERY_DEFAULTS: Readonly<DiscoverySettings> = Object.freeze({
+  enabled: true,
+});
+
 export interface DatabaseSettings {
   /** How many times the server asks a database that is not answering yet. */
   connectAttempts: number;

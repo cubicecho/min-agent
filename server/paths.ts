@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import manifest from "../package.json" with { type: "json" };
-import { SERVER_DEFAULTS } from "../shared/defaults.ts";
+import { DISCOVERY_DEFAULTS, SERVER_DEFAULTS } from "../shared/defaults.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -36,3 +36,24 @@ export const HOST = process.env.HOST ?? "0.0.0.0";
 /** A wildcard bind is not an address anything can connect to, so show one that is. */
 export const displayHost = (host = HOST) =>
   host === "0.0.0.0" || host === "::" ? "localhost" : host;
+
+/**
+ * An on/off environment variable: `true`/`1`/`on`/`yes` or `false`/`0`/`off`/`no`, any case.
+ *
+ * @param value - The variable as the environment holds it.
+ * @param fallback - What unset, or anything else, means.
+ * @returns The flag.
+ */
+export function envFlag(value: string | undefined, fallback: boolean): boolean {
+  const word = (value ?? "").trim().toLowerCase();
+  if (["true", "1", "on", "yes"].includes(word)) {
+    return true;
+  }
+  if (["false", "0", "off", "no"].includes(word)) {
+    return false;
+  }
+  return fallback;
+}
+
+/** Whether to watch the LAN for MCP servers to suggest on the MCP tab. See `DISCOVERY_DEFAULTS`. */
+export const MCP_DISCOVERY = envFlag(process.env.MCP_DISCOVERY, DISCOVERY_DEFAULTS.enabled);

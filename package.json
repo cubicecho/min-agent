@@ -31,8 +31,10 @@
   "dependencies": {
     "@cubicecho/agent-core": "^7.0.0",
     "@cubicecho/agent-mcp-pool": "^4.0.0",
+    "@cubicecho/mcp-discovery": "^0.3.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@vantreeseba/drizzle-graphql": "^9.0.0",
+    "bonjour-service": "^1.4.4",
     "compression": "^1.8.1",
     "drizzle-orm": "^1.0.0-rc.4",
     "express": "^5.2.1",

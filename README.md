@@ -103,6 +103,11 @@ here, not `localhost`; the compose file maps that name on Linux, where Docker do
 it. Nothing in min-agent is authenticated, so publish the port on a network you trust — or bind
 it to `127.0.0.1:8787:8787` and put something with a login in front.
 
+[Finding MCP servers on the LAN](#found-on-your-network) uses mDNS, which is multicast, and
+Docker's default bridge network does not pass it. Run the app container with
+`network_mode: host` for it to find anything; `docker-compose.yml` says what else changes then.
+Without it the server runs exactly as before and the suggestions list stays empty.
+
 The UI is built inside the image, by a first stage that has React Native, Metro and Tailwind in
 it; only `mobile/dist` crosses into the runtime stage, so none of that ships. That is a slower
 build in exchange for an image anyone can run without having Expo installed anywhere — which is
@@ -213,6 +218,7 @@ query    models          asks the configured provider to list its models
 query    hasApiKey       whether a key is set, without returning it
 query    spec            the saved settings as a cubicecho.agent/2 document, without the key
 query    mcpStatus       each configured server with its live connection state and tools
+query    discoveredMcpServers  MCP servers announced on the LAN and not configured yet
 query    mcpPrompts      the prompts the connected servers offer, for the composer's picker
 query    mcpPrompt       one of them expanded with its arguments, as text for a draft
 query    mcpPromptCompletions  what a server suggests for one of a prompt's arguments
@@ -253,6 +259,30 @@ Both transports are supported. A stdio server is a command and its arguments —
 **Settings → MCP**; each row is a row in `mcp_servers`, and saving reconnects the pool.
 
 Tools are exposed to the model as `<server id>__<tool name>`, so ids must be unique and short.
+
+### Found on your network
+
+min-agent watches the LAN for MCP servers that announce themselves over mDNS (`_mcp._tcp`,
+through `@cubicecho/mcp-discovery`), reads each host's AI Catalog and the Server Cards in it, and
+lists what it found under **Found on your network** on the MCP tab: the card's title or name, its
+description, its streamable-HTTP URL, and the headers the card says it needs (`Needs
+Authorization`). The `discoveredMcpServers` query is the same list: `key`, `name`, `title`,
+`description`, `host`, `url` and `requiredHeaders`. A server whose URL a configured http row
+already points at is left out, so the list is only what is left to add.
+
+**Add** opens the ordinary new-server dialog, filled in: an http server at the card's URL, the
+card's title as its label, an id from the last part of the card's name, and a box for each
+required header. Nothing is connected or saved until you check it and press **Add server**, and
+the header values — a token, usually — are yours to type: a card never carries a secret. That is
+deliberate. mDNS and Server Cards are unauthenticated, so anything on the network can announce
+anything under any name, and connecting to it would hand its tools to the model. min-agent
+suggests; it never links on its own.
+
+Discovery only: min-agent has no MCP endpoint, so it announces nothing. It is on by default;
+`MCP_DISCOVERY=false` turns it off, and the section then never appears. It needs multicast,
+which Docker's default bridge network drops — in a container it finds nothing unless the
+service runs with `network_mode: host` (see the comment in `docker-compose.yml`). The watcher
+re-reads every host's catalog every five minutes, and stops on shutdown.
 
 The panel is a list, and editing happens in a dialog over it. What you come here to read is which
 servers answered and what they are offering; a row says that in one line (where it points, its

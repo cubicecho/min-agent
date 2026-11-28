@@ -27,6 +27,12 @@ services:
   min-agent:
     build: .
     image: min-agent
+    # Finding MCP servers on the LAN (Settings -> MCP, "Found on your network") is mDNS, which
+    # is multicast, and the default bridge network drops it: in this setup it finds nothing.
+    # For it to work, use `network_mode: host` in place of `ports:`, point DATABASE_URL at
+    # localhost and publish the db's 5432 on 127.0.0.1, since `db` no longer resolves from the
+    # host network. MCP_DISCOVERY=false turns discovery off altogether.
+    # network_mode: host
     ports:
       - '8787:8787'
     environment:

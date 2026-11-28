@@ -4,6 +4,7 @@ import {
   ConfigDocument,
   CreateSessionDocument,
   DeleteSessionDocument,
+  DiscoveredMcpServersDocument,
   type ElicitationAction as ElicitationActionEnum,
   McpPromptCompletionsDocument,
   McpPromptDocument,
@@ -30,6 +31,7 @@ import {
 import { toStored } from "../messages.ts";
 import type {
   AgentCall,
+  DiscoveredMcpServer,
   LlmConfig,
   LlmConfigView,
   McpPrompt,
@@ -290,6 +292,13 @@ export function createClient({ baseUrl, fetch: fetchImpl }: ClientOptions) {
 
     reconnectMcp: async (id: string) =>
       (await request(ReconnectMcpServerDocument, { id })).reconnectMcpServer.map(mcpState),
+
+    /** Servers announced on the LAN that nothing configured points at yet, to offer as new rows. */
+    discoveredMcp: async (): Promise<DiscoveredMcpServer[]> =>
+      (await request(DiscoveredMcpServersDocument)).discoveredMcpServers.map((server) => ({
+        ...server,
+        title: server.title ?? null,
+      })),
 
     /** The prompts the connected servers offer, for the composer's picker. */
     mcpPrompts: async () => (await request(McpPromptsDocument)).mcpPrompts as McpPrompt[],
