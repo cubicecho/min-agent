@@ -9,6 +9,7 @@ import {
 import { createSchema } from "../../server/graphql/schema.ts";
 import { createMcp } from "../../server/mcp.ts";
 import { createStore } from "../../server/store.ts";
+import { fromDiscovered } from "../../shared/client/mcp-draft.ts";
 import { llmConfigSchema, mcpServerSchema, modelForTask } from "../../shared/types.ts";
 import { isRecord } from "../helpers.ts";
 import { createTestDb } from "./db.ts";
@@ -231,5 +232,44 @@ describe("the MCP servers", () => {
       { id: "fs", trustAnnotations: true },
       { id: "mail", trustAnnotations: false },
     ]);
+  });
+
+  /** Headers are optional: an empty value is saved as it is, and a name keeps its dots. */
+  it("saves an http server with an empty header and a dotted header name as given", async () => {
+    const headers = { Authorization: "", "X-Api.Key": "secret" };
+    await settings.saveMcpServers([
+      mcpServerSchema.parse({ id: "web", transport: "http", url: "http://10.0.0.5/mcp", headers }),
+    ]);
+
+    const [saved] = await settings.loadMcpServers();
+
+    expect(saved?.headers).toEqual(headers);
+  });
+
+  it("saves a server found on the network with its required header left blank", async () => {
+    const blank = mcpServerSchema.parse({ id: "server-1", command: "npx" });
+    const row = fromDiscovered(
+      {
+        key: "nas/io.example/weather",
+        name: "io.example/weather",
+        title: null,
+        description: "Forecasts.",
+        host: "nas",
+        url: "http://10.0.0.6/mcp",
+        requiredHeaders: ["Authorization"],
+      },
+      blank,
+      [],
+    );
+    await settings.saveMcpServers([row]);
+
+    const [saved] = await settings.loadMcpServers();
+
+    expect(saved).toMatchObject({
+      id: "weather",
+      transport: "http",
+      url: "http://10.0.0.6/mcp",
+      headers: { Authorization: "" },
+    });
   });
 });

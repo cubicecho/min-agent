@@ -273,7 +273,8 @@ already points at is left out, so the list is only what is left to add.
 **Add** opens the ordinary new-server dialog, filled in: an http server at the card's URL, the
 card's title as its label, an id from the last part of the card's name, and a box for each
 required header. Nothing is connected or saved until you check it and press **Add server**, and
-the header values — a token, usually — are yours to type: a card never carries a secret. That is
+the header values — a token, usually — are yours to type: a card never carries a secret. The
+boxes are optional, so a header left blank still saves (and the server may then refuse). That is
 deliberate. mDNS and Server Cards are unauthenticated, so anything on the network can announce
 anything under any name, and connecting to it would hand its tools to the model. min-agent
 suggests; it never links on its own.

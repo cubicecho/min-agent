@@ -1,3 +1,9 @@
+import {
+  fromDiscovered,
+  fromHeaderDrafts,
+  type HeaderDraft,
+  toHeaderDrafts,
+} from "@shared/client/mcp-draft.ts";
 import { MS_PER_SECOND } from "@shared/consts.ts";
 import { FRESHNESS_DEFAULTS } from "@shared/defaults.ts";
 import { messageOf } from "@shared/errors.ts";
@@ -92,45 +98,6 @@ const blank = (taken: McpServerConfig[]): McpServerConfig => {
   };
 };
 
-/** What a server id may be, as `mcpServerSchema` checks it: up to 32, starting on a letter or digit. */
-const ID_MAX_CHARS = 32;
-
-/**
- * An id for a server found on the network that no row uses yet: the last part of its card's
- * name, `io.github.cubicecho.mcp-skills.nas/skills` → `skills`, then `skills-2` if that is taken.
- */
-const freeId = (cardName: string, taken: McpServerConfig[]) => {
-  const tail = cardName.split("/").at(-1) ?? "";
-  const cleaned = tail
-    .replace(/[^a-zA-Z0-9_-]+/g, "-")
-    .replace(/^[^a-zA-Z0-9]+/, "")
-    .slice(0, ID_MAX_CHARS - 3);
-  const base = cleaned || "server";
-  let candidate = base;
-  for (let n = 2; taken.some((server) => server.id === candidate); n += 1) {
-    candidate = `${base}-${n}`;
-  }
-  return candidate;
-};
-
-/**
- * A new row filled in from a server found on the network. The headers its card requires are
- * there with no value: they are secrets only the person has, and the dialog asks for them.
- */
-const fromDiscovered = (found: DiscoveredMcpServer, taken: McpServerConfig[]): McpServerConfig => ({
-  ...blank(taken),
-  id: freeId(found.name, taken),
-  label: found.title ?? found.name,
-  transport: "http",
-  command: "",
-  url: found.url,
-  headers: Object.fromEntries(found.requiredHeaders.map((header) => [header, ""])),
-});
-
-/** A header the dialog shows has to have a value: an empty one is a request the server refuses. */
-const headerProblem = ({ value }: { value: string }) =>
-  value.trim() ? undefined : "The server needs this header.";
-
 const EVENT_OPTIONS = HOOK_EVENTS_FIRED.map((event) => ({ label: event, value: event }));
 
 /** What a hook injects up to when nobody has said: the pool's own default. */
@@ -155,12 +122,17 @@ type HookDraft = {
   timeoutMs: number | undefined;
 };
 
-/** A server as the form holds it: the args as one line, the hooks as drafts. */
-type ServerDraft = Omit<McpServerConfig, "args" | "hooks"> & { args: string; hooks: HookDraft[] };
+/** A server as the form holds it: the args as one line, the hooks and headers as drafts. */
+type ServerDraft = Omit<McpServerConfig, "args" | "hooks" | "headers"> & {
+  args: string;
+  hooks: HookDraft[];
+  headers: HeaderDraft[];
+};
 
 const toDraft = (server: McpServerConfig): ServerDraft => ({
   ...server,
   args: server.args.join(" "),
+  headers: toHeaderDrafts(server.headers),
   hooks: server.hooks.map((hook) => ({
     id: hook.id,
     enabled: hook.enabled !== false,
@@ -178,6 +150,7 @@ const toDraft = (server: McpServerConfig): ServerDraft => ({
 const fromDraft = (draft: ServerDraft): McpServerConfig => ({
   ...draft,
   args: draft.args.split(" ").filter(Boolean),
+  headers: fromHeaderDrafts(draft.headers),
   hooks: draft.hooks.map((hook) => {
     // Context can only be added ahead of a request, so it goes when the hook moves off one.
     const injects = INJECT_EVENTS.has(hook.on) && hook.inject;
@@ -332,7 +305,8 @@ function Editor({
   const toolOptions = toolNames.map((tool) => ({ label: tool, value: tool }));
   const name = title(initial);
   // The headers a row was opened with, which for a server found on the network are the ones its
-  // card says it needs. A field each; adding or renaming one is not something this form does.
+  // card says it expects. A field each, by place in the list, so any name works; adding or
+  // renaming one is not something this form does.
   const headerNames = Object.keys(initial.headers);
 
   // Memoised: the list behind this is polled, and defaults that change identity on every
@@ -504,18 +478,13 @@ function Editor({
                         />
                       )}
                     </form.AppField>
-                    {headerNames.map((header) => (
-                      <form.AppField
-                        key={header}
-                        name={`headers.${header}`}
-                        validators={{ onChange: headerProblem, onSubmit: headerProblem }}
-                      >
+                    {headerNames.map((header, index) => (
+                      <form.AppField key={header} name={`headers[${index}].value`}>
                         {(field) => (
                           <field.PasswordField
                             descriptionPlacement={placement}
                             label={header}
-                            description="Sent with every request to this server. For Authorization, usually Bearer and a token."
-                            required
+                            description="Sent with every request to this server, which expects it. For Authorization, usually Bearer and a token."
                           />
                         )}
                       </form.AppField>
@@ -793,7 +762,10 @@ export function McpPanel({ active = true }: { active?: boolean }) {
                       key={server.key}
                       server={server}
                       onAdd={() =>
-                        setEditing({ index: null, value: fromDiscovered(server, configs) })
+                        setEditing({
+                          index: null,
+                          value: fromDiscovered(server, blank(configs), configs),
+                        })
                       }
                     />
                   ))}
